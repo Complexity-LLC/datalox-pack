@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "viewType": "skill_doc_v1",
+  "docId": "flow-cytometry.viability-gate-review",
+  "sourceDocPath": ".datalox/docs/viability-gate-review.md",
+  "workflow": "flow_cytometry",
+  "title": "Review ambiguous viability gate",
+  "sections": [
+    {
+      "id": "when-to-use",
+      "title": "When to use this",
+      "kind": "usage",
+      "summary": "Use when live and dead populations are not cleanly separated during viability gate review.",
+      "sourceAnchors": [
+        "## When to use this"
+      ]
+    },
+    {
+      "id": "steps",
+      "title": "Steps",
+      "kind": "procedure",
+      "summary": "Check the gate boundary, compare against the prior reviewed example, and record any material shift before approving.",
+      "sourceAnchors": [
+        "## Steps"
+      ]
+    },
+    {
+      "id": "judgment-patterns",
+      "title": "Judgment patterns",
+      "kind": "judgment",
+      "summary": "Distinguish dim dead-tail overlap from true live-cluster drift before moving the gate.",
+      "sourceAnchors": [
+        "## Judgment patterns"
+      ]
+    },
+    {
+      "id": "escalation-rules",
+      "title": "Escalation rules",
+      "kind": "policy",
+      "summary": "Escalate when the gating change is material or when evidence conflicts across reviewers.",
+      "sourceAnchors": [
+        "## Escalation rules"
+      ]
+    }
+  ],
+  "patterns": [
+    {
+      "id": "dim-dead-tail-overlap",
+      "signal": "Dim dead tail overlaps the live-cluster shoulder.",
+      "interpretation": "This is often residual dead-cell signal rather than a real live-population shift.",
+      "recommendedAction": "Review the supporting exception doc before broadening the live gate.",
+      "sourceAnchors": [
+        "## Judgment patterns"
+      ]
+    },
+    {
+      "id": "true-live-cluster-drift",
+      "signal": "The live cluster has shifted together with supporting scatter changes.",
+      "interpretation": "This may reflect a real population change and not only staining noise.",
+      "recommendedAction": "Compare against the prior approved example and record the reason for any gate movement.",
+      "sourceAnchors": [
+        "## Judgment patterns"
+      ]
+    }
+  ],
+  "escalationRules": [
+    {
+      "id": "material-gate-change",
+      "condition": "Gate movement changes the live population materially or cannot be justified from the current evidence.",
+      "action": "Escalate for reviewer sign-off.",
+      "sourceAnchors": [
+        "## Escalation rules"
+      ]
+    }
+  ]
+}

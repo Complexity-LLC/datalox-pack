@@ -1,0 +1,90 @@
+{
+  "$schema": "./config.schema.json",
+  "version": 1,
+  "mode": "repo_only",
+  "project": {
+    "id": "datalox-flow-cytometry-demo",
+    "name": "Datalox Flow Cytometry Demo"
+  },
+  "sources": [
+    {
+      "kind": "local_repo",
+      "name": "repo-pack",
+      "enabled": true,
+      "root": ".datalox"
+    }
+  ],
+  "agent": {
+    "profile": "local_first",
+    "nativeSkillPolicy": "preserve",
+    "configReadOrder": [
+      "env:DATALOX_CONFIG_JSON",
+      ".datalox/config.local.json",
+      ".datalox/config.json",
+      "AGENTS.md"
+    ],
+    "interfaceOrder": [
+      "local_skill",
+      "working_knowledge",
+      "proposal_writeback",
+      "runtime_compile",
+      "retrieval_search",
+      "skill_registry"
+    ],
+    "docReadOrder": [
+      "materialized_view",
+      "raw_doc"
+    ],
+    "citationRequired": true,
+    "escalateWhenNoMatch": true,
+    "fetchPolicy": "metadata_first"
+  },
+  "paths": {
+    "localSkillsDir": ".datalox/skills",
+    "localDocsDir": ".datalox/docs",
+    "localViewsDir": ".datalox/views",
+    "workingSkillsDir": ".datalox/working/skills",
+    "workingPatternsDir": ".datalox/working/patterns"
+  },
+  "runtime": {
+    "enabled": false,
+    "baseUrl": "http://localhost:3000",
+    "defaultWorkflow": "flow_cytometry",
+    "requestTimeoutMs": 10000,
+    "endpoints": {
+      "compile": "/v1/runtime/compile",
+      "search": "/v1/retrieval/search",
+      "fileMetadata": "/v1/files/:id",
+      "fileDownload": "/v1/files/:id/download",
+      "skillSearch": "/v1/skills/search",
+      "skillInstall": "/v1/skills/:name/install",
+      "contributorRegister": "/v1/contributor/register"
+    }
+  },
+  "retrieval": {
+    "defaultLimit": 5,
+    "maxSnippets": 3,
+      "allowedDocRefKinds": [
+      "path",
+      "file_id",
+      "url"
+    ]
+  },
+  "materialization": {
+    "preferredViewType": "skill_doc_v1",
+    "traceStrategy": "source_anchors",
+    "viewFormatVersion": 1
+  },
+  "writeback": {
+    "enabled": true,
+    "proposalsDir": ".datalox/proposals",
+    "proposedSkillsDir": ".datalox/proposals/skills",
+    "proposedPatternsDir": ".datalox/proposals/patterns",
+    "capturesDir": ".datalox/captures",
+    "authorEnv": "DATALOX_AUTHOR"
+  },
+  "auth": {
+    "apiKeyEnv": "DATALOX_API_KEY",
+    "contributorKeyEnv": "DATALOX_CONTRIBUTOR_KEY"
+  }
+}

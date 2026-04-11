@@ -1,0 +1,365 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datalox.dev/schemas/config.schema.json",
+  "title": "Datalox Agent Config",
+  "type": "object",
+  "required": [
+    "version",
+    "mode",
+    "project",
+    "sources",
+    "agent",
+    "paths",
+    "runtime",
+    "retrieval",
+    "materialization",
+    "writeback",
+    "auth"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "repo_only",
+        "service_backed"
+      ]
+    },
+    "project": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "enabled",
+          "root"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "local_repo"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "root": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "agent": {
+      "type": "object",
+      "required": [
+        "profile",
+        "nativeSkillPolicy",
+        "configReadOrder",
+        "interfaceOrder",
+        "docReadOrder",
+        "citationRequired",
+        "escalateWhenNoMatch",
+        "fetchPolicy"
+      ],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "enum": [
+            "local_first",
+            "runtime_first",
+            "registry_first"
+          ]
+        },
+        "nativeSkillPolicy": {
+          "type": "string",
+          "enum": [
+            "preserve"
+          ]
+        },
+        "configReadOrder": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "interfaceOrder": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "local_skill",
+              "working_knowledge",
+              "proposal_writeback",
+              "runtime_compile",
+              "retrieval_search",
+              "skill_registry"
+            ]
+          },
+          "minItems": 1
+        },
+        "docReadOrder": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "materialized_view",
+              "raw_doc"
+            ]
+          },
+          "minItems": 1
+        },
+        "citationRequired": {
+          "type": "boolean"
+        },
+        "escalateWhenNoMatch": {
+          "type": "boolean"
+        },
+        "fetchPolicy": {
+          "type": "string",
+          "enum": [
+            "metadata_first",
+            "content_first"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "object",
+      "required": [
+        "localSkillsDir",
+        "localDocsDir",
+        "localViewsDir",
+        "workingSkillsDir",
+        "workingPatternsDir"
+      ],
+      "properties": {
+        "localSkillsDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "localDocsDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "localViewsDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workingSkillsDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workingPatternsDir": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "baseUrl",
+        "defaultWorkflow",
+        "requestTimeoutMs",
+        "endpoints"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "baseUrl": {
+          "type": "string",
+          "minLength": 1
+        },
+        "defaultWorkflow": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requestTimeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "endpoints": {
+          "type": "object",
+          "required": [
+            "compile",
+            "search",
+            "fileMetadata",
+            "fileDownload"
+          ],
+          "properties": {
+            "compile": {
+              "type": "string"
+            },
+            "search": {
+              "type": "string"
+            },
+            "fileMetadata": {
+              "type": "string"
+            },
+            "fileDownload": {
+              "type": "string"
+            },
+            "skillSearch": {
+              "type": "string"
+            },
+            "skillInstall": {
+              "type": "string"
+            },
+            "contributorRegister": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "retrieval": {
+      "type": "object",
+      "required": [
+        "defaultLimit",
+        "maxSnippets",
+        "allowedDocRefKinds"
+      ],
+      "properties": {
+        "defaultLimit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxSnippets": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "allowedDocRefKinds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "path",
+              "file_id",
+              "url"
+            ]
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "materialization": {
+      "type": "object",
+      "required": [
+        "preferredViewType",
+        "traceStrategy",
+        "viewFormatVersion"
+      ],
+      "properties": {
+        "preferredViewType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "traceStrategy": {
+          "type": "string",
+          "enum": [
+            "source_anchors"
+          ]
+        },
+        "viewFormatVersion": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "writeback": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "proposalsDir",
+        "proposedSkillsDir",
+        "proposedPatternsDir",
+        "capturesDir",
+        "authorEnv"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "proposalsDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proposedSkillsDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proposedPatternsDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capturesDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorEnv": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "auth": {
+      "type": "object",
+      "required": [
+        "apiKeyEnv",
+        "contributorKeyEnv"
+      ],
+      "properties": {
+        "apiKeyEnv": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contributorKeyEnv": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

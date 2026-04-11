@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "flow-cytometry.review-ambiguous-viability-gate",
+  "name": "review-ambiguous-viability-gate",
+  "displayName": "Review Ambiguous Viability Gate",
+  "workflow": "flow_cytometry",
+  "trigger": "Use when live/dead separation is ambiguous during viability gate review.",
+  "description": "Start from the viability gate review doc, inspect the exception case, and escalate if the gating change is material.",
+  "defaultDocRef": {
+    "kind": "path",
+    "value": ".datalox/docs/viability-gate-review.md",
+    "viewPath": ".datalox/views/viability-gate-review.skill-doc.json"
+  },
+  "supportingDocRefs": [
+    {
+      "kind": "path",
+      "value": ".datalox/docs/dead-tail-exception.md",
+      "viewPath": ".datalox/views/dead-tail-exception.skill-doc.json"
+    },
+    {
+      "kind": "path",
+      "value": ".datalox/docs/qc-escalation-policy.md",
+      "viewPath": ".datalox/views/qc-escalation-policy.skill-doc.json"
+    }
+  ],
+  "tags": [
+    "flow_cytometry",
+    "viability",
+    "gating",
+    "review"
+  ],
+  "status": "approved"
+}

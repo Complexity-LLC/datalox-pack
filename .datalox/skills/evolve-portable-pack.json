@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "id": "repo-engineering.evolve-portable-pack",
+  "name": "evolve-portable-pack",
+  "displayName": "Evolve Portable Pack",
+  "workflow": "repo_engineering",
+  "trigger": "Use when changing the portable pack, local-first workflow, or agent guidance in this repo.",
+  "description": "Start from the portable-pack editing doc, preserve native skills, use the working layer for immediate self-updates, and improve the guidance surface before adding more configuration.",
+  "defaultDocRef": {
+    "kind": "path",
+    "value": ".datalox/docs/evolve-portable-pack.md",
+    "viewPath": ".datalox/views/evolve-portable-pack.skill-doc.json"
+  },
+  "supportingDocRefs": [],
+  "repoHints": {
+    "files": [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "README.md",
+      "package.json"
+    ],
+    "pathPrefixes": [
+      ".datalox/",
+      "scripts/",
+      "docs/"
+    ],
+    "packageSignals": [
+      "fastify",
+      "vitest",
+      "tsx",
+      "datalox-knowledge-runtime"
+    ]
+  },
+  "tags": [
+    "repo_engineering",
+    "portable_pack",
+    "agent_experience",
+    "knowledge_runtime"
+  ],
+  "status": "approved"
+}

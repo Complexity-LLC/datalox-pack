@@ -1,0 +1,24 @@
+{
+  "mode": "service_backed",
+  "agent": {
+    "profile": "runtime_first",
+    "nativeSkillPolicy": "preserve",
+    "interfaceOrder": [
+      "local_skill",
+      "working_knowledge",
+      "proposal_writeback",
+      "runtime_compile",
+      "retrieval_search",
+      "skill_registry"
+    ]
+  },
+  "runtime": {
+    "enabled": true,
+    "baseUrl": "https://api.example.datalox.com",
+    "defaultWorkflow": "flow_cytometry"
+  },
+  "auth": {
+    "apiKeyEnv": "DATALOX_API_KEY",
+    "contributorKeyEnv": "DATALOX_CONTRIBUTOR_KEY"
+  }
+}

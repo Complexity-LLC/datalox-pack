@@ -1,0 +1,25 @@
+{
+  "name": "datalox-pack",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Portable Datalox knowledge pack with local-first retrieval and learning.",
+  "scripts": {
+    "agent:bootstrap": "node scripts/agent-bootstrap.mjs",
+    "agent:capture-interaction": "node scripts/agent-capture-interaction.mjs",
+    "agent:learn-pattern": "node scripts/agent-learn-pattern.mjs",
+    "agent:learn-skill": "node scripts/agent-learn-skill.mjs",
+    "agent:learn-from-interaction": "node scripts/agent-learn-from-interaction.mjs",
+    "agent:materialize-capture": "node scripts/agent-materialize-capture.mjs",
+    "agent:resolve": "node scripts/agent-resolve.mjs",
+    "agent:propose-pattern": "node scripts/agent-propose-pattern.mjs",
+    "agent:propose-skill": "node scripts/agent-propose-skill.mjs",
+    "check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

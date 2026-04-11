@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "kind": "portable_knowledge_pack",
+  "name": "Datalox Knowledge Runtime",
+  "mode": "repo_only",
+  "runtimeRequired": false,
+  "configPath": ".datalox/config.json",
+  "instructionPaths": [
+    "DATALOX.md",
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "entrypoints": {
+    "skillsDir": ".datalox/skills",
+    "workingSkillsDir": ".datalox/working/skills",
+    "workingPatternsDir": ".datalox/working/patterns",
+    "viewsDir": ".datalox/views",
+    "docsDir": ".datalox/docs",
+    "capturesDir": ".datalox/captures",
+    "proposalsDir": ".datalox/proposals"
+  },
+  "startup": {
+    "readOrder": [
+      ".datalox/config.local.json",
+      ".datalox/config.json",
+      "DATALOX.md",
+      "AGENTS.md",
+      "CLAUDE.md"
+    ],
+    "autoSelectionSignals": [
+      "current task text",
+      "current workflow if known",
+      "git changed paths when available",
+      "repo root files",
+      "package metadata"
+    ]
+  },
+  "agentRules": {
+    "preserveNativeSkills": true,
+    "preferMaterializedViews": true,
+    "captureInteractionsTo": ".datalox/captures",
+    "writeImmediateUseKnowledgeTo": ".datalox/working",
+    "writeReviewCandidatesTo": ".datalox/proposals"
+  }
+}

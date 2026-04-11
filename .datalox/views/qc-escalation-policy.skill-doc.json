@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "viewType": "skill_doc_v1",
+  "docId": "flow-cytometry.qc-escalation-policy",
+  "sourceDocPath": ".datalox/docs/qc-escalation-policy.md",
+  "workflow": "flow_cytometry",
+  "title": "QC escalation policy",
+  "sections": [
+    {
+      "id": "policy",
+      "title": "Policy",
+      "kind": "policy",
+      "summary": "Escalate when viability gate changes exceed the reviewer-safe tolerance or when rationale is uncertain.",
+      "sourceAnchors": [
+        "## Policy"
+      ]
+    },
+    {
+      "id": "required-record",
+      "title": "Required record",
+      "kind": "evidence",
+      "summary": "Record why the gate changed, what evidence supported it, and who reviewed the decision.",
+      "sourceAnchors": [
+        "## Required record"
+      ]
+    }
+  ],
+  "escalationRules": [
+    {
+      "id": "gate-change-threshold",
+      "condition": "Viability gate movement changes the live percentage beyond the approved reviewer threshold.",
+      "action": "Escalate and attach supporting evidence.",
+      "sourceAnchors": [
+        "## Policy"
+      ]
+    }
+  ]
+}
