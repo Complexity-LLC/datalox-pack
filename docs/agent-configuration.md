@@ -4,6 +4,7 @@ This repo defines the portable `.datalox/` contract.
 
 Use it as the deterministic setup layer for any agent that can read repo files.
 The default mode is `repo_only`, so the pack works without a Datalox server.
+Do not assume Node or any setup command is available.
 
 ## Files
 
@@ -19,6 +20,7 @@ The default mode is `repo_only`, so the pack works without a Datalox server.
   captures/
   working/
   proposals/
+  conformance/
 ```
 
 ## Read Order
@@ -29,6 +31,15 @@ The default mode is `repo_only`, so the pack works without a Datalox server.
 4. `.datalox/config.json`
 5. `AGENTS.md`
 6. `CLAUDE.md` when applicable
+
+## File Roles
+
+- `.datalox/skills/`: approved skill entrypoints
+- `.datalox/views/`: materialized agent-facing views
+- `.datalox/docs/`: raw source docs
+- `.datalox/working/`: immediate-use learned overlays
+- `.datalox/captures/`: raw interaction traces
+- `.datalox/proposals/`: review-oriented candidates
 
 ## Immediate Flow
 
@@ -42,9 +53,9 @@ The default mode is `repo_only`, so the pack works without a Datalox server.
 8. Materialize reusable patterns into `.datalox/working/`
 9. Use `.datalox/proposals/` only for review-oriented candidates
 
-## MinerU Lesson
+## Layering Rule
 
-The useful MinerU pattern is layered artifacts:
+The useful pattern is layered artifacts with trace:
 
 1. raw source
 2. structured intermediate artifact
@@ -59,7 +70,15 @@ For this pack:
 4. immediate-use learned overlays live in `.datalox/working/`
 5. source anchors stay attached to the materialized view
 
-## Optional Helpers
+## Conformance
+
+Agents should be able to follow the conformance cases without running scripts:
+
+- `.datalox/conformance/resolve-approved-skill.json`
+- `.datalox/conformance/learn-working-pattern.json`
+- `.datalox/conformance/refresh-working-skill.json`
+
+## Optional Reference Implementation
 
 ```bash
 node scripts/agent-bootstrap.mjs
@@ -68,6 +87,9 @@ node scripts/agent-capture-interaction.mjs --task "review ambiguous live dead ga
 node scripts/agent-materialize-capture.mjs --capture .datalox/captures/<capture-file>.json
 node scripts/agent-learn-from-interaction.mjs --task "review ambiguous live dead gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception doc before widening gate"
 ```
+
+Those scripts are not the pack contract. They are a reference implementation of
+the same file-based protocol.
 
 ## Design Rule
 

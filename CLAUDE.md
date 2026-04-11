@@ -4,6 +4,7 @@ This repo should work as a portable Datalox knowledge pack even when no Datalox 
 
 No setup command is required.
 If another agent system does not automatically read platform-specific project instructions, use `DATALOX.md` and `.datalox/manifest.json`.
+Do not assume Node or the helper scripts are available.
 
 1. Read `.datalox/config.local.json` if it exists.
 2. Read `.datalox/config.json`.
@@ -29,18 +30,11 @@ Default behavior:
 
 When you discover new knowledge:
 
-- write raw interaction traces with `node scripts/agent-capture-interaction.mjs ...`
-- materialize captures with `node scripts/agent-materialize-capture.mjs ...`
-- or do both in one step with `node scripts/agent-learn-from-interaction.mjs ...`
-- write immediately usable working patterns with `node scripts/agent-learn-pattern.mjs ...`
-- write immediately usable working skills with `node scripts/agent-learn-skill.mjs ...`
 - store captures under `.datalox/captures/`
 - store them under `.datalox/working/`
-- write proposed patterns with `node scripts/agent-propose-pattern.mjs ...`
-- write proposed skills with `node scripts/agent-propose-skill.mjs ...`
 - store proposals under `.datalox/proposals/`
 - do not silently mix proposed knowledge into approved skills or views
 
-The scripts are optional terminal helpers. They are not required for normal repo use.
+The scripts are optional terminal helpers and reference implementation only.
 
 When runtime is enabled later, it is a second access path. It is not the default requirement for using this repo.

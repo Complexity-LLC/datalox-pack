@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "id": "refresh-working-skill",
+  "goal": "Update a working skill overlay so a newly learned pattern is attached on the next use.",
+  "input": {
+    "skillId": "flow-cytometry.review-ambiguous-viability-gate",
+    "workingPatternPath": ".datalox/working/patterns/<timestamp>--dim-dead-tail-overlap.json"
+  },
+  "mustRead": [
+    ".datalox/manifest.json",
+    ".datalox/config.json",
+    ".datalox/skills/review-ambiguous-viability-gate.json",
+    ".datalox/working/patterns/<timestamp>--dim-dead-tail-overlap.json"
+  ],
+  "mustWrite": [
+    ".datalox/working/skills/flow-cytometry.review-ambiguous-viability-gate.json"
+  ],
+  "mustNotWrite": [
+    ".datalox/skills/review-ambiguous-viability-gate.json"
+  ],
+  "expectedResult": {
+    "overlayFields": [
+      "id",
+      "workflow",
+      "linkedPatterns"
+    ],
+    "mustIncludeLinkedPattern": ".datalox/working/patterns/<timestamp>--dim-dead-tail-overlap.json",
+    "effect": "future resolve passes use the overlay skill before falling back to the approved skill only"
+  }
+}

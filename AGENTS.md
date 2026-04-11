@@ -12,6 +12,7 @@ Use Datalox to resolve the right skill and supporting docs quickly and consisten
 This repo should work in `repo_only` mode without a running Datalox service.
 No setup command is required. The repo itself is the portable knowledge pack.
 If your platform does not automatically read this file, read `DATALOX.md` and `.datalox/manifest.json`.
+Do not assume Node or the `scripts/` helpers are available.
 
 Preserve your native or platform-provided skills and tools.
 Datalox is an additive repo-local knowledge layer. It must not replace an agent's own built-in skill system.
@@ -50,15 +51,8 @@ Datalox is an additive repo-local knowledge layer. It must not replace an agent'
 - Prefer approved or policy-tagged files when there is ambiguity.
 - Escalate if no strong match exists for the current workflow.
 
-## Optional Helpers
+## Reference Implementation
 
-- `node scripts/agent-bootstrap.mjs` validates that the pack is readable from the terminal.
-- `node scripts/agent-resolve.mjs ...` resolves local knowledge from the terminal.
-- `node scripts/agent-capture-interaction.mjs ...` writes a raw interaction trace to `.datalox/captures/`.
-- `node scripts/agent-materialize-capture.mjs ...` turns one capture into a working pattern and working skill overlay.
-- `node scripts/agent-learn-from-interaction.mjs ...` does capture and materialization in one step.
-- `node scripts/agent-learn-pattern.mjs ...` writes an immediately usable working pattern.
-- `node scripts/agent-learn-skill.mjs ...` writes an immediately usable working skill.
-- `node scripts/agent-propose-pattern.mjs ...` and `node scripts/agent-propose-skill.mjs ...` write proposal files from the terminal.
-
-Agents do not need to run these scripts in order to use the pack. They may read the files directly.
+The `scripts/` directory is optional. It demonstrates the same file-based
+protocol for testing and CI. Agents do not need to run those scripts in order
+to use the pack.

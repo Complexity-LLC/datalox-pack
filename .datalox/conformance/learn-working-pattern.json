@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "id": "learn-working-pattern",
+  "goal": "Turn one reusable interaction into an immediately usable working pattern without editing approved pack knowledge.",
+  "input": {
+    "task": "review ambiguous live dead gate",
+    "workflow": "flow_cytometry",
+    "observation": "dim dead tail overlaps live shoulder",
+    "interpretation": "likely artifact",
+    "action": "review exception doc before widening gate"
+  },
+  "mustRead": [
+    ".datalox/manifest.json",
+    ".datalox/config.json",
+    ".datalox/skills/review-ambiguous-viability-gate.json",
+    ".datalox/views/viability-gate-review.skill-doc.json",
+    ".datalox/docs/dead-tail-exception.md"
+  ],
+  "mustWrite": [
+    ".datalox/captures/<timestamp>--dim-dead-tail-overlap.json",
+    ".datalox/working/patterns/<timestamp>--dim-dead-tail-overlap.json"
+  ],
+  "mustNotWrite": [
+    ".datalox/skills/review-ambiguous-viability-gate.json",
+    ".datalox/views/viability-gate-review.skill-doc.json"
+  ],
+  "expectedResult": {
+    "workingPatternFields": [
+      "signal",
+      "interpretation",
+      "recommendedAction",
+      "workflow",
+      "linkedSkillId",
+      "source"
+    ],
+    "effect": "the next resolve pass can attach the working pattern immediately"
+  }
+}
