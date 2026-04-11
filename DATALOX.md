@@ -1,93 +1,76 @@
-# Datalox Portable Pack Protocol
+# Datalox Pack Protocol
 
-This repo is a portable Datalox knowledge pack.
+This pack is intentionally simple.
 
-The pack itself is the interface. Another agent should be able to use it after
-`git clone` by reading repo files directly. Do not assume Node, Python, a local
-runtime, or an installation step.
+An agent should use it on every loop with one minimal cycle:
+
+1. detect
+2. use
+3. patch
+4. lint
+
+Do not replace the agent's native skills. Datalox is additive.
 
 ## Read Order
 
-1. Read `.datalox/manifest.json`.
-2. Read `.datalox/config.local.json` if it exists.
-3. Read `.datalox/config.json`.
-4. Read this file.
-5. Read `AGENTS.md` or tool-specific instruction files if they exist.
+1. `.datalox/manifest.json`
+2. `.datalox/config.local.json` if it exists
+3. `.datalox/config.json`
+4. this file
+5. `AGENTS.md` or a tool-specific instruction file if present
 
-Preserve your native or platform-provided skills and tools.
-Datalox is additive repo-local knowledge, not a replacement skill system.
+## Loop Rule
 
-## Pack Roles
+At the start of every agent loop:
 
-- `.datalox/skills/`: approved skill entrypoints
-- `.datalox/views/`: materialized agent-facing views
-- `.datalox/docs/`: raw source docs
-- `.datalox/working/`: immediate-use overlays learned locally
-- `.datalox/captures/`: raw interaction traces
-- `.datalox/proposals/`: review-oriented candidates
+1. inspect current task text and workflow
+2. inspect repo context when needed:
+   changed git paths, repo root files, and package metadata
+3. select the best matching skill in `skills/`
+4. read the pattern docs listed in that skill's `patternPaths`
+5. act using the pattern docs' signal, interpretation, and recommended action
 
-## Resolve Algorithm
+This is the `detect -> use` part of the loop.
 
-When an explicit skill is not given:
+## Learning Rule
 
-1. Infer a candidate skill from current task text.
-2. Narrow by workflow when known.
-3. Use repo context to break ties:
-   changed git paths when available, repo root files, and package metadata.
-4. Prefer approved skills in `.datalox/skills/`.
-5. Apply a matching overlay skill from `.datalox/working/skills/`.
-6. Load linked working patterns from `.datalox/working/patterns/`.
-7. Read `viewPath` first from `.datalox/views/`.
-8. Read raw docs in `.datalox/docs/` only when the view is insufficient.
+When the agent discovers a reusable pattern:
 
-The normal output is:
+1. write a pattern doc into `.datalox/patterns/`
+2. update or create a skill in `skills/`
+3. put the pattern doc path into that skill's `patternPaths`
 
-- selected skill
-- supporting views/docs
-- source anchors to cite
-- linked working patterns
-- escalation decision
+This is the `patch` part of the loop.
 
-## Learn Algorithm
+## Lint Rule
 
-When a repeated interaction produces reusable knowledge:
+Run lint over the local pack when changing skills or pattern docs.
 
-1. Write the raw interaction trace to `.datalox/captures/`.
-2. Materialize a reusable pattern into `.datalox/working/patterns/`.
-3. If that pattern should affect future behavior immediately, refresh a matching
-   overlay skill in `.datalox/working/skills/`.
-4. Keep approved shared knowledge unchanged unless the task explicitly requires
-   editing it.
-5. Write review-oriented candidates into `.datalox/proposals/`.
+Lint checks:
 
-The pack should improve its own future resolution without requiring a server.
+- skills missing `patternPaths`
+- missing pattern doc paths
+- pattern docs missing `Signal`, `Interpretation`, or `Recommended Action`
+- orphan pattern docs
+- duplicate or overlapping skills in the same workflow
 
-## Source And Trace Rules
+This is the `lint` part of the loop.
 
-- Prefer materialized views over reparsing raw markdown.
-- Keep source anchors attached to views and learned overlays.
-- Cite local doc paths and source anchors when working from the pack.
-- Escalate when there is no strong match for the current workflow.
+There is no separate working layer in this version.
 
-## Conformance
+## Skill Shape
 
-Another agent conforms to this pack if it can complete the examples in
-`.datalox/conformance/` by reading and writing the repo files directly.
+Each skill is a JSON file in `skills/` with:
 
-Read:
-
-- `docs/conformance.md`
-- `.datalox/conformance/resolve-approved-skill.json`
-- `.datalox/conformance/learn-working-pattern.json`
-- `.datalox/conformance/refresh-working-skill.json`
+- `id`
+- `name`
+- `workflow`
+- `trigger`
+- `description`
+- `patternPaths`
 
 ## Current Default
 
 - mode: `repo_only`
 - runtime required: `false`
-- native skill policy: `preserve`
-
-## Optional Reference Implementation
-
-The `scripts/` directory is a reference implementation of this protocol. It is
-useful for testing and CI, but it is not required for normal pack use.
+- detect on every loop: `true`

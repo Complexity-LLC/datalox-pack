@@ -1,101 +1,53 @@
 # Agent Configuration
 
-This repo defines the portable `.datalox/` contract.
+This pack is meant to be detected on every agent loop.
 
-Use it as the deterministic setup layer for any agent that can read repo files.
-The default mode is `repo_only`, so the pack works without a Datalox server.
-Do not assume Node or any setup command is available.
+The current configuration is intentionally small.
 
-## Files
+The product loop is:
+
+`detect -> use -> patch -> lint`
+
+## Required Files
 
 ```text
 .datalox/
   manifest.json
   config.json
-  config.local.example.json
-  config.schema.json
   skills/
-  docs/
-  views/
-  captures/
-  working/
-  proposals/
-  conformance/
+  patterns/
 ```
 
-## Read Order
+## Runtime Behavior
 
-1. `DATALOX.md`
-2. `.datalox/manifest.json`
-3. `.datalox/config.local.json` if present
-4. `.datalox/config.json`
-5. `AGENTS.md`
-6. `CLAUDE.md` when applicable
+1. read `.datalox/manifest.json`
+2. read `.datalox/config.json`
+3. detect a matching skill from `skills/`
+4. read the skill's `patternPaths`
+5. use those pattern docs during the current loop
 
-## File Roles
+## Generation Behavior
 
-- `.datalox/skills/`: approved skill entrypoints
-- `.datalox/views/`: materialized agent-facing views
-- `.datalox/docs/`: raw source docs
-- `.datalox/working/`: immediate-use learned overlays
-- `.datalox/captures/`: raw interaction traces
-- `.datalox/proposals/`: review-oriented candidates
+When the agent learns something reusable:
 
-## Immediate Flow
+1. write a new pattern doc into `.datalox/patterns/`
+2. update or create a skill in `skills/`
+3. keep the new pattern doc path in that skill's `patternPaths`
 
-1. Load `.datalox/config.json`
-2. Auto-select a matching local skill from task text and repo context
-3. Resolve approved skills from `.datalox/skills/`
-4. Apply working skill overlays from `.datalox/working/skills/`
-5. Load linked working patterns from `.datalox/working/patterns/`
-6. Read `viewPath` before raw markdown
-7. Capture repeated interactions into `.datalox/captures/`
-8. Materialize reusable patterns into `.datalox/working/`
-9. Use `.datalox/proposals/` only for review-oriented candidates
+Generated skills stay in `skills/` on purpose so agent-native skill logic can still see them.
 
-## Layering Rule
+## Lint Rules
 
-The useful pattern is layered artifacts with trace:
+The minimal linter checks:
 
-1. raw source
-2. structured intermediate artifact
-3. easier consumption artifact
-4. trace back to source
+- skills missing pattern paths
+- missing pattern files
+- pattern docs missing required sections
+- orphan pattern docs
+- duplicate or overlapping skills in the same workflow
 
-For this pack:
+Run lint after patching local knowledge.
 
-1. raw docs live in `.datalox/docs/`
-2. materialized views live in `.datalox/views/`
-3. raw interaction traces live in `.datalox/captures/`
-4. immediate-use learned overlays live in `.datalox/working/`
-5. source anchors stay attached to the materialized view
+## Optional Helpers
 
-## Conformance
-
-Agents should be able to follow the conformance cases without running scripts:
-
-- `.datalox/conformance/resolve-approved-skill.json`
-- `.datalox/conformance/learn-working-pattern.json`
-- `.datalox/conformance/refresh-working-skill.json`
-
-## Optional Reference Implementation
-
-```bash
-node scripts/agent-bootstrap.mjs
-node scripts/agent-resolve.mjs
-node scripts/agent-capture-interaction.mjs --task "review ambiguous live dead gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder"
-node scripts/agent-materialize-capture.mjs --capture .datalox/captures/<capture-file>.json
-node scripts/agent-learn-from-interaction.mjs --task "review ambiguous live dead gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception doc before widening gate"
-```
-
-Those scripts are not the pack contract. They are a reference implementation of
-the same file-based protocol.
-
-## Design Rule
-
-- `DATALOX.md` is the portable human entrypoint
-- `.datalox/manifest.json` is the portable machine entrypoint
-- `.datalox/config.json` is the deterministic config
-- `.datalox/views/*.json` are materialized agent-facing views
-- `.datalox/captures/*.json` are raw interaction traces
-- `.datalox/working/*.json` are immediate-use learned overlays
+The scripts under `scripts/` are reference implementation only. They are not required for normal pack use.

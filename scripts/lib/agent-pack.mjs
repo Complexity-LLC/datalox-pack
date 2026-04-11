@@ -8,6 +8,7 @@ const BASE_URL_ENV = "DATALOX_BASE_URL";
 const DEFAULT_WORKFLOW_ENV = "DATALOX_DEFAULT_WORKFLOW";
 const AGENT_PROFILE_ENV = "DATALOX_AGENT_PROFILE";
 const MODE_ENV = "DATALOX_MODE";
+const AUTHOR_ENV = "DATALOX_AUTHOR";
 
 async function fileExists(filePath) {
   try {
@@ -92,15 +93,8 @@ export async function loadPackConfig(cwd = process.cwd()) {
 
 export function resolvePackPaths(config, cwd = process.cwd()) {
   return {
-    skillsDir: path.resolve(cwd, config.paths.localSkillsDir),
-    docsDir: path.resolve(cwd, config.paths.localDocsDir),
-    viewsDir: path.resolve(cwd, config.paths.localViewsDir),
-    workingSkillsDir: path.resolve(cwd, config.paths.workingSkillsDir),
-    workingPatternsDir: path.resolve(cwd, config.paths.workingPatternsDir),
-    proposalsDir: path.resolve(cwd, config.writeback.proposalsDir),
-    proposedSkillsDir: path.resolve(cwd, config.writeback.proposedSkillsDir),
-    proposedPatternsDir: path.resolve(cwd, config.writeback.proposedPatternsDir),
-    capturesDir: path.resolve(cwd, config.writeback.capturesDir),
+    skillsDir: path.resolve(cwd, config.paths.skillsDir),
+    patternsDir: path.resolve(cwd, config.paths.patternsDir),
   };
 }
 
@@ -154,7 +148,19 @@ function slugify(value) {
     .slice(0, 80);
 }
 
+function normalizePath(value) {
+  return value.replaceAll("\\", "/");
+}
+
+function unique(values) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
 async function readDirJson(dirPath) {
+  if (!(await fileExists(dirPath))) {
+    return [];
+  }
+
   const entries = await readdir(dirPath, { withFileTypes: true });
   const jsonFiles = entries
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
@@ -168,52 +174,34 @@ async function readDirJson(dirPath) {
   );
 }
 
+async function readDirMarkdown(dirPath) {
+  if (!(await fileExists(dirPath))) {
+    return [];
+  }
+
+  const entries = await readdir(dirPath, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((entry) => path.join(dirPath, entry.name));
+}
+
 export async function countPackFiles(config, cwd = process.cwd()) {
   const paths = resolvePackPaths(config, cwd);
-
-  const [skills, docs, views, workingSkills, workingPatterns] = await Promise.all([
+  const [skills, patterns] = await Promise.all([
     readDirJson(paths.skillsDir),
-    readdir(paths.docsDir, { withFileTypes: true }),
-    readDirJson(paths.viewsDir),
-    readDirJson(paths.workingSkillsDir),
-    readDirJson(paths.workingPatternsDir),
+    readDirMarkdown(paths.patternsDir),
   ]);
 
   return {
-    approvedSkills: skills.length,
-    docs: docs.filter((entry) => entry.isFile()).length,
-    views: views.length,
-    workingSkills: workingSkills.length,
-    workingPatterns: workingPatterns.length,
+    skills: skills.length,
+    patterns: patterns.length,
   };
 }
 
 export async function listLocalSkills(config, cwd = process.cwd()) {
-  const { skillsDir, workingSkillsDir } = resolvePackPaths(config, cwd);
-  const [approvedSkills, workingSkills] = await Promise.all([
-    readDirJson(skillsDir),
-    readDirJson(workingSkillsDir),
-  ]);
-
-  const merged = new Map();
-
-  for (const entry of approvedSkills) {
-    const skillId = entry.value.id ?? entry.value.name ?? entry.filePath;
-    merged.set(skillId, {
-      ...entry,
-      layer: "approved",
-    });
-  }
-
-  for (const entry of workingSkills) {
-    const skillId = entry.value.id ?? entry.value.name ?? entry.filePath;
-    merged.set(skillId, {
-      ...entry,
-      layer: "working",
-    });
-  }
-
-  return [...merged.values()];
+  const { skillsDir } = resolvePackPaths(config, cwd);
+  return readDirJson(skillsDir);
 }
 
 export async function getLocalSkillById(config, skillId, cwd = process.cwd()) {
@@ -223,15 +211,6 @@ export async function getLocalSkillById(config, skillId, cwd = process.cwd()) {
 
   const skills = await listLocalSkills(config, cwd);
   return skills.find(({ value }) => value.id === skillId || value.name === skillId) ?? null;
-}
-
-export async function listWorkingPatterns(config, cwd = process.cwd()) {
-  const { workingPatternsDir } = resolvePackPaths(config, cwd);
-  const entries = await readDirJson(workingPatternsDir);
-  return entries.map((entry) => ({
-    ...entry,
-    layer: "working",
-  }));
 }
 
 function tokenize(value) {
@@ -254,10 +233,6 @@ function buildSkillText(skill) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-}
-
-function normalizePath(value) {
-  return value.replaceAll("\\", "/");
 }
 
 function parseGitChangedPaths(stdout) {
@@ -312,45 +287,55 @@ async function collectRepoContext(cwd) {
   };
 }
 
-function scoreRepoHints(skill, repoContext) {
+function collectRepoHintMatches(skill, repoContext) {
   const hints = skill.repoHints;
   if (!isRecord(hints)) {
-    return 0;
+    return {
+      files: [],
+      prefixes: [],
+      packageSignals: [],
+    };
   }
 
-  let score = 0;
   const changed = repoContext.changedPaths;
   const root = repoContext.rootPaths;
   const packageSignals = repoContext.packageSignals;
+  const matches = {
+    files: [],
+    prefixes: [],
+    packageSignals: [],
+  };
 
   for (const file of toArray(hints.files)) {
     const normalized = normalizePath(String(file));
-    if (changed.includes(normalized)) {
-      score += 70;
-    }
-    if (root.includes(normalized)) {
-      score += 35;
+    if (changed.includes(normalized) || root.includes(normalized)) {
+      matches.files.push(normalized);
     }
   }
 
   for (const prefix of toArray(hints.pathPrefixes)) {
     const normalized = normalizePath(String(prefix));
-    if (changed.some((value) => value.startsWith(normalized))) {
-      score += 60;
-    }
-    if (root.some((value) => value.startsWith(normalized.replace(/\/$/, "")))) {
-      score += 20;
+    if (
+      changed.some((value) => value.startsWith(normalized))
+      || root.some((value) => value.startsWith(normalized.replace(/\/$/, "")))
+    ) {
+      matches.prefixes.push(normalized);
     }
   }
 
   for (const signal of toArray(hints.packageSignals)) {
     const token = String(signal).toLowerCase();
     if (packageSignals.includes(token)) {
-      score += 25;
+      matches.packageSignals.push(token);
     }
   }
 
-  return score;
+  return matches;
+}
+
+function scoreRepoHints(skill, repoContext) {
+  const matches = collectRepoHintMatches(skill, repoContext);
+  return (matches.files.length * 70) + (matches.prefixes.length * 60) + (matches.packageSignals.length * 25);
 }
 
 function scoreSkill(skill, query, repoContext) {
@@ -370,8 +355,7 @@ function scoreSkill(skill, query, repoContext) {
   }
 
   const tokens = tokenize([query.task, query.step].filter(Boolean).join(" "));
-  const uniqueTokens = new Set(tokens);
-  for (const token of uniqueTokens) {
+  for (const token of new Set(tokens)) {
     if (text.includes(token)) {
       score += 8;
     }
@@ -379,10 +363,6 @@ function scoreSkill(skill, query, repoContext) {
 
   if (query.task && text.includes(query.task.toLowerCase())) {
     score += 20;
-  }
-
-  if (query.layer === "working") {
-    score += 3;
   }
 
   const repoHintWeight = query.skill || query.workflow
@@ -399,30 +379,113 @@ async function readTextIfPresent(filePath) {
   return fileExists(filePath) ? readFile(filePath, "utf8") : null;
 }
 
-async function loadDocRef(cwd, ref, includeRaw) {
-  if (ref.kind !== "path") {
-    return {
-      kind: ref.kind,
-      value: ref.value,
-      viewPath: ref.viewPath ?? null,
-      view: null,
-      rawDocPath: null,
-      rawContent: null,
-    };
+function parsePatternDoc(relativePath, content, includeContent) {
+  const lines = content.split("\n");
+  const title = lines.find((line) => line.startsWith("# "))?.replace(/^# /, "").trim()
+    ?? path.basename(relativePath, ".md");
+  const metadata = {};
+  let activeSection = null;
+  const sections = {};
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+
+    const metadataMatch = line.match(/^- ([^:]+):\s*(.+)$/);
+    if (metadataMatch && activeSection === null) {
+      metadata[metadataMatch[1].toLowerCase()] = metadataMatch[2];
+      continue;
+    }
+
+    const sectionMatch = line.match(/^##\s+(.+)$/);
+    if (sectionMatch) {
+      activeSection = sectionMatch[1].toLowerCase();
+      if (!sections[activeSection]) {
+        sections[activeSection] = [];
+      }
+      continue;
+    }
+
+    if (activeSection) {
+      sections[activeSection].push(line);
+    }
   }
 
-  const rawDocPath = path.resolve(cwd, ref.value);
-  const viewPath = ref.viewPath ? path.resolve(cwd, ref.viewPath) : null;
-  const view = viewPath ? await readJson(viewPath) : null;
-  const rawContent = includeRaw ? await readTextIfPresent(rawDocPath) : null;
+  const signal = (sections.signal ?? []).join(" ").trim();
+  const interpretation = (sections.interpretation ?? []).join(" ").trim();
+  const recommendedAction = (
+    sections["recommended action"]
+    ?? sections.action
+    ?? []
+  ).join(" ").trim();
+  const summary = recommendedAction || interpretation || signal;
 
   return {
-    kind: ref.kind,
-    value: ref.value,
-    viewPath: ref.viewPath ?? null,
-    view,
-    rawDocPath,
-    rawContent,
+    path: relativePath,
+    title,
+    summary,
+    workflow: metadata.workflow ?? null,
+    skillId: metadata.skill ?? null,
+    tags: metadata.tags ? String(metadata.tags).split(",").map((value) => value.trim()).filter(Boolean) : [],
+    signal,
+    interpretation,
+    recommendedAction,
+    content: includeContent ? content : null,
+  };
+}
+
+async function loadPatternDoc(cwd, patternPath, includeContent) {
+  const absolutePath = path.resolve(cwd, patternPath);
+  const content = await readFile(absolutePath, "utf8");
+  return parsePatternDoc(patternPath, content, includeContent);
+}
+
+function explainSkillMatch(skill, query, repoContext) {
+  const reasons = [];
+
+  if (query.skill && (skill.id === query.skill || skill.name === query.skill)) {
+    reasons.push(`explicit skill match: ${query.skill}`);
+  }
+
+  if (query.workflow && skill.workflow === query.workflow) {
+    reasons.push(`workflow match: ${query.workflow}`);
+  }
+
+  const queryTokens = tokenize([query.task, query.step].filter(Boolean).join(" "));
+  const skillText = buildSkillText(skill);
+  const matchedTokens = unique(queryTokens.filter((token) => skillText.includes(token))).slice(0, 5);
+  if (matchedTokens.length > 0) {
+    reasons.push(`task overlap: ${matchedTokens.join(", ")}`);
+  }
+
+  const repoHintMatches = collectRepoHintMatches(skill, repoContext);
+  if (repoHintMatches.files.length > 0) {
+    reasons.push(`repo file hints: ${repoHintMatches.files.join(", ")}`);
+  }
+  if (repoHintMatches.prefixes.length > 0) {
+    reasons.push(`repo path hints: ${repoHintMatches.prefixes.join(", ")}`);
+  }
+  if (repoHintMatches.packageSignals.length > 0) {
+    reasons.push(`package hints: ${repoHintMatches.packageSignals.join(", ")}`);
+  }
+
+  return reasons;
+}
+
+function buildLoopGuidance(patternDocs, whyMatched) {
+  return {
+    whyMatched,
+    whatToDoNow: unique(patternDocs.map((doc) => doc.recommendedAction).filter(Boolean)),
+    watchFor: unique(patternDocs.map((doc) => doc.signal).filter(Boolean)),
+    interpretations: unique(patternDocs.map((doc) => doc.interpretation).filter(Boolean)),
+    supportingPatterns: patternDocs.map((doc) => ({
+      path: doc.path,
+      title: doc.title,
+      interpretation: doc.interpretation || null,
+      recommendedAction: doc.recommendedAction || null,
+    })),
   };
 }
 
@@ -433,22 +496,20 @@ export async function resolveLocalKnowledge(
     step,
     skill,
     limit = 3,
-    includeRaw = false,
+    includeContent = false,
   },
   cwd = process.cwd(),
 ) {
   const { config, sourcePath, localOverridePath } = await loadPackConfig(cwd);
-  const [localSkills, workingPatterns, repoContext] = await Promise.all([
+  const [localSkills, repoContext] = await Promise.all([
     listLocalSkills(config, cwd),
-    listWorkingPatterns(config, cwd),
     collectRepoContext(cwd),
   ]);
 
   const ranked = localSkills
-    .map(({ filePath, value, layer }) => ({
+    .map(({ filePath, value }) => ({
       filePath,
       skill: value,
-      layer,
       score: scoreSkill(
         value,
         {
@@ -456,7 +517,6 @@ export async function resolveLocalKnowledge(
           workflow,
           step,
           skill,
-          layer,
         },
         repoContext,
       ),
@@ -476,39 +536,37 @@ export async function resolveLocalKnowledge(
       : "repo_context";
 
   const matches = await Promise.all(
-    ranked.map(async (item) => ({
-      score: item.score,
-      skillLayer: item.layer,
-      skillPath: item.filePath,
-      skill: item.skill,
-      defaultDoc: item.skill.defaultDocRef
-        ? await loadDocRef(cwd, item.skill.defaultDocRef, includeRaw)
-        : null,
-      supportingDocs: await Promise.all(
-        toArray(item.skill.supportingDocRefs).map((ref) => loadDocRef(cwd, ref, includeRaw)),
-      ),
-      linkedPatterns: workingPatterns
-        .filter(({ value }) => value.workflow === effectiveWorkflow)
-        .filter(({ value }) => {
-          if (value.skillId && item.skill.id) {
-            return value.skillId === item.skill.id;
-          }
-          if (Array.isArray(item.skill.patternIds) && item.skill.patternIds.length > 0) {
-            return item.skill.patternIds.includes(value.id);
-          }
-          return false;
-        })
-        .map(({ filePath, value, layer }) => ({
-          filePath,
-          layer,
-          pattern: value,
-        })),
-    })),
+    ranked.map(async (item) => {
+      const patternDocs = await Promise.all(
+        toArray(item.skill.patternPaths).map((patternPath) =>
+          loadPatternDoc(cwd, patternPath, includeContent)
+        ),
+      );
+      const whyMatched = explainSkillMatch(
+        item.skill,
+        {
+          task,
+          workflow,
+          step,
+          skill,
+        },
+        repoContext,
+      );
+
+      return {
+        score: item.score,
+        skillPath: item.filePath,
+        skill: item.skill,
+        patternDocs,
+        loopGuidance: buildLoopGuidance(patternDocs, whyMatched),
+      };
+    }),
   );
 
   return {
     mode: config.mode,
     runtimeEnabled: config.runtime.enabled,
+    detectOnEveryLoop: config.agent.detectOnEveryLoop,
     nativeSkillPolicy: config.agent.nativeSkillPolicy,
     selectionBasis,
     configPath: sourcePath,
@@ -519,20 +577,8 @@ export async function resolveLocalKnowledge(
   };
 }
 
-function currentTimestamp() {
-  return new Date().toISOString().replace(/[:.]/g, "-");
-}
-
 async function ensureDir(dirPath) {
   await mkdir(dirPath, { recursive: true });
-}
-
-async function writeProposalFile(baseDir, stem, payload) {
-  await ensureDir(baseDir);
-  const fileName = `${currentTimestamp()}--${slugify(stem)}.json`;
-  const filePath = path.join(baseDir, fileName);
-  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-  return filePath;
 }
 
 async function writeStableJsonFile(baseDir, stem, payload) {
@@ -542,187 +588,154 @@ async function writeStableJsonFile(baseDir, stem, payload) {
   return filePath;
 }
 
-function resolveAuthor(config) {
-  return process.env[config.writeback.authorEnv] || process.env.USER || "unknown";
+async function writeStableTextFile(baseDir, stem, content) {
+  await ensureDir(baseDir);
+  const filePath = path.join(baseDir, `${slugify(stem)}.md`);
+  await writeFile(filePath, content, "utf8");
+  return filePath;
 }
 
-export async function writePatternProposal(
+function resolveAuthor() {
+  return process.env[AUTHOR_ENV] || process.env.USER || "unknown";
+}
+
+export async function writePatternDoc(
   {
-    workflow,
+    id,
     title,
+    workflow,
     signal,
     interpretation,
     recommendedAction,
     skillId,
-    docPath,
     tags = [],
   },
   cwd = process.cwd(),
 ) {
   const { config } = await loadPackConfig(cwd);
-  const { proposedPatternsDir } = resolvePackPaths(config, cwd);
-
-  const payload = {
-    version: 1,
-    proposalType: "pattern",
-    status: "proposed",
-    createdAt: new Date().toISOString(),
-    author: resolveAuthor(config),
-    workflow,
-    title,
+  const { patternsDir } = resolvePackPaths(config, cwd);
+  const stableId = id ?? `${workflow}-${slugify(title)}`;
+  const content = [
+    `# ${title}`,
+    "",
+    `- Workflow: ${workflow}`,
+    skillId ? `- Skill: ${skillId}` : null,
+    tags.length > 0 ? `- Tags: ${tags.join(", ")}` : null,
+    "",
+    "## Signal",
+    "",
     signal,
+    "",
+    "## Interpretation",
+    "",
     interpretation,
+    "",
+    "## Recommended Action",
+    "",
     recommendedAction,
-    skillId: skillId ?? null,
-    docPath: docPath ?? null,
-    tags,
-  };
+    "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
-  const filePath = await writeProposalFile(proposedPatternsDir, title, payload);
-  return { filePath, payload };
-}
+  const filePath = await writeStableTextFile(patternsDir, stableId, content);
+  const relativePath = normalizePath(path.relative(cwd, filePath));
 
-export async function writeSkillProposal(
-  {
-    id,
-    name,
-    displayName,
-    workflow,
-    trigger,
-    description,
-    defaultDoc,
-    supportingDocs = [],
-    tags = [],
-  },
-  cwd = process.cwd(),
-) {
-  const { config } = await loadPackConfig(cwd);
-  const { proposedSkillsDir } = resolvePackPaths(config, cwd);
-
-  const payload = {
-    version: 1,
-    proposalType: "skill",
-    status: "proposed",
-    createdAt: new Date().toISOString(),
-    author: resolveAuthor(config),
-    skill: {
+  return {
+    filePath,
+    relativePath,
+    payload: {
       version: 1,
-      id,
-      name,
-      displayName: displayName ?? name,
+      id: stableId,
+      title,
       workflow,
-      trigger,
-      description,
-      defaultDocRef: {
-        kind: "path",
-        value: defaultDoc,
-      },
-      supportingDocRefs: supportingDocs.map((docPath) => ({
-        kind: "path",
-        value: docPath,
-      })),
+      signal,
+      interpretation,
+      recommendedAction,
+      skillId: skillId ?? null,
       tags,
-      status: "proposed",
+      author: resolveAuthor(),
+      updatedAt: new Date().toISOString(),
     },
   };
-
-  const filePath = await writeProposalFile(proposedSkillsDir, name, payload);
-  return { filePath, payload };
 }
 
-export async function writeWorkingPattern(
+export async function writeSkill(
   {
     id,
-    title,
-    workflow,
-    signal,
-    interpretation,
-    recommendedAction,
-    skillId,
-    tags = [],
-  },
-  cwd = process.cwd(),
-) {
-  const { config } = await loadPackConfig(cwd);
-  const { workingPatternsDir } = resolvePackPaths(config, cwd);
-  const stableId = id ?? slugify(title);
-  const filePath = path.join(workingPatternsDir, `${slugify(stableId)}.json`);
-  const existing = (await fileExists(filePath)) ? await readJson(filePath) : null;
-
-  const payload = {
-    version: 1,
-    layer: "working",
-    id: stableId,
-    title,
-    workflow,
-    signal,
-    interpretation,
-    recommendedAction,
-    skillId: skillId ?? null,
-    tags,
-    createdAt: existing?.createdAt ?? new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    author: resolveAuthor(config),
-  };
-
-  return {
-    filePath: await writeStableJsonFile(workingPatternsDir, stableId, payload),
-    payload,
-  };
-}
-
-export async function writeWorkingSkill(
-  {
-    id,
+    filePath,
     name,
     displayName,
     workflow,
     trigger,
     description,
-    defaultDoc,
-    defaultDocRef,
-    supportingDocs = [],
-    supportingDocRefs,
-    patternIds = [],
+    patternPaths = [],
+    repoHints,
     tags = [],
+    status,
   },
   cwd = process.cwd(),
 ) {
   const { config } = await loadPackConfig(cwd);
-  const { workingSkillsDir } = resolvePackPaths(config, cwd);
-  const stableId = id ?? slugify(name);
-  const filePath = path.join(workingSkillsDir, `${slugify(stableId)}.json`);
-  const existing = (await fileExists(filePath)) ? await readJson(filePath) : null;
+  const { skillsDir } = resolvePackPaths(config, cwd);
+  const stableId = id ?? `${workflow}.${slugify(name)}`;
+  const stableName = name ?? slugify(displayName ?? stableId);
+  const existingById = await getLocalSkillById(config, stableId, cwd);
+  const existingByName = !existingById && stableName
+    ? await getLocalSkillById(config, stableName, cwd)
+    : null;
+  const existingEntry = existingById ?? existingByName;
+  const resolvedFilePath = filePath
+    ? path.isAbsolute(filePath)
+      ? filePath
+      : path.resolve(cwd, filePath)
+    : existingEntry?.filePath ?? path.join(skillsDir, `${slugify(stableName)}.json`);
+  const existing = existingEntry?.value ?? ((await fileExists(resolvedFilePath)) ? await readJson(resolvedFilePath) : null);
 
   const payload = {
     version: 1,
-    layer: "working",
     id: stableId,
-    name,
-    displayName: displayName ?? name,
+    name: stableName,
+    displayName: displayName ?? stableName,
     workflow,
     trigger,
     description,
-    defaultDocRef: defaultDocRef ?? {
-      kind: "path",
-      value: defaultDoc,
-    },
-    supportingDocRefs: supportingDocRefs ?? supportingDocs.map((docPath) => ({
-      kind: "path",
-      value: docPath,
-    })),
-    patternIds,
-    tags,
-    status: "working",
-    createdAt: existing?.createdAt ?? new Date().toISOString(),
+    patternPaths: unique([...(existing?.patternPaths ?? []), ...patternPaths]),
+    repoHints: repoHints ?? existing?.repoHints,
+    tags: unique([...(existing?.tags ?? []), ...tags]),
+    status: status ?? existing?.status ?? "generated",
+    author: resolveAuthor(),
     updatedAt: new Date().toISOString(),
-    author: resolveAuthor(config),
   };
 
   return {
-    filePath: await writeStableJsonFile(workingSkillsDir, stableId, payload),
+    filePath: await writeFile(resolvedFilePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8").then(() => resolvedFilePath),
     payload,
   };
+}
+
+export async function attachPatternToSkill(
+  {
+    skillId,
+    patternPath,
+  },
+  cwd = process.cwd(),
+) {
+  const { config } = await loadPackConfig(cwd);
+  const sourceSkill = await getLocalSkillById(config, skillId, cwd);
+
+  if (!sourceSkill?.value) {
+    throw new Error(`Skill not found: ${skillId}`);
+  }
+
+  return writeSkill(
+    {
+      ...sourceSkill.value,
+      filePath: sourceSkill.filePath,
+      patternPaths: [...(sourceSkill.value.patternPaths ?? []), patternPath],
+    },
+    cwd,
+  );
 }
 
 function firstNonEmpty(values) {
@@ -747,10 +760,7 @@ function sentenceFromTranscript(transcript) {
     return null;
   }
 
-  const normalized = transcript
-    .replace(/\s+/g, " ")
-    .trim();
-
+  const normalized = transcript.replace(/\s+/g, " ").trim();
   if (!normalized) {
     return null;
   }
@@ -759,41 +769,33 @@ function sentenceFromTranscript(transcript) {
   return shortenSentence(firstSentence);
 }
 
-function derivePatternFields(capture) {
+function derivePatternFields(input) {
   const title = firstNonEmpty([
-    capture.patternHint?.title,
-    capture.summary,
-    capture.observations?.[0],
-    capture.task,
-    capture.step,
+    input.title,
+    input.summary,
+    input.observations?.[0],
+    input.task,
+    input.step,
     "interaction-pattern",
   ]) ?? "interaction-pattern";
 
   const signal = firstNonEmpty([
-    capture.patternHint?.signal,
-    capture.observations?.[0],
-    sentenceFromTranscript(capture.transcript),
-    capture.task,
+    input.signal,
+    input.observations?.[0],
+    sentenceFromTranscript(input.transcript),
+    input.task,
     title,
   ]) ?? title;
 
   const interpretation = firstNonEmpty([
-    capture.patternHint?.interpretation,
-    capture.outcome === "success"
-      ? `This interaction surfaced a reusable workflow pattern for ${capture.workflow}.`
-      : capture.outcome === "escalated"
-        ? `This interaction required escalation and should be treated as a caution pattern for ${capture.workflow}.`
-        : `This interaction exposed an ambiguity or blocker in ${capture.workflow}.`,
-  ]) ?? `Interaction pattern for ${capture.workflow}`;
+    input.interpretation,
+    `This interaction exposed a reusable pattern for ${input.workflow}.`,
+  ]) ?? `Pattern for ${input.workflow}`;
 
   const recommendedAction = firstNonEmpty([
-    capture.patternHint?.recommendedAction,
-    capture.outcome === "success"
-      ? "Reuse this pattern before deviating from the current skill."
-      : capture.outcome === "escalated"
-        ? "Escalate before proceeding when this signal appears again."
-        : "Inspect the linked docs and resolve the ambiguity before continuing.",
-  ]) ?? "Inspect the linked docs before continuing.";
+    input.recommendedAction,
+    "Reuse this pattern before changing the current workflow.",
+  ]) ?? "Reuse this pattern before continuing.";
 
   return {
     title: shortenSentence(title, 120),
@@ -803,7 +805,7 @@ function derivePatternFields(capture) {
   };
 }
 
-export async function writeInteractionCapture(
+export async function learnFromInteraction(
   {
     task,
     workflow,
@@ -812,18 +814,19 @@ export async function writeInteractionCapture(
     summary,
     observations = [],
     transcript,
-    outcome = "success",
     tags = [],
-    patternHint = {},
+    title,
+    signal,
+    interpretation,
+    recommendedAction,
   },
   cwd = process.cwd(),
 ) {
   const { config } = await loadPackConfig(cwd);
-  const { capturesDir } = resolvePackPaths(config, cwd);
 
-  let resolvedSkill = null;
+  let sourceSkill = null;
   if (skillId) {
-    resolvedSkill = await getLocalSkillById(config, skillId, cwd);
+    sourceSkill = await getLocalSkillById(config, skillId, cwd);
   } else {
     const resolution = await resolveLocalKnowledge(
       {
@@ -835,145 +838,208 @@ export async function writeInteractionCapture(
       cwd,
     );
     if (resolution.matches.length > 0) {
-      const [match] = resolution.matches;
-      resolvedSkill = {
-        id: match.skill.id,
-        name: match.skill.name,
-        workflow: match.skill.workflow,
-        layer: match.skillLayer,
-        filePath: match.skillPath,
+      sourceSkill = {
+        value: resolution.matches[0].skill,
+        filePath: resolution.matches[0].skillPath,
       };
     }
   }
 
   const effectiveWorkflow = workflow
-    || resolvedSkill?.value?.workflow
-    || resolvedSkill?.workflow
+    || sourceSkill?.value?.workflow
     || config.runtime.defaultWorkflow;
 
-  const payload = {
-    version: 1,
-    captureType: "interaction",
-    status: "captured",
-    createdAt: new Date().toISOString(),
-    author: resolveAuthor(config),
-    task: task ?? null,
+  const derived = derivePatternFields({
     workflow: effectiveWorkflow,
-    step: step ?? null,
-    summary: summary ?? null,
+    task,
+    step,
+    summary,
     observations,
-    transcript: transcript ?? null,
-    outcome,
-    tags,
-    resolvedSkill: resolvedSkill
-      ? ("value" in resolvedSkill
-        ? {
-            id: resolvedSkill.value.id,
-            name: resolvedSkill.value.name,
-            workflow: resolvedSkill.value.workflow,
-            layer: resolvedSkill.layer,
-            filePath: resolvedSkill.filePath,
-          }
-        : resolvedSkill)
-      : null,
-    patternHint: {
-      title: patternHint.title ?? null,
-      signal: patternHint.signal ?? null,
-      interpretation: patternHint.interpretation ?? null,
-      recommendedAction: patternHint.recommendedAction ?? null,
-    },
-  };
+    transcript,
+    title,
+    signal,
+    interpretation,
+    recommendedAction,
+  });
 
-  const stem = firstNonEmpty([
-    payload.patternHint.title,
-    payload.summary,
-    payload.task,
-    payload.step,
-    payload.workflow,
-    "interaction",
-  ]) ?? "interaction";
-
-  const filePath = await writeProposalFile(capturesDir, stem, payload);
-  return { filePath, payload };
-}
-
-export async function materializeInteractionCapture(
-  {
-    capturePath,
-  },
-  cwd = process.cwd(),
-) {
-  const absoluteCapturePath = path.isAbsolute(capturePath)
-    ? capturePath
-    : path.resolve(cwd, capturePath);
-
-  const capture = await readJson(absoluteCapturePath);
-  const { config } = await loadPackConfig(cwd);
-
-  const resolvedSkillId = capture.resolvedSkill?.id ?? capture.resolvedSkill?.skillId ?? null;
-  const sourceSkill = resolvedSkillId
-    ? await getLocalSkillById(config, resolvedSkillId, cwd)
-    : null;
-
-  const derived = derivePatternFields(capture);
-  const patternIdBase = resolvedSkillId
-    ? `${resolvedSkillId}-${derived.title}`
-    : `${capture.workflow}-${derived.title}`;
-  const patternId = slugify(patternIdBase);
-
-  const patternResult = await writeWorkingPattern(
+  const pattern = await writePatternDoc(
     {
-      id: patternId,
       title: derived.title,
-      workflow: capture.workflow,
+      workflow: effectiveWorkflow,
       signal: derived.signal,
       interpretation: derived.interpretation,
       recommendedAction: derived.recommendedAction,
-      skillId: resolvedSkillId,
-      tags: Array.from(new Set([...(capture.tags ?? []), capture.workflow, "captured_interaction"])),
+      skillId: sourceSkill?.value?.id,
+      tags: unique([...tags, effectiveWorkflow]),
     },
     cwd,
   );
 
-  let skillResult = null;
+  let skill = null;
   if (sourceSkill?.value) {
-    const mergedPatternIds = Array.from(
-      new Set([...(sourceSkill.value.patternIds ?? []), patternResult.payload.id]),
-    );
-
-    skillResult = await writeWorkingSkill(
+    skill = await writeSkill(
       {
-        id: sourceSkill.value.id,
-        name: sourceSkill.value.name,
-        displayName: sourceSkill.value.displayName,
-        workflow: sourceSkill.value.workflow,
-        trigger: sourceSkill.value.trigger,
-        description: sourceSkill.value.description,
-        defaultDocRef: sourceSkill.value.defaultDocRef,
-        supportingDocRefs: sourceSkill.value.supportingDocRefs ?? [],
-        patternIds: mergedPatternIds,
-        tags: sourceSkill.value.tags ?? [],
+        ...sourceSkill.value,
+        filePath: sourceSkill.filePath,
+        patternPaths: [...(sourceSkill.value.patternPaths ?? []), pattern.relativePath],
+      },
+      cwd,
+    );
+  } else {
+    const generatedName = slugify(firstNonEmpty([task, step, derived.title, "generated-skill"]) ?? "generated-skill");
+    skill = await writeSkill(
+      {
+        id: `${effectiveWorkflow}.${generatedName}`,
+        name: generatedName,
+        displayName: derived.title,
+        workflow: effectiveWorkflow,
+        trigger: firstNonEmpty([task, step, `Use when ${derived.signal}`]),
+        description: firstNonEmpty([summary, derived.interpretation]),
+        patternPaths: [pattern.relativePath],
+        tags: unique([...tags, effectiveWorkflow, "generated"]),
+        status: "generated",
       },
       cwd,
     );
   }
 
-  const nextResolution = await resolveLocalKnowledge(
+  const resolution = await resolveLocalKnowledge(
     {
-      task: capture.task ?? "",
-      workflow: capture.workflow,
-      step: capture.step ?? undefined,
-      skill: resolvedSkillId ?? undefined,
+      task: task ?? derived.title,
+      workflow: effectiveWorkflow,
+      skill: skill.payload.id,
       limit: 1,
     },
     cwd,
   );
 
   return {
-    capturePath: absoluteCapturePath,
-    capture,
-    pattern: patternResult,
-    skill: skillResult,
-    resolution: nextResolution,
+    pattern,
+    skill,
+    resolution,
+  };
+}
+
+export async function lintPack(cwd = process.cwd()) {
+  const { config } = await loadPackConfig(cwd);
+  const { patternsDir } = resolvePackPaths(config, cwd);
+  const [skills, patternFiles] = await Promise.all([
+    listLocalSkills(config, cwd),
+    readDirMarkdown(patternsDir),
+  ]);
+
+  const issues = [];
+  const referencedPatternPaths = new Set();
+  const nameKeys = new Map();
+  const triggerKeys = new Map();
+
+  for (const { filePath, value: skill } of skills) {
+    const nameKey = `${skill.workflow}::${skill.name}`;
+    const triggerKey = `${skill.workflow}::${skill.trigger}`;
+
+    if (!Array.isArray(skill.patternPaths) || skill.patternPaths.length === 0) {
+      issues.push({
+        level: "error",
+        code: "skill_missing_patterns",
+        skillId: skill.id,
+        path: normalizePath(path.relative(cwd, filePath)),
+        message: "Skill must declare at least one pattern path.",
+      });
+    }
+
+    if (nameKeys.has(nameKey)) {
+      issues.push({
+        level: "warning",
+        code: "duplicate_skill_name",
+        skillId: skill.id,
+        path: normalizePath(path.relative(cwd, filePath)),
+        message: `Another skill already uses workflow/name ${nameKey}.`,
+      });
+    } else {
+      nameKeys.set(nameKey, filePath);
+    }
+
+    if (triggerKeys.has(triggerKey)) {
+      issues.push({
+        level: "warning",
+        code: "overlapping_skill_trigger",
+        skillId: skill.id,
+        path: normalizePath(path.relative(cwd, filePath)),
+        message: `Another skill already uses workflow/trigger ${triggerKey}.`,
+      });
+    } else {
+      triggerKeys.set(triggerKey, filePath);
+    }
+
+    for (const patternPath of toArray(skill.patternPaths)) {
+      referencedPatternPaths.add(normalizePath(patternPath));
+      const absolutePatternPath = path.resolve(cwd, patternPath);
+      if (!(await fileExists(absolutePatternPath))) {
+        issues.push({
+          level: "error",
+          code: "missing_pattern_doc",
+          skillId: skill.id,
+          path: normalizePath(path.relative(cwd, filePath)),
+          message: `Pattern doc not found: ${patternPath}`,
+        });
+        continue;
+      }
+
+      const parsed = parsePatternDoc(
+        normalizePath(patternPath),
+        await readFile(absolutePatternPath, "utf8"),
+        false,
+      );
+
+      if (!parsed.signal) {
+        issues.push({
+          level: "error",
+          code: "pattern_missing_signal",
+          skillId: skill.id,
+          path: normalizePath(patternPath),
+          message: "Pattern doc is missing a Signal section.",
+        });
+      }
+      if (!parsed.interpretation) {
+        issues.push({
+          level: "error",
+          code: "pattern_missing_interpretation",
+          skillId: skill.id,
+          path: normalizePath(patternPath),
+          message: "Pattern doc is missing an Interpretation section.",
+        });
+      }
+      if (!parsed.recommendedAction) {
+        issues.push({
+          level: "error",
+          code: "pattern_missing_action",
+          skillId: skill.id,
+          path: normalizePath(patternPath),
+          message: "Pattern doc is missing a Recommended Action section.",
+        });
+      }
+    }
+  }
+
+  for (const filePath of patternFiles) {
+    const relativePath = normalizePath(path.relative(cwd, filePath));
+    if (!referencedPatternPaths.has(relativePath)) {
+      issues.push({
+        level: "warning",
+        code: "orphan_pattern_doc",
+        path: relativePath,
+        message: "Pattern doc is not referenced by any skill.",
+      });
+    }
+  }
+
+  return {
+    ok: issues.every((issue) => issue.level !== "error"),
+    issueCount: issues.length,
+    issues,
+    counts: {
+      skills: skills.length,
+      patternDocs: patternFiles.length,
+    },
   };
 }

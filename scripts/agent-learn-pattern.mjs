@@ -1,6 +1,6 @@
 import process from "node:process";
 
-import { parseArgs, writeWorkingPattern } from "./lib/agent-pack.mjs";
+import { attachPatternToSkill, parseArgs, writePatternDoc } from "./lib/agent-pack.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 
@@ -9,7 +9,7 @@ if (!args.workflow || !args.title || !args.signal || !args.interpretation || !ar
   process.exit(1);
 }
 
-const result = await writeWorkingPattern(
+const pattern = await writePatternDoc(
   {
     id: typeof args.id === "string" ? args.id : undefined,
     title: args.title,
@@ -23,8 +23,23 @@ const result = await writeWorkingPattern(
   process.cwd(),
 );
 
+const skill = typeof args.skill === "string"
+  ? await attachPatternToSkill(
+    {
+      skillId: args.skill,
+      patternPath: pattern.relativePath,
+    },
+    process.cwd(),
+  )
+  : null;
+
+const result = { pattern, skill };
+
 if (args.json) {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 } else {
-  process.stdout.write(`Working pattern written: ${result.filePath}\n`);
+  process.stdout.write(`Pattern doc written: ${pattern.filePath}\n`);
+  if (skill) {
+    process.stdout.write(`Skill updated: ${skill.filePath}\n`);
+  }
 }

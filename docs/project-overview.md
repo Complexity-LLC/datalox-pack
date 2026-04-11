@@ -1,64 +1,39 @@
 # Project Overview
 
-This repo is the portable, public side of Datalox.
+This repo is the portable public side of Datalox.
 
-Its purpose is to make the knowledge layer:
+The current version is intentionally small.
 
-- cloneable
-- inspectable
-- writable by agents
-- usable without infrastructure
+## What It Is
 
-## Core Model
+Datalox gives an agent two repo-local things:
 
-The durable objects here are:
+- `Skill`: a lightweight entrypoint for a task or workflow
+- `Pattern Doc`: the reusable judgment or procedure a skill points to
 
-- `Skill`: an entrypoint for a task or workflow
-- `Doc`: the source of truth
-- `View`: a materialized agent-facing projection of a doc
-- `Capture`: a raw interaction trace
-- `Working Pattern`: immediately usable learned behavior
-
-The flow is:
+The loop is:
 
 ```text
-Skill -> Doc -> View
-Interaction -> Capture -> Working Pattern -> Working Skill
+current task -> detect skill -> read pattern docs -> act
+                           -> patch when needed
+                           -> lint after patch
 ```
 
-## Retrieval
+## What Gets Written
 
-Retrieval is local-first:
+When the agent learns something reusable:
 
-1. select a skill from task text or repo context
-2. read its materialized view
-3. read raw docs only if needed
-4. apply working overlays when they exist
+```text
+interaction -> pattern doc -> skill update
+```
 
-## Learning
+Generated skills stay in `skills/`.
+Pattern docs live in `.datalox/patterns/`.
 
-Learning is also local-first:
+## Why It Is So Small
 
-1. capture a repeated interaction
-2. materialize a working pattern
-3. attach it to a working skill overlay
-4. reuse it on the next resolve call
+This repo is for proving one thing first:
 
-## Why This Repo Exists
+an agent can detect the right repo-local skill every loop, use linked pattern docs immediately, and keep the graph healthy with lint.
 
-This repo should stay focused on:
-
-- pack format
-- local retrieval
-- local learning
-- agent-facing instructions
-
-The backend repo should own:
-
-- hosted retrieval/runtime APIs
-- indexing and storage infrastructure
-- service-side context compilation
-- contributor and permission logic
-
-The backend should implement compatibility with this pack.
-This pack should not depend on the backend to work.
+Everything else is secondary until that works reliably.

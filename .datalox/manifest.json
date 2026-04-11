@@ -1,8 +1,7 @@
 {
   "version": 1,
-  "protocolVersion": "pack_v0",
   "kind": "portable_knowledge_pack",
-  "name": "Datalox Knowledge Runtime",
+  "name": "Datalox Pack",
   "mode": "repo_only",
   "runtimeRequired": false,
   "configPath": ".datalox/config.json",
@@ -12,16 +11,11 @@
     "CLAUDE.md"
   ],
   "entrypoints": {
-    "skillsDir": ".datalox/skills",
-    "workingSkillsDir": ".datalox/working/skills",
-    "workingPatternsDir": ".datalox/working/patterns",
-    "viewsDir": ".datalox/views",
-    "docsDir": ".datalox/docs",
-    "capturesDir": ".datalox/captures",
-    "proposalsDir": ".datalox/proposals",
-    "conformanceDir": ".datalox/conformance"
+    "skillsDir": "skills",
+    "patternsDir": ".datalox/patterns"
   },
   "startup": {
+    "readOnEveryLoop": true,
     "readOrder": [
       ".datalox/config.local.json",
       ".datalox/config.json",
@@ -29,7 +23,7 @@
       "AGENTS.md",
       "CLAUDE.md"
     ],
-    "autoSelectionSignals": [
+    "skillSelectionSignals": [
       "current task text",
       "current workflow if known",
       "git changed paths when available",
@@ -39,23 +33,7 @@
   },
   "agentRules": {
     "preserveNativeSkills": true,
-    "preferMaterializedViews": true,
-    "captureInteractionsTo": ".datalox/captures",
-    "writeImmediateUseKnowledgeTo": ".datalox/working",
-    "writeReviewCandidatesTo": ".datalox/proposals"
-  },
-  "conformancePaths": [
-    "docs/conformance.md",
-    ".datalox/conformance/resolve-approved-skill.json",
-    ".datalox/conformance/learn-working-pattern.json",
-    ".datalox/conformance/refresh-working-skill.json"
-  ],
-  "referenceImplementation": {
-    "optional": true,
-    "paths": [
-      "scripts/agent-bootstrap.mjs",
-      "scripts/agent-resolve.mjs",
-      "scripts/agent-learn-from-interaction.mjs"
-    ]
+    "generatedSkillsDir": "skills",
+    "patternDocsDir": ".datalox/patterns"
   }
 }

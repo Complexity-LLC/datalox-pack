@@ -1,28 +1,31 @@
 # Datalox Pack
 
-This repo is the public portable Datalox pack.
+This repo is a portable Datalox pack for agents.
 
-It is designed to work with no install requirement. The pack files are the
-interface. Another agent should be able to use this repo after `git clone` by
-reading the contract files directly.
+The current version is intentionally narrow:
 
-It owns the repo-native knowledge contract:
+- detect a skill on every agent loop
+- expose actionable guidance from linked pattern docs
+- keep generated skills in `skills/`
+- keep reusable pattern docs in `.datalox/patterns/`
+- lint the skill-pattern graph for broken links and invalid pattern docs
 
-- `.datalox/config.json`
-- `.datalox/manifest.json`
-- `.datalox/skills/`
-- `.datalox/docs/`
-- `.datalox/views/`
-- `.datalox/captures/`
-- `.datalox/working/`
-- `.datalox/proposals/`
+No server is required.
 
-This repo is not the hosted backend/runtime service.
-The backend should live in a separate repo and implement compatibility with this pack format.
+## Core Loop
 
-## No-Install Path
+The pack is built around one minimal loop:
 
-Read these files in order:
+1. `detect`
+   Find the best matching skill in `skills/` from task text, workflow, and repo context.
+2. `use`
+   Read the linked pattern docs and surface `why matched`, `what to do now`, and `watch for`.
+3. `patch`
+   When the agent finds a reusable gap, write a pattern doc and update or create a skill.
+4. `lint`
+   Check that the skill-pattern graph is still coherent.
+
+## Read First
 
 1. [DATALOX.md](DATALOX.md)
 2. [.datalox/manifest.json](.datalox/manifest.json)
@@ -30,44 +33,23 @@ Read these files in order:
 4. [AGENTS.md](AGENTS.md)
 5. [CLAUDE.md](CLAUDE.md) when relevant
 
-If an agent can read those files and act on them, it can use the pack.
+## Repo Contract
 
-## What It Does
-
-- lets an agent resolve local skills and supporting docs
-- lets an agent read materialized views before raw docs
-- lets an agent capture repeated interactions locally
-- lets an agent materialize working patterns and working skill overlays
-- works without a Datalox server
-
-## Conformance
-
-The pack is correct when another agent can follow the file protocol without
-running the Node scripts.
-
-Read:
-
-- [docs/conformance.md](docs/conformance.md)
-- [.datalox/conformance/resolve-approved-skill.json](.datalox/conformance/resolve-approved-skill.json)
-- [.datalox/conformance/learn-working-pattern.json](.datalox/conformance/learn-working-pattern.json)
-- [.datalox/conformance/refresh-working-skill.json](.datalox/conformance/refresh-working-skill.json)
-
-## Docs
-
-- [docs/project-overview.md](docs/project-overview.md)
-- [docs/agent-configuration.md](docs/agent-configuration.md)
-- [docs/conformance.md](docs/conformance.md)
+- `skills/`: skills the agent should detect and use
+- `.datalox/patterns/`: pattern docs that skills point to
+- generated skills should still be written into `skills/`
+- generated pattern docs should be written into `.datalox/patterns/`
 
 ## Optional Reference Implementation
 
-The `scripts/` directory is a reference implementation of the file protocol.
-It is useful for CI, testing, and debugging, but it is not required for normal
-pack use.
-
-Examples:
+The Node scripts are optional helpers for testing the same protocol:
 
 ```bash
+# detect + use
 node scripts/agent-resolve.mjs --task "review ambiguous live dead gate" --workflow flow_cytometry
+
+# patch
+node scripts/agent-lint.mjs
 
 node scripts/agent-learn-from-interaction.mjs \
   --task "review ambiguous live dead gate" \
@@ -75,7 +57,17 @@ node scripts/agent-learn-from-interaction.mjs \
   --observation "dim dead tail overlaps live shoulder" \
   --interpretation "likely artifact" \
   --action "review exception doc before widening gate"
+
+# lint
+node scripts/agent-lint.mjs
 ```
+
+After the patch step, the next resolve call should return the updated skill with the new pattern doc already linked in.
+
+## Docs
+
+- [docs/project-overview.md](docs/project-overview.md)
+- [docs/agent-configuration.md](docs/agent-configuration.md)
 
 ## Development
 

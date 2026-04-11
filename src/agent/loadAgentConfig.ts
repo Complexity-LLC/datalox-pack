@@ -4,8 +4,6 @@ import path from "node:path";
 import {
   AGENT_INTERFACES,
   AGENT_PROFILES,
-  DOC_READ_MODES,
-  DOC_REF_KINDS,
   PACK_MODES,
   SOURCE_KINDS,
   type AgentConfig,
@@ -36,7 +34,6 @@ function deepMerge(base: unknown, override: unknown): unknown {
   }
 
   const merged: JsonObject = { ...base };
-
   for (const [key, value] of Object.entries(override)) {
     const baseValue = merged[key];
     if (isRecord(baseValue) && isRecord(value)) {
@@ -45,7 +42,6 @@ function deepMerge(base: unknown, override: unknown): unknown {
     }
     merged[key] = value;
   }
-
   return merged;
 }
 
@@ -127,9 +123,6 @@ function validateAgentConfig(raw: JsonObject): AgentConfig {
   const agent = raw.agent;
   const paths = raw.paths;
   const runtime = raw.runtime;
-  const retrieval = raw.retrieval;
-  const materialization = raw.materialization;
-  const writeback = raw.writeback;
   const auth = raw.auth;
 
   if (!isRecord(project)) {
@@ -146,15 +139,6 @@ function validateAgentConfig(raw: JsonObject): AgentConfig {
   }
   if (!isRecord(runtime)) {
     throw new Error("Agent config field runtime must be an object");
-  }
-  if (!isRecord(retrieval)) {
-    throw new Error("Agent config field retrieval must be an object");
-  }
-  if (!isRecord(materialization)) {
-    throw new Error("Agent config field materialization must be an object");
-  }
-  if (!isRecord(writeback)) {
-    throw new Error("Agent config field writeback must be an object");
   }
   if (!isRecord(auth)) {
     throw new Error("Agent config field auth must be an object");
@@ -190,30 +174,17 @@ function validateAgentConfig(raw: JsonObject): AgentConfig {
         "agent.nativeSkillPolicy",
         ["preserve"] as const,
       ),
+      detectOnEveryLoop: expectBoolean(agent.detectOnEveryLoop, "agent.detectOnEveryLoop"),
       configReadOrder: expectStringArray(agent.configReadOrder, "agent.configReadOrder"),
       interfaceOrder: expectEnumArray(
         agent.interfaceOrder,
         "agent.interfaceOrder",
         AGENT_INTERFACES,
       ),
-      docReadOrder: expectEnumArray(agent.docReadOrder, "agent.docReadOrder", DOC_READ_MODES),
-      citationRequired: expectBoolean(agent.citationRequired, "agent.citationRequired"),
-      escalateWhenNoMatch: expectBoolean(
-        agent.escalateWhenNoMatch,
-        "agent.escalateWhenNoMatch",
-      ),
-      fetchPolicy: expectEnumValue(
-        agent.fetchPolicy,
-        "agent.fetchPolicy",
-        ["metadata_first", "content_first"] as const,
-      ),
     },
     paths: {
-      localSkillsDir: expectString(paths.localSkillsDir, "paths.localSkillsDir"),
-      localDocsDir: expectString(paths.localDocsDir, "paths.localDocsDir"),
-      localViewsDir: expectString(paths.localViewsDir, "paths.localViewsDir"),
-      workingSkillsDir: expectString(paths.workingSkillsDir, "paths.workingSkillsDir"),
-      workingPatternsDir: expectString(paths.workingPatternsDir, "paths.workingPatternsDir"),
+      skillsDir: expectString(paths.skillsDir, "paths.skillsDir"),
+      patternsDir: expectString(paths.patternsDir, "paths.patternsDir"),
     },
     runtime: {
       enabled: expectBoolean(runtime.enabled, "runtime.enabled"),
@@ -222,63 +193,7 @@ function validateAgentConfig(raw: JsonObject): AgentConfig {
       requestTimeoutMs: expectPositiveInteger(runtime.requestTimeoutMs, "runtime.requestTimeoutMs"),
       endpoints: {
         compile: expectString(endpoints.compile, "runtime.endpoints.compile"),
-        search: expectString(endpoints.search, "runtime.endpoints.search"),
-        fileMetadata: expectString(endpoints.fileMetadata, "runtime.endpoints.fileMetadata"),
-        fileDownload: expectString(endpoints.fileDownload, "runtime.endpoints.fileDownload"),
-        skillSearch:
-          endpoints.skillSearch === undefined
-            ? undefined
-            : expectString(endpoints.skillSearch, "runtime.endpoints.skillSearch"),
-        skillInstall:
-          endpoints.skillInstall === undefined
-            ? undefined
-            : expectString(endpoints.skillInstall, "runtime.endpoints.skillInstall"),
-        contributorRegister:
-          endpoints.contributorRegister === undefined
-            ? undefined
-            : expectString(
-                endpoints.contributorRegister,
-                "runtime.endpoints.contributorRegister",
-              ),
       },
-    },
-    retrieval: {
-      defaultLimit: expectPositiveInteger(retrieval.defaultLimit, "retrieval.defaultLimit"),
-      maxSnippets: expectPositiveInteger(retrieval.maxSnippets, "retrieval.maxSnippets"),
-      allowedDocRefKinds: expectEnumArray(
-        retrieval.allowedDocRefKinds,
-        "retrieval.allowedDocRefKinds",
-        DOC_REF_KINDS,
-      ),
-    },
-    materialization: {
-      preferredViewType: expectString(
-        materialization.preferredViewType,
-        "materialization.preferredViewType",
-      ),
-      traceStrategy: expectEnumValue(
-        materialization.traceStrategy,
-        "materialization.traceStrategy",
-        ["source_anchors"] as const,
-      ),
-      viewFormatVersion: expectPositiveInteger(
-        materialization.viewFormatVersion,
-        "materialization.viewFormatVersion",
-      ),
-    },
-    writeback: {
-      enabled: expectBoolean(writeback.enabled, "writeback.enabled"),
-      proposalsDir: expectString(writeback.proposalsDir, "writeback.proposalsDir"),
-      proposedSkillsDir: expectString(
-        writeback.proposedSkillsDir,
-        "writeback.proposedSkillsDir",
-      ),
-      proposedPatternsDir: expectString(
-        writeback.proposedPatternsDir,
-        "writeback.proposedPatternsDir",
-      ),
-      capturesDir: expectString(writeback.capturesDir, "writeback.capturesDir"),
-      authorEnv: expectString(writeback.authorEnv, "writeback.authorEnv"),
     },
     auth: {
       apiKeyEnv: expectString(auth.apiKeyEnv, "auth.apiKeyEnv"),
@@ -322,42 +237,39 @@ function applyEnvironmentOverrides(config: AgentConfig): {
     appliedEnvOverrides.push(MODE_ENV);
   }
 
-  return {
-    config: nextConfig,
-    appliedEnvOverrides,
-  };
+  return { config: nextConfig, appliedEnvOverrides };
 }
 
-export async function loadAgentConfig(cwd = process.cwd()): Promise<LoadedAgentConfig> {
+export async function loadAgentConfig(cwd: string = process.cwd()): Promise<LoadedAgentConfig> {
   const configuredPath = process.env[CONFIG_PATH_ENV];
-
   if (configuredPath) {
     const sourcePath = path.isAbsolute(configuredPath)
       ? configuredPath
       : path.resolve(cwd, configuredPath);
-    const config = validateAgentConfig(await readJsonObject(sourcePath));
-    const withEnv = applyEnvironmentOverrides(config);
+    const rawConfig = await readJsonObject(sourcePath);
+    const validated = validateAgentConfig(rawConfig);
+    const { config, appliedEnvOverrides } = applyEnvironmentOverrides(validated);
     return {
-      config: withEnv.config,
+      config,
       sourcePath,
-      appliedEnvOverrides: [CONFIG_PATH_ENV, ...withEnv.appliedEnvOverrides],
+      appliedEnvOverrides: [CONFIG_PATH_ENV, ...appliedEnvOverrides],
     };
   }
 
   const sourcePath = path.resolve(cwd, ".datalox/config.json");
   const localOverridePath = path.resolve(cwd, ".datalox/config.local.json");
-
   const baseConfig = await readJsonObject(sourcePath);
-  const mergedConfig = await fileExists(localOverridePath)
-    ? deepMerge(baseConfig, await readJsonObject(localOverridePath))
+  const mergedConfig = (await fileExists(localOverridePath))
+    ? (deepMerge(baseConfig, await readJsonObject(localOverridePath)) as JsonObject)
     : baseConfig;
-  const config = validateAgentConfig(mergedConfig as JsonObject);
-  const withEnv = applyEnvironmentOverrides(config);
+
+  const validated = validateAgentConfig(mergedConfig);
+  const { config, appliedEnvOverrides } = applyEnvironmentOverrides(validated);
 
   return {
-    config: withEnv.config,
+    config,
     sourcePath,
     localOverridePath: (await fileExists(localOverridePath)) ? localOverridePath : undefined,
-    appliedEnvOverrides: withEnv.appliedEnvOverrides,
+    appliedEnvOverrides,
   };
 }

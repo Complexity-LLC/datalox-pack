@@ -46,6 +46,7 @@ const baseConfig = {
   agent: {
     profile: "local_first",
     nativeSkillPolicy: "preserve",
+    detectOnEveryLoop: true,
     configReadOrder: [
       "env:DATALOX_CONFIG_JSON",
       ".datalox/config.local.json",
@@ -53,26 +54,13 @@ const baseConfig = {
       "AGENTS.md",
     ],
     interfaceOrder: [
-      "local_skill",
-      "working_knowledge",
-      "proposal_writeback",
+      "skill_loop",
       "runtime_compile",
-      "retrieval_search",
     ],
-    docReadOrder: [
-      "materialized_view",
-      "raw_doc",
-    ],
-    citationRequired: true,
-    escalateWhenNoMatch: true,
-    fetchPolicy: "metadata_first",
   },
   paths: {
-    localSkillsDir: ".datalox/skills",
-    localDocsDir: ".datalox/docs",
-    localViewsDir: ".datalox/views",
-    workingSkillsDir: ".datalox/working/skills",
-    workingPatternsDir: ".datalox/working/patterns",
+    skillsDir: "skills",
+    patternsDir: ".datalox/patterns",
   },
   runtime: {
     enabled: false,
@@ -81,28 +69,7 @@ const baseConfig = {
     requestTimeoutMs: 10000,
     endpoints: {
       compile: "/v1/runtime/compile",
-      search: "/v1/retrieval/search",
-      fileMetadata: "/v1/files/:id",
-      fileDownload: "/v1/files/:id/download",
     },
-  },
-  retrieval: {
-    defaultLimit: 5,
-    maxSnippets: 3,
-    allowedDocRefKinds: ["path", "file_id", "url"],
-  },
-  materialization: {
-    preferredViewType: "skill_doc_v1",
-    traceStrategy: "source_anchors",
-    viewFormatVersion: 1,
-  },
-  writeback: {
-    enabled: true,
-    proposalsDir: ".datalox/proposals",
-    proposedSkillsDir: ".datalox/proposals/skills",
-    proposedPatternsDir: ".datalox/proposals/patterns",
-    capturesDir: ".datalox/captures",
-    authorEnv: "DATALOX_AUTHOR",
   },
   auth: {
     apiKeyEnv: "DATALOX_API_KEY",
@@ -143,7 +110,9 @@ describe("loadAgentConfig", () => {
       const loaded = await loadAgentConfig(tempDir);
       expect(loaded.config.runtime.baseUrl).toBe("https://api.example.datalox.com");
       expect(loaded.config.mode).toBe("repo_only");
-      expect(loaded.config.agent.nativeSkillPolicy).toBe("preserve");
+      expect(loaded.config.agent.detectOnEveryLoop).toBe(true);
+      expect(loaded.config.paths.patternsDir).toBe(".datalox/patterns");
+      expect(loaded.config.paths.skillsDir).toBe("skills");
       expect(loaded.localOverridePath).toContain(".datalox/config.local.json");
     } finally {
       restoreEnv(envSnapshot);

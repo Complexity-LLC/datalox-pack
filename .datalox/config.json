@@ -17,6 +17,7 @@
   "agent": {
     "profile": "local_first",
     "nativeSkillPolicy": "preserve",
+    "detectOnEveryLoop": true,
     "configReadOrder": [
       "env:DATALOX_CONFIG_JSON",
       ".datalox/config.local.json",
@@ -24,27 +25,13 @@
       "AGENTS.md"
     ],
     "interfaceOrder": [
-      "local_skill",
-      "working_knowledge",
-      "proposal_writeback",
-      "runtime_compile",
-      "retrieval_search",
-      "skill_registry"
-    ],
-    "docReadOrder": [
-      "materialized_view",
-      "raw_doc"
-    ],
-    "citationRequired": true,
-    "escalateWhenNoMatch": true,
-    "fetchPolicy": "metadata_first"
+      "skill_loop",
+      "runtime_compile"
+    ]
   },
   "paths": {
-    "localSkillsDir": ".datalox/skills",
-    "localDocsDir": ".datalox/docs",
-    "localViewsDir": ".datalox/views",
-    "workingSkillsDir": ".datalox/working/skills",
-    "workingPatternsDir": ".datalox/working/patterns"
+    "skillsDir": "skills",
+    "patternsDir": ".datalox/patterns"
   },
   "runtime": {
     "enabled": false,
@@ -52,36 +39,8 @@
     "defaultWorkflow": "flow_cytometry",
     "requestTimeoutMs": 10000,
     "endpoints": {
-      "compile": "/v1/runtime/compile",
-      "search": "/v1/retrieval/search",
-      "fileMetadata": "/v1/files/:id",
-      "fileDownload": "/v1/files/:id/download",
-      "skillSearch": "/v1/skills/search",
-      "skillInstall": "/v1/skills/:name/install",
-      "contributorRegister": "/v1/contributor/register"
+      "compile": "/v1/runtime/compile"
     }
-  },
-  "retrieval": {
-    "defaultLimit": 5,
-    "maxSnippets": 3,
-      "allowedDocRefKinds": [
-      "path",
-      "file_id",
-      "url"
-    ]
-  },
-  "materialization": {
-    "preferredViewType": "skill_doc_v1",
-    "traceStrategy": "source_anchors",
-    "viewFormatVersion": 1
-  },
-  "writeback": {
-    "enabled": true,
-    "proposalsDir": ".datalox/proposals",
-    "proposedSkillsDir": ".datalox/proposals/skills",
-    "proposedPatternsDir": ".datalox/proposals/patterns",
-    "capturesDir": ".datalox/captures",
-    "authorEnv": "DATALOX_AUTHOR"
   },
   "auth": {
     "apiKeyEnv": "DATALOX_API_KEY",
