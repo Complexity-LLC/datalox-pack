@@ -32,8 +32,8 @@
   "paths": {
     "seedSkillsDir": "skills",
     "seedPatternsDir": ".datalox/patterns",
-    "hostSkillsDir": "skills",
-    "hostPatternsDir": ".datalox/patterns"
+    "hostSkillsDir": null,
+    "hostPatternsDir": null
   },
   "runtime": {
     "enabled": false,

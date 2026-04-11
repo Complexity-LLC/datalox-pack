@@ -11,6 +11,8 @@
     "agent:learn-pattern": "node scripts/agent-learn-pattern.mjs",
     "agent:learn-skill": "node scripts/agent-learn-skill.mjs",
     "agent:learn-from-interaction": "node scripts/agent-learn-from-interaction.mjs",
+    "build": "tsc",
+    "prepare": "tsc",
     "check": "tsc --noEmit",
     "test": "vitest run"
   },

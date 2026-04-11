@@ -185,8 +185,8 @@ function validateAgentConfig(raw: JsonObject): AgentConfig {
     paths: {
       seedSkillsDir: expectString(paths.seedSkillsDir, "paths.seedSkillsDir"),
       seedPatternsDir: expectString(paths.seedPatternsDir, "paths.seedPatternsDir"),
-      hostSkillsDir: expectString(paths.hostSkillsDir, "paths.hostSkillsDir"),
-      hostPatternsDir: expectString(paths.hostPatternsDir, "paths.hostPatternsDir"),
+      hostSkillsDir: paths.hostSkillsDir === null ? null : expectString(paths.hostSkillsDir, "paths.hostSkillsDir"),
+      hostPatternsDir: paths.hostPatternsDir === null ? null : expectString(paths.hostPatternsDir, "paths.hostPatternsDir"),
     },
     runtime: {
       enabled: expectBoolean(runtime.enabled, "runtime.enabled"),

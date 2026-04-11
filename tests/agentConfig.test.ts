@@ -117,7 +117,7 @@ describe("loadAgentConfig", () => {
       expect(loaded.config.paths.seedSkillsDir).toBe("skills");
       expect(loaded.config.paths.hostPatternsDir).toBe(".datalox/patterns");
       expect(loaded.config.paths.hostSkillsDir).toBe("skills");
-      expect(loaded.localOverridePath).toContain(".datalox/config.local.json");
+      expect(loaded.localOverridePath?.replaceAll("\\", "/")).toContain(".datalox/config.local.json");
     } finally {
       restoreEnv(envSnapshot);
     }

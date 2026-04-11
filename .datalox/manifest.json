@@ -13,8 +13,8 @@
   "entrypoints": {
     "seedSkillsDir": "skills",
     "seedPatternsDir": ".datalox/patterns",
-    "hostSkillsDir": "skills",
-    "hostPatternsDir": ".datalox/patterns"
+    "hostSkillsDir": null,
+    "hostPatternsDir": null
   },
   "startup": {
     "readOnEveryLoop": true,

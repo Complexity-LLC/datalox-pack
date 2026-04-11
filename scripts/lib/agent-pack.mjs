@@ -3,11 +3,8 @@ import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-const CONFIG_PATH_ENV = "DATALOX_CONFIG_JSON";
-const BASE_URL_ENV = "DATALOX_BASE_URL";
-const DEFAULT_WORKFLOW_ENV = "DATALOX_DEFAULT_WORKFLOW";
-const AGENT_PROFILE_ENV = "DATALOX_AGENT_PROFILE";
-const MODE_ENV = "DATALOX_MODE";
+import { loadAgentConfig } from "../../dist/src/agent/loadAgentConfig.js";
+
 const AUTHOR_ENV = "DATALOX_AUTHOR";
 
 async function fileExists(filePath) {
@@ -25,70 +22,6 @@ async function readJson(filePath) {
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function deepMerge(base, override) {
-  if (!isRecord(base) || !isRecord(override)) {
-    return override;
-  }
-
-  const merged = { ...base };
-  for (const [key, value] of Object.entries(override)) {
-    const baseValue = merged[key];
-    if (isRecord(baseValue) && isRecord(value)) {
-      merged[key] = deepMerge(baseValue, value);
-      continue;
-    }
-    merged[key] = value;
-  }
-  return merged;
-}
-
-function applyEnvOverrides(config) {
-  const next = structuredClone(config);
-
-  if (process.env[BASE_URL_ENV]) {
-    next.runtime.baseUrl = process.env[BASE_URL_ENV];
-  }
-  if (process.env[DEFAULT_WORKFLOW_ENV]) {
-    next.runtime.defaultWorkflow = process.env[DEFAULT_WORKFLOW_ENV];
-  }
-  if (process.env[AGENT_PROFILE_ENV]) {
-    next.agent.profile = process.env[AGENT_PROFILE_ENV];
-  }
-  if (process.env[MODE_ENV]) {
-    next.mode = process.env[MODE_ENV];
-  }
-
-  return next;
-}
-
-export async function loadPackConfig(cwd = process.cwd()) {
-  const configuredPath = process.env[CONFIG_PATH_ENV];
-  if (configuredPath) {
-    const sourcePath = path.isAbsolute(configuredPath)
-      ? configuredPath
-      : path.resolve(cwd, configuredPath);
-    const config = applyEnvOverrides(await readJson(sourcePath));
-    return {
-      config,
-      sourcePath,
-      localOverridePath: undefined,
-    };
-  }
-
-  const sourcePath = path.resolve(cwd, ".datalox/config.json");
-  const localOverridePath = path.resolve(cwd, ".datalox/config.local.json");
-  const baseConfig = await readJson(sourcePath);
-  const mergedConfig = (await fileExists(localOverridePath))
-    ? deepMerge(baseConfig, await readJson(localOverridePath))
-    : baseConfig;
-
-  return {
-    config: applyEnvOverrides(mergedConfig),
-    sourcePath,
-    localOverridePath: (await fileExists(localOverridePath)) ? localOverridePath : undefined,
-  };
 }
 
 function resolveSeedRoot(config, sourcePath) {
@@ -125,8 +58,9 @@ export function resolvePackPaths(config, options = {}) {
   return {
     hostRoot,
     seedRoot,
-    hostSkillsDir: path.resolve(hostRoot, config.paths.hostSkillsDir),
-    hostPatternsDir: path.resolve(hostRoot, config.paths.hostPatternsDir),
+    hostSkillsDir: path.resolve(hostRoot, config.paths.hostSkillsDir ?? "skills"),
+    hostPatternsDir: path.resolve(hostRoot, config.paths.hostPatternsDir ?? ".datalox/patterns"),
+    hostMetaDir: path.resolve(hostRoot, ".datalox/meta"),
     seedSkillsDir: path.resolve(seedRoot, config.paths.seedSkillsDir),
     seedPatternsDir: path.resolve(seedRoot, config.paths.seedPatternsDir),
   };
@@ -300,7 +234,7 @@ async function resolvePatternFile(patternPath, cwd, sourcePath) {
     return null;
   }
 
-  const { config } = await loadPackConfig(cwd);
+  const { config } = await loadAgentConfig(cwd);
   const paths = resolvePackPaths(config, { cwd, sourcePath });
   const candidates = [
     {
@@ -659,7 +593,7 @@ export async function resolveLocalKnowledge(
   },
   cwd = process.cwd(),
 ) {
-  const { config, sourcePath, localOverridePath } = await loadPackConfig(cwd);
+  const { config, sourcePath, localOverridePath } = await loadAgentConfig(cwd);
   const [localSkills, repoContext] = await Promise.all([
     listLocalSkills(config, cwd, sourcePath),
     collectRepoContext(cwd),
@@ -774,7 +708,7 @@ export async function writePatternDoc(
   },
   cwd = process.cwd(),
 ) {
-  const { config, sourcePath } = await loadPackConfig(cwd);
+  const { config, sourcePath } = await loadAgentConfig(cwd);
   const { hostPatternsDir, hostRoot } = resolvePackPaths(config, { cwd, sourcePath });
   const stableId = id ?? `${workflow}-${slugify(title)}`;
   const content = [
@@ -838,7 +772,7 @@ export async function writeSkill(
   },
   cwd = process.cwd(),
 ) {
-  const { config, sourcePath } = await loadPackConfig(cwd);
+  const { config, sourcePath } = await loadAgentConfig(cwd);
   const { hostSkillsDir } = resolvePackPaths(config, { cwd, sourcePath });
   const stableId = id ?? `${workflow}.${slugify(name)}`;
   const stableName = name ?? slugify(displayName ?? stableId);
@@ -888,7 +822,7 @@ export async function attachPatternToSkill(
   },
   cwd = process.cwd(),
 ) {
-  const { config, sourcePath } = await loadPackConfig(cwd);
+  const { config, sourcePath } = await loadAgentConfig(cwd);
   const sourceSkill = await getLocalSkillById(config, skillId, cwd, sourcePath);
 
   if (!sourceSkill?.value) {
@@ -989,7 +923,7 @@ export async function learnFromInteraction(
   },
   cwd = process.cwd(),
 ) {
-  const { config, sourcePath } = await loadPackConfig(cwd);
+  const { config, sourcePath } = await loadAgentConfig(cwd);
 
   let sourceSkill = null;
   if (skillId) {
@@ -1089,7 +1023,9 @@ export async function learnFromInteraction(
 }
 
 export async function lintPack(cwd = process.cwd()) {
-  const { config, sourcePath } = await loadPackConfig(cwd);
+  const { config, sourcePath } = await loadAgentConfig(cwd);
+  const paths = resolvePackPaths(config, { cwd, sourcePath });
+  const metaPatternPaths = await readDirMarkdown(paths.hostMetaDir);
   const [skills, patternFiles] = await Promise.all([
     listLocalSkills(config, cwd, sourcePath),
     listPatternEntries(config, cwd, sourcePath),
@@ -1164,7 +1100,7 @@ export async function lintPack(cwd = process.cwd()) {
           code: "pattern_missing_signal",
           skillId: skill.id,
           path: normalizePath(patternPath),
-          message: "Pattern doc is missing a Signal section.",
+          message: "Pattern doc is missing a Signal section. See .datalox/pattern.schema.md.",
         });
       }
       if (!parsed.interpretation) {
@@ -1173,7 +1109,7 @@ export async function lintPack(cwd = process.cwd()) {
           code: "pattern_missing_interpretation",
           skillId: skill.id,
           path: normalizePath(patternPath),
-          message: "Pattern doc is missing an Interpretation section.",
+          message: "Pattern doc is missing an Interpretation section. See .datalox/pattern.schema.md.",
         });
       }
       if (!parsed.recommendedAction) {
@@ -1182,7 +1118,7 @@ export async function lintPack(cwd = process.cwd()) {
           code: "pattern_missing_action",
           skillId: skill.id,
           path: normalizePath(patternPath),
-          message: "Pattern doc is missing a Recommended Action section.",
+          message: "Pattern doc is missing a Recommended Action section. See .datalox/pattern.schema.md.",
         });
       }
     }
@@ -1196,6 +1132,18 @@ export async function lintPack(cwd = process.cwd()) {
         code: "orphan_pattern_doc",
         path: relativePath,
         message: "Pattern doc is not referenced by any skill.",
+      });
+    }
+  }
+
+  for (const metaFilePath of metaPatternPaths) {
+    const relativePath = normalizePath(path.relative(paths.hostRoot, metaFilePath));
+    if (!referencedPatternPaths.has(relativePath)) {
+      issues.push({
+        level: "warning",
+        code: "orphan_pattern_doc",
+        path: relativePath,
+        message: "Meta pattern doc is not referenced by any skill.",
       });
     }
   }

@@ -48,8 +48,8 @@ export interface AgentConfig {
   paths: {
     seedSkillsDir: string;
     seedPatternsDir: string;
-    hostSkillsDir: string;
-    hostPatternsDir: string;
+    hostSkillsDir: string | null;
+    hostPatternsDir: string | null;
   };
   runtime: {
     enabled: boolean;

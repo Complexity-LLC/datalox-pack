@@ -7,7 +7,7 @@
   "trigger": "Use when changing the portable pack or agent guidance in this repo.",
   "description": "Read the linked pattern doc and keep Datalox additive to the agent's native skills.",
   "patternPaths": [
-    ".datalox/patterns/evolve-portable-pack.md"
+    ".datalox/meta/evolve-portable-pack.md"
   ],
   "repoHints": {
     "files": [

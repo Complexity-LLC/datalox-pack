@@ -1,9 +1,10 @@
 import process from "node:process";
 
-import { countPackFiles, loadPackConfig, parseArgs, resolvePackPaths } from "./lib/agent-pack.mjs";
+import { loadAgentConfig } from "../dist/src/agent/loadAgentConfig.js";
+import { countPackFiles, parseArgs, resolvePackPaths } from "./lib/agent-pack.mjs";
 
 const args = parseArgs(process.argv.slice(2));
-const { config, sourcePath, localOverridePath } = await loadPackConfig(process.cwd());
+const { config, sourcePath, localOverridePath } = await loadAgentConfig(process.cwd());
 const paths = resolvePackPaths(config, { cwd: process.cwd(), sourcePath });
 const counts = await countPackFiles(config, process.cwd(), sourcePath);
 
