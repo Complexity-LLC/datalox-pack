@@ -14,8 +14,8 @@ The product loop is:
 .datalox/
   manifest.json
   config.json
-  skills/
   patterns/
+skills/
 ```
 
 ## Runtime Behavior
@@ -26,6 +26,8 @@ The product loop is:
 4. read the skill's `patternPaths`
 5. use those pattern docs during the current loop
 
+If the pack is external, the host repo still owns all generated writes.
+
 ## Generation Behavior
 
 When the agent learns something reusable:
@@ -35,6 +37,7 @@ When the agent learns something reusable:
 3. keep the new pattern doc path in that skill's `patternPaths`
 
 Generated skills stay in `skills/` on purpose so agent-native skill logic can still see them.
+Generated pattern docs stay in the host repo `.datalox/patterns/`.
 
 ## Lint Rules
 

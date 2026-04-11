@@ -91,10 +91,44 @@ export async function loadPackConfig(cwd = process.cwd()) {
   };
 }
 
-export function resolvePackPaths(config, cwd = process.cwd()) {
+function resolveSeedRoot(config, sourcePath) {
+  const source = config.sources.find((entry) => entry.enabled) ?? config.sources[0];
+  const normalizedRoot = normalizePath(source?.root ?? ".")
+    .replace(/^\.\/?/, "")
+    .replace(/\/+$/, "");
+  const depth = normalizedRoot && normalizedRoot !== "."
+    ? normalizedRoot.split("/").filter(Boolean).length
+    : 0;
+  const upwardSegments = depth > 0 ? Array(depth).fill("..") : [];
+  return path.resolve(path.dirname(sourcePath), ...upwardSegments);
+}
+
+function pathKey(filePath) {
+  return normalizePath(path.resolve(filePath));
+}
+
+function isWithinDir(filePath, dirPath) {
+  const relative = path.relative(dirPath, filePath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+export function resolvePackPaths(config, options = {}) {
+  const cwd = options.cwd ?? process.cwd();
+  const sourcePath = options.sourcePath
+    ? (path.isAbsolute(options.sourcePath)
+      ? options.sourcePath
+      : path.resolve(cwd, options.sourcePath))
+    : path.resolve(cwd, ".datalox/config.json");
+  const hostRoot = path.resolve(cwd);
+  const seedRoot = resolveSeedRoot(config, sourcePath);
+
   return {
-    skillsDir: path.resolve(cwd, config.paths.skillsDir),
-    patternsDir: path.resolve(cwd, config.paths.patternsDir),
+    hostRoot,
+    seedRoot,
+    hostSkillsDir: path.resolve(hostRoot, config.paths.hostSkillsDir),
+    hostPatternsDir: path.resolve(hostRoot, config.paths.hostPatternsDir),
+    seedSkillsDir: path.resolve(seedRoot, config.paths.seedSkillsDir),
+    seedPatternsDir: path.resolve(seedRoot, config.paths.seedPatternsDir),
   };
 }
 
@@ -186,30 +220,147 @@ async function readDirMarkdown(dirPath) {
     .map((entry) => path.join(dirPath, entry.name));
 }
 
-export async function countPackFiles(config, cwd = process.cwd()) {
-  const paths = resolvePackPaths(config, cwd);
-  const [skills, patterns] = await Promise.all([
-    readDirJson(paths.skillsDir),
-    readDirMarkdown(paths.patternsDir),
+function skillIdentity(skill, filePath) {
+  return skill.id || skill.name || path.basename(filePath, ".json");
+}
+
+async function listSkillEntries(config, cwd = process.cwd(), sourcePath) {
+  const paths = resolvePackPaths(config, { cwd, sourcePath });
+  const useSameDir = pathKey(paths.hostSkillsDir) === pathKey(paths.seedSkillsDir);
+  const [seedEntries, hostEntries] = await Promise.all([
+    useSameDir ? Promise.resolve([]) : readDirJson(paths.seedSkillsDir),
+    readDirJson(paths.hostSkillsDir),
+  ]);
+
+  const merged = new Map();
+
+  for (const entry of seedEntries) {
+    merged.set(skillIdentity(entry.value, entry.filePath), {
+      ...entry,
+      origin: "seed",
+      repoRoot: paths.seedRoot,
+    });
+  }
+
+  for (const entry of hostEntries) {
+    merged.set(skillIdentity(entry.value, entry.filePath), {
+      ...entry,
+      origin: "host",
+      repoRoot: paths.hostRoot,
+    });
+  }
+
+  return Array.from(merged.values()).sort((left, right) =>
+    skillIdentity(left.value, left.filePath).localeCompare(skillIdentity(right.value, right.filePath)),
+  );
+}
+
+async function listPatternEntries(config, cwd = process.cwd(), sourcePath) {
+  const paths = resolvePackPaths(config, { cwd, sourcePath });
+  const useSameDir = pathKey(paths.hostPatternsDir) === pathKey(paths.seedPatternsDir);
+  const [seedEntries, hostEntries] = await Promise.all([
+    useSameDir ? Promise.resolve([]) : readDirMarkdown(paths.seedPatternsDir),
+    readDirMarkdown(paths.hostPatternsDir),
+  ]);
+
+  const merged = new Map();
+
+  for (const filePath of seedEntries) {
+    const relativePath = normalizePath(path.relative(paths.seedRoot, filePath));
+    merged.set(relativePath, {
+      filePath,
+      relativePath,
+      origin: "seed",
+      repoRoot: paths.seedRoot,
+    });
+  }
+
+  for (const filePath of hostEntries) {
+    const relativePath = normalizePath(path.relative(paths.hostRoot, filePath));
+    merged.set(relativePath, {
+      filePath,
+      relativePath,
+      origin: "host",
+      repoRoot: paths.hostRoot,
+    });
+  }
+
+  return Array.from(merged.values()).sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+}
+
+async function resolvePatternFile(patternPath, cwd, sourcePath) {
+  if (path.isAbsolute(patternPath)) {
+    if (await fileExists(patternPath)) {
+      return {
+        filePath: patternPath,
+        relativePath: normalizePath(patternPath),
+        origin: "absolute",
+      };
+    }
+    return null;
+  }
+
+  const { config } = await loadPackConfig(cwd);
+  const paths = resolvePackPaths(config, { cwd, sourcePath });
+  const candidates = [
+    {
+      filePath: path.resolve(paths.hostRoot, patternPath),
+      origin: "host",
+    },
+    {
+      filePath: path.resolve(paths.seedRoot, patternPath),
+      origin: "seed",
+    },
+  ];
+
+  for (const candidate of candidates) {
+    if (await fileExists(candidate.filePath)) {
+      return {
+        filePath: candidate.filePath,
+        relativePath: normalizePath(patternPath),
+        origin: candidate.origin,
+      };
+    }
+  }
+
+  return null;
+}
+
+export async function countPackFiles(config, cwd = process.cwd(), sourcePath) {
+  const paths = resolvePackPaths(config, { cwd, sourcePath });
+  const [skills, patterns, hostSkills, seedSkills, hostPatterns, seedPatterns] = await Promise.all([
+    listSkillEntries(config, cwd, sourcePath),
+    listPatternEntries(config, cwd, sourcePath),
+    readDirJson(paths.hostSkillsDir),
+    pathKey(paths.hostSkillsDir) === pathKey(paths.seedSkillsDir)
+      ? Promise.resolve([])
+      : readDirJson(paths.seedSkillsDir),
+    readDirMarkdown(paths.hostPatternsDir),
+    pathKey(paths.hostPatternsDir) === pathKey(paths.seedPatternsDir)
+      ? Promise.resolve([])
+      : readDirMarkdown(paths.seedPatternsDir),
   ]);
 
   return {
     skills: skills.length,
     patterns: patterns.length,
+    hostSkills: hostSkills.length,
+    seedSkills: seedSkills.length,
+    hostPatterns: hostPatterns.length,
+    seedPatterns: seedPatterns.length,
   };
 }
 
-export async function listLocalSkills(config, cwd = process.cwd()) {
-  const { skillsDir } = resolvePackPaths(config, cwd);
-  return readDirJson(skillsDir);
+export async function listLocalSkills(config, cwd = process.cwd(), sourcePath) {
+  return listSkillEntries(config, cwd, sourcePath);
 }
 
-export async function getLocalSkillById(config, skillId, cwd = process.cwd()) {
+export async function getLocalSkillById(config, skillId, cwd = process.cwd(), sourcePath) {
   if (!skillId) {
     return null;
   }
 
-  const skills = await listLocalSkills(config, cwd);
+  const skills = await listLocalSkills(config, cwd, sourcePath);
   return skills.find(({ value }) => value.id === skillId || value.name === skillId) ?? null;
 }
 
@@ -436,10 +587,18 @@ function parsePatternDoc(relativePath, content, includeContent) {
   };
 }
 
-async function loadPatternDoc(cwd, patternPath, includeContent) {
-  const absolutePath = path.resolve(cwd, patternPath);
-  const content = await readFile(absolutePath, "utf8");
-  return parsePatternDoc(patternPath, content, includeContent);
+async function loadPatternDoc(cwd, sourcePath, patternPath, includeContent) {
+  const resolvedPattern = await resolvePatternFile(patternPath, cwd, sourcePath);
+  if (!resolvedPattern) {
+    throw new Error(`Pattern doc not found: ${patternPath}`);
+  }
+
+  const content = await readFile(resolvedPattern.filePath, "utf8");
+  return {
+    ...parsePatternDoc(resolvedPattern.relativePath, content, includeContent),
+    filePath: resolvedPattern.filePath,
+    origin: resolvedPattern.origin,
+  };
 }
 
 function explainSkillMatch(skill, query, repoContext) {
@@ -502,13 +661,15 @@ export async function resolveLocalKnowledge(
 ) {
   const { config, sourcePath, localOverridePath } = await loadPackConfig(cwd);
   const [localSkills, repoContext] = await Promise.all([
-    listLocalSkills(config, cwd),
+    listLocalSkills(config, cwd, sourcePath),
     collectRepoContext(cwd),
   ]);
 
   const ranked = localSkills
-    .map(({ filePath, value }) => ({
+    .map(({ filePath, value, origin, repoRoot }) => ({
       filePath,
+      origin,
+      repoRoot,
       skill: value,
       score: scoreSkill(
         value,
@@ -539,7 +700,7 @@ export async function resolveLocalKnowledge(
     ranked.map(async (item) => {
       const patternDocs = await Promise.all(
         toArray(item.skill.patternPaths).map((patternPath) =>
-          loadPatternDoc(cwd, patternPath, includeContent)
+          loadPatternDoc(cwd, sourcePath, patternPath, includeContent)
         ),
       );
       const whyMatched = explainSkillMatch(
@@ -556,6 +717,7 @@ export async function resolveLocalKnowledge(
       return {
         score: item.score,
         skillPath: item.filePath,
+        skillOrigin: item.origin,
         skill: item.skill,
         patternDocs,
         loopGuidance: buildLoopGuidance(patternDocs, whyMatched),
@@ -612,8 +774,8 @@ export async function writePatternDoc(
   },
   cwd = process.cwd(),
 ) {
-  const { config } = await loadPackConfig(cwd);
-  const { patternsDir } = resolvePackPaths(config, cwd);
+  const { config, sourcePath } = await loadPackConfig(cwd);
+  const { hostPatternsDir, hostRoot } = resolvePackPaths(config, { cwd, sourcePath });
   const stableId = id ?? `${workflow}-${slugify(title)}`;
   const content = [
     `# ${title}`,
@@ -638,8 +800,8 @@ export async function writePatternDoc(
     .filter(Boolean)
     .join("\n");
 
-  const filePath = await writeStableTextFile(patternsDir, stableId, content);
-  const relativePath = normalizePath(path.relative(cwd, filePath));
+  const filePath = await writeStableTextFile(hostPatternsDir, stableId, content);
+  const relativePath = normalizePath(path.relative(hostRoot, filePath));
 
   return {
     filePath,
@@ -676,20 +838,23 @@ export async function writeSkill(
   },
   cwd = process.cwd(),
 ) {
-  const { config } = await loadPackConfig(cwd);
-  const { skillsDir } = resolvePackPaths(config, cwd);
+  const { config, sourcePath } = await loadPackConfig(cwd);
+  const { hostSkillsDir } = resolvePackPaths(config, { cwd, sourcePath });
   const stableId = id ?? `${workflow}.${slugify(name)}`;
   const stableName = name ?? slugify(displayName ?? stableId);
-  const existingById = await getLocalSkillById(config, stableId, cwd);
+  const existingById = await getLocalSkillById(config, stableId, cwd, sourcePath);
   const existingByName = !existingById && stableName
-    ? await getLocalSkillById(config, stableName, cwd)
+    ? await getLocalSkillById(config, stableName, cwd, sourcePath)
     : null;
   const existingEntry = existingById ?? existingByName;
-  const resolvedFilePath = filePath
-    ? path.isAbsolute(filePath)
-      ? filePath
-      : path.resolve(cwd, filePath)
-    : existingEntry?.filePath ?? path.join(skillsDir, `${slugify(stableName)}.json`);
+  const requestedFilePath = filePath
+    ? (path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath))
+    : null;
+  const resolvedFilePath = requestedFilePath && isWithinDir(requestedFilePath, hostSkillsDir)
+    ? requestedFilePath
+    : existingEntry?.origin === "host"
+      ? existingEntry.filePath
+      : path.join(hostSkillsDir, `${slugify(stableName)}.json`);
   const existing = existingEntry?.value ?? ((await fileExists(resolvedFilePath)) ? await readJson(resolvedFilePath) : null);
 
   const payload = {
@@ -708,6 +873,8 @@ export async function writeSkill(
     updatedAt: new Date().toISOString(),
   };
 
+  await ensureDir(path.dirname(resolvedFilePath));
+
   return {
     filePath: await writeFile(resolvedFilePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8").then(() => resolvedFilePath),
     payload,
@@ -721,8 +888,8 @@ export async function attachPatternToSkill(
   },
   cwd = process.cwd(),
 ) {
-  const { config } = await loadPackConfig(cwd);
-  const sourceSkill = await getLocalSkillById(config, skillId, cwd);
+  const { config, sourcePath } = await loadPackConfig(cwd);
+  const sourceSkill = await getLocalSkillById(config, skillId, cwd, sourcePath);
 
   if (!sourceSkill?.value) {
     throw new Error(`Skill not found: ${skillId}`);
@@ -731,7 +898,7 @@ export async function attachPatternToSkill(
   return writeSkill(
     {
       ...sourceSkill.value,
-      filePath: sourceSkill.filePath,
+      filePath: sourceSkill.origin === "host" ? sourceSkill.filePath : undefined,
       patternPaths: [...(sourceSkill.value.patternPaths ?? []), patternPath],
     },
     cwd,
@@ -822,11 +989,11 @@ export async function learnFromInteraction(
   },
   cwd = process.cwd(),
 ) {
-  const { config } = await loadPackConfig(cwd);
+  const { config, sourcePath } = await loadPackConfig(cwd);
 
   let sourceSkill = null;
   if (skillId) {
-    sourceSkill = await getLocalSkillById(config, skillId, cwd);
+    sourceSkill = await getLocalSkillById(config, skillId, cwd, sourcePath);
   } else {
     const resolution = await resolveLocalKnowledge(
       {
@@ -841,6 +1008,7 @@ export async function learnFromInteraction(
       sourceSkill = {
         value: resolution.matches[0].skill,
         filePath: resolution.matches[0].skillPath,
+        origin: resolution.matches[0].skillOrigin,
       };
     }
   }
@@ -880,7 +1048,7 @@ export async function learnFromInteraction(
     skill = await writeSkill(
       {
         ...sourceSkill.value,
-        filePath: sourceSkill.filePath,
+        filePath: sourceSkill.origin === "host" ? sourceSkill.filePath : undefined,
         patternPaths: [...(sourceSkill.value.patternPaths ?? []), pattern.relativePath],
       },
       cwd,
@@ -921,11 +1089,10 @@ export async function learnFromInteraction(
 }
 
 export async function lintPack(cwd = process.cwd()) {
-  const { config } = await loadPackConfig(cwd);
-  const { patternsDir } = resolvePackPaths(config, cwd);
+  const { config, sourcePath } = await loadPackConfig(cwd);
   const [skills, patternFiles] = await Promise.all([
-    listLocalSkills(config, cwd),
-    readDirMarkdown(patternsDir),
+    listLocalSkills(config, cwd, sourcePath),
+    listPatternEntries(config, cwd, sourcePath),
   ]);
 
   const issues = [];
@@ -973,8 +1140,8 @@ export async function lintPack(cwd = process.cwd()) {
 
     for (const patternPath of toArray(skill.patternPaths)) {
       referencedPatternPaths.add(normalizePath(patternPath));
-      const absolutePatternPath = path.resolve(cwd, patternPath);
-      if (!(await fileExists(absolutePatternPath))) {
+      const resolvedPattern = await resolvePatternFile(patternPath, cwd, sourcePath);
+      if (!resolvedPattern) {
         issues.push({
           level: "error",
           code: "missing_pattern_doc",
@@ -986,8 +1153,8 @@ export async function lintPack(cwd = process.cwd()) {
       }
 
       const parsed = parsePatternDoc(
-        normalizePath(patternPath),
-        await readFile(absolutePatternPath, "utf8"),
+        resolvedPattern.relativePath,
+        await readFile(resolvedPattern.filePath, "utf8"),
         false,
       );
 
@@ -1021,8 +1188,8 @@ export async function lintPack(cwd = process.cwd()) {
     }
   }
 
-  for (const filePath of patternFiles) {
-    const relativePath = normalizePath(path.relative(cwd, filePath));
+  for (const patternEntry of patternFiles) {
+    const relativePath = patternEntry.relativePath;
     if (!referencedPatternPaths.has(relativePath)) {
       issues.push({
         level: "warning",

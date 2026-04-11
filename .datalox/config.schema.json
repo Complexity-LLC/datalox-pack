@@ -126,15 +126,25 @@
     "paths": {
       "type": "object",
       "required": [
-        "skillsDir",
-        "patternsDir"
+        "seedSkillsDir",
+        "seedPatternsDir",
+        "hostSkillsDir",
+        "hostPatternsDir"
       ],
       "properties": {
-        "skillsDir": {
+        "seedSkillsDir": {
           "type": "string",
           "minLength": 1
         },
-        "patternsDir": {
+        "seedPatternsDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hostSkillsDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hostPatternsDir": {
           "type": "string",
           "minLength": 1
         }

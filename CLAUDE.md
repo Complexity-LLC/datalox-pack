@@ -12,8 +12,8 @@ On every loop:
 
 When you learn something reusable:
 
-1. write a pattern doc into `.datalox/patterns/`
-2. update or create the corresponding skill in `skills/`
+1. write a pattern doc into the host repo `.datalox/patterns/`
+2. update or create the corresponding skill in the host repo `skills/`
 3. lint the skill-pattern graph
 
 Keep Datalox additive to Claude's native skills. Do not require a running Datalox service.

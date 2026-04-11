@@ -46,8 +46,10 @@ export interface AgentConfig {
     interfaceOrder: AgentInterface[];
   };
   paths: {
-    skillsDir: string;
-    patternsDir: string;
+    seedSkillsDir: string;
+    seedPatternsDir: string;
+    hostSkillsDir: string;
+    hostPatternsDir: string;
   };
   runtime: {
     enabled: boolean;

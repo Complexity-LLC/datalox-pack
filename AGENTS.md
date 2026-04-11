@@ -18,8 +18,9 @@ Preserve your native or platform-provided skills. Datalox is additive.
 
 ## Rules
 
-- generated skills belong in `skills/`
-- reusable pattern docs belong in `.datalox/patterns/`
+- if this repo is being used as an external pack, treat its skills and pattern docs as seed knowledge
+- generated skills belong in the host repo `skills/`
+- reusable pattern docs belong in the host repo `.datalox/patterns/`
 - keep skills lightweight and let them point to pattern docs
 - lint the skill-pattern graph after changing local knowledge
 - do not require a local server

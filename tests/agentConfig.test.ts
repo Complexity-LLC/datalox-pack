@@ -59,8 +59,10 @@ const baseConfig = {
     ],
   },
   paths: {
-    skillsDir: "skills",
-    patternsDir: ".datalox/patterns",
+    seedSkillsDir: "skills",
+    seedPatternsDir: ".datalox/patterns",
+    hostSkillsDir: "skills",
+    hostPatternsDir: ".datalox/patterns",
   },
   runtime: {
     enabled: false,
@@ -111,8 +113,10 @@ describe("loadAgentConfig", () => {
       expect(loaded.config.runtime.baseUrl).toBe("https://api.example.datalox.com");
       expect(loaded.config.mode).toBe("repo_only");
       expect(loaded.config.agent.detectOnEveryLoop).toBe(true);
-      expect(loaded.config.paths.patternsDir).toBe(".datalox/patterns");
-      expect(loaded.config.paths.skillsDir).toBe("skills");
+      expect(loaded.config.paths.seedPatternsDir).toBe(".datalox/patterns");
+      expect(loaded.config.paths.seedSkillsDir).toBe("skills");
+      expect(loaded.config.paths.hostPatternsDir).toBe(".datalox/patterns");
+      expect(loaded.config.paths.hostSkillsDir).toBe("skills");
       expect(loaded.localOverridePath).toContain(".datalox/config.local.json");
     } finally {
       restoreEnv(envSnapshot);

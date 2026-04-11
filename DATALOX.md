@@ -19,6 +19,8 @@ Do not replace the agent's native skills. Datalox is additive.
 4. this file
 5. `AGENTS.md` or a tool-specific instruction file if present
 
+If this pack is used from another repo, read seed knowledge from this repo and write generated knowledge into the host repo.
+
 ## Loop Rule
 
 At the start of every agent loop:
@@ -29,6 +31,8 @@ At the start of every agent loop:
 3. select the best matching skill in `skills/`
 4. read the pattern docs listed in that skill's `patternPaths`
 5. act using the pattern docs' signal, interpretation, and recommended action
+
+Host repo skills and pattern docs override seed-pack files when both define the same knowledge.
 
 This is the `detect -> use` part of the loop.
 
@@ -41,6 +45,8 @@ When the agent discovers a reusable pattern:
 3. put the pattern doc path into that skill's `patternPaths`
 
 This is the `patch` part of the loop.
+
+These writes belong to the host repo, not the seed pack repo.
 
 ## Lint Rule
 

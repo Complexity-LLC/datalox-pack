@@ -30,8 +30,10 @@
     ]
   },
   "paths": {
-    "skillsDir": "skills",
-    "patternsDir": ".datalox/patterns"
+    "seedSkillsDir": "skills",
+    "seedPatternsDir": ".datalox/patterns",
+    "hostSkillsDir": "skills",
+    "hostPatternsDir": ".datalox/patterns"
   },
   "runtime": {
     "enabled": false,

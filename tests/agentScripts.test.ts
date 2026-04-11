@@ -38,8 +38,10 @@ const baseConfig = {
     ],
   },
   paths: {
-    skillsDir: "skills",
-    patternsDir: ".datalox/patterns",
+    seedSkillsDir: "skills",
+    seedPatternsDir: ".datalox/patterns",
+    hostSkillsDir: "skills",
+    hostPatternsDir: ".datalox/patterns",
   },
   runtime: {
     enabled: false,
@@ -136,7 +138,29 @@ async function createPack(tempDir: string) {
   );
 }
 
-function runNodeScript(tempDir: string, scriptRelativePath: string, args: string[] = []) {
+async function createHostRepo(tempDir: string) {
+  await mkdir(path.join(tempDir, ".datalox"), { recursive: true });
+  await writeFile(
+    path.join(tempDir, "package.json"),
+    JSON.stringify(
+      {
+        name: "host-repo",
+        dependencies: {
+          vitest: "^2.0.0",
+        },
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+function runNodeScript(
+  tempDir: string,
+  scriptRelativePath: string,
+  args: string[] = [],
+  envOverrides: Record<string, string> = {},
+) {
   return spawnSync("node", [path.join(repoRoot, scriptRelativePath), ...args], {
     cwd: tempDir,
     encoding: "utf8",
@@ -147,6 +171,7 @@ function runNodeScript(tempDir: string, scriptRelativePath: string, args: string
       DATALOX_DEFAULT_WORKFLOW: "",
       DATALOX_AGENT_PROFILE: "",
       DATALOX_MODE: "",
+      ...envOverrides,
     },
   });
 }
@@ -172,6 +197,8 @@ describe("agent scripts", () => {
     expect(body.detectOnEveryLoop).toBe(true);
     expect(body.counts.skills).toBe(2);
     expect(body.counts.patterns).toBe(2);
+    expect(body.counts.hostSkills).toBe(2);
+    expect(body.counts.seedSkills).toBe(0);
   });
 
   it("resolves a local skill and its pattern docs", async () => {
@@ -376,5 +403,83 @@ describe("agent scripts", () => {
     expect(body.issues.some((issue: { code: string }) => issue.code === "pattern_missing_interpretation")).toBe(true);
     expect(body.issues.some((issue: { code: string }) => issue.code === "pattern_missing_action")).toBe(true);
     expect(body.issues.some((issue: { code: string }) => issue.code === "orphan_pattern_doc")).toBe(true);
+  });
+
+  it("reads seed knowledge from an external pack and writes generated knowledge into the host repo", async () => {
+    const packDir = await mkdtemp(path.join(tmpdir(), "datalox-seed-pack-"));
+    const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-host-repo-"));
+    tempDirs.push(packDir, hostDir);
+    await createPack(packDir);
+    await createHostRepo(hostDir);
+
+    const configPath = path.join(packDir, ".datalox/config.json");
+
+    const resolveResult = runNodeScript(
+      hostDir,
+      "scripts/agent-resolve.mjs",
+      [
+        "--task",
+        "review ambiguous live dead gate",
+        "--workflow",
+        "flow_cytometry",
+        "--json",
+      ],
+      { DATALOX_CONFIG_JSON: configPath },
+    );
+    expect(resolveResult.status).toBe(0);
+
+    const resolved = JSON.parse(resolveResult.stdout);
+    expect(resolved.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
+    expect(resolved.matches[0].skillOrigin).toBe("seed");
+
+    const patchResult = runNodeScript(
+      hostDir,
+      "scripts/agent-learn-from-interaction.mjs",
+      [
+        "--task",
+        "review ambiguous live dead gate",
+        "--workflow",
+        "flow_cytometry",
+        "--observation",
+        "dim dead tail overlaps live shoulder",
+        "--interpretation",
+        "likely staining artifact",
+        "--action",
+        "review exception pattern before widening gate",
+        "--json",
+      ],
+      { DATALOX_CONFIG_JSON: configPath },
+    );
+    expect(patchResult.status).toBe(0);
+
+    const patched = JSON.parse(patchResult.stdout);
+    const hostSkillPath = path.join(hostDir, "skills/review-ambiguous-viability-gate.json");
+    const hostPatternPath = path.join(hostDir, patched.pattern.relativePath);
+    const seedSkill = JSON.parse(
+      await readFile(path.join(packDir, "skills/review-ambiguous-viability-gate.json"), "utf8"),
+    );
+    const hostSkill = JSON.parse(await readFile(hostSkillPath, "utf8"));
+
+    expect(hostSkill.patternPaths).toContain(patched.pattern.relativePath);
+    expect(seedSkill.patternPaths).not.toContain(patched.pattern.relativePath);
+    expect(await readFile(hostPatternPath, "utf8")).toContain("review exception pattern before widening gate");
+
+    const resolveAgain = runNodeScript(
+      hostDir,
+      "scripts/agent-resolve.mjs",
+      [
+        "--task",
+        "review ambiguous live dead gate",
+        "--workflow",
+        "flow_cytometry",
+        "--json",
+      ],
+      { DATALOX_CONFIG_JSON: configPath },
+    );
+    expect(resolveAgain.status).toBe(0);
+
+    const resolvedAgain = JSON.parse(resolveAgain.stdout);
+    expect(resolvedAgain.matches[0].skillOrigin).toBe("host");
+    expect(resolvedAgain.matches[0].patternDocs.length).toBe(2);
   });
 });

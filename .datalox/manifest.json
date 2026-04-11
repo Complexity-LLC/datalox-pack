@@ -11,8 +11,10 @@
     "CLAUDE.md"
   ],
   "entrypoints": {
-    "skillsDir": "skills",
-    "patternsDir": ".datalox/patterns"
+    "seedSkillsDir": "skills",
+    "seedPatternsDir": ".datalox/patterns",
+    "hostSkillsDir": "skills",
+    "hostPatternsDir": ".datalox/patterns"
   },
   "startup": {
     "readOnEveryLoop": true,
@@ -34,6 +36,7 @@
   "agentRules": {
     "preserveNativeSkills": true,
     "generatedSkillsDir": "skills",
-    "patternDocsDir": ".datalox/patterns"
+    "patternDocsDir": ".datalox/patterns",
+    "hostRepoOwnsWrites": true
   }
 }

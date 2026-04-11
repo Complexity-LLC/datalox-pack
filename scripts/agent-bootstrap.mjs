@@ -4,8 +4,8 @@ import { countPackFiles, loadPackConfig, parseArgs, resolvePackPaths } from "./l
 
 const args = parseArgs(process.argv.slice(2));
 const { config, sourcePath, localOverridePath } = await loadPackConfig(process.cwd());
-const paths = resolvePackPaths(config, process.cwd());
-const counts = await countPackFiles(config, process.cwd());
+const paths = resolvePackPaths(config, { cwd: process.cwd(), sourcePath });
+const counts = await countPackFiles(config, process.cwd(), sourcePath);
 
 const payload = {
   mode: config.mode,
@@ -30,7 +30,9 @@ if (args.json) {
   process.stdout.write(`Native skill policy: ${payload.nativeSkillPolicy}\n`);
   process.stdout.write(`Skills: ${payload.counts.skills}\n`);
   process.stdout.write(`Patterns: ${payload.counts.patterns}\n`);
-  process.stdout.write(`Skills dir: ${payload.paths.skillsDir}\n`);
-  process.stdout.write(`Patterns dir: ${payload.paths.patternsDir}\n`);
+  process.stdout.write(`Seed skills dir: ${payload.paths.seedSkillsDir}\n`);
+  process.stdout.write(`Seed patterns dir: ${payload.paths.seedPatternsDir}\n`);
+  process.stdout.write(`Host skills dir: ${payload.paths.hostSkillsDir}\n`);
+  process.stdout.write(`Host patterns dir: ${payload.paths.hostPatternsDir}\n`);
   process.stdout.write("Status: portable pack is readable without a running Datalox service\n");
 }

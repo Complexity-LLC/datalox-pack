@@ -25,6 +25,8 @@ The pack is built around one minimal loop:
 4. `lint`
    Check that the skill-pattern graph is still coherent.
 
+When this pack is used from another repo, it acts as a seed pack. Reads can come from this repo, but generated skills and pattern docs must be written into the host repo.
+
 ## Read First
 
 1. [DATALOX.md](DATALOX.md)
@@ -35,10 +37,10 @@ The pack is built around one minimal loop:
 
 ## Repo Contract
 
-- `skills/`: skills the agent should detect and use
-- `.datalox/patterns/`: pattern docs that skills point to
-- generated skills should still be written into `skills/`
-- generated pattern docs should be written into `.datalox/patterns/`
+- `skills/`: seed skills for the pack
+- `.datalox/patterns/`: seed pattern docs for the pack
+- host repos should write generated skills into their own `skills/`
+- host repos should write generated pattern docs into their own `.datalox/patterns/`
 
 ## Optional Reference Implementation
 
