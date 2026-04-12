@@ -13,12 +13,14 @@ your agent gets better after one correction, and you can see what it learned.
    - `agent-wiki/index.md`
    - `agent-wiki/log.md`
    - `agent-wiki/lint.md`
+   - `agent-wiki/hot.md`
 
 ## What You Should See
 
 - `index.md`: what the agent currently knows
 - `log.md`: what it changed
 - `lint.md`: whether the pack is still healthy
+- `hot.md`: the recent context snapshot for the next session
 
 ## One-Click Options
 

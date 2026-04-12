@@ -14,6 +14,7 @@ The pack must also keep three visible control artifacts in the host repo:
 - `agent-wiki/index.md`
 - `agent-wiki/log.md`
 - `agent-wiki/lint.md`
+- `agent-wiki/hot.md`
 
 Do not replace the agent's native skills. Datalox is additive.
 
@@ -45,7 +46,8 @@ At the start of every agent loop:
    changed git paths, repo root files, and package metadata
 3. select the best matching skill in `skills/`
 4. read the pattern docs listed in that skill's `metadata.datalox.pattern_paths`
-5. act using the pattern docs' signal, interpretation, and recommended action
+5. if needed, follow the pattern docs' `related` and `sources` links into the wider `agent-wiki/`
+6. act using the pattern docs' signal, interpretation, and recommended action
 
 Host repo skills and pattern docs override seed-pack files when both define the same knowledge.
 
@@ -67,6 +69,7 @@ After patching, refresh:
 
 - `agent-wiki/index.md` so the current skill-pattern graph is visible
 - `agent-wiki/log.md` so the change is recorded chronologically
+- `agent-wiki/hot.md` so the next session can restore recent context
 
 ## Lint Rule
 
@@ -77,8 +80,11 @@ Lint checks:
 - skills missing `metadata.datalox.pattern_paths`
 - missing pattern doc paths
 - pattern docs missing `Signal`, `Interpretation`, or `Recommended Action`
-- orphan pattern docs
+- pattern docs missing evidence or related pages
+- orphan pattern docs and orphan supporting wiki pages
 - duplicate or overlapping skills in the same workflow
+- overdue `review_after` pages
+- contradiction pages without supporting evidence or source links
 
 This is the `lint` part of the loop.
 
@@ -113,6 +119,10 @@ Append-only change trail. Record at least:
 ### `agent-wiki/lint.md`
 
 Latest lint snapshot in markdown so a human can see why the pack is healthy or broken without running tools.
+
+### `agent-wiki/hot.md`
+
+Recent-context cache for the next session. This should be the first wiki page an agent reads when it wants fast local context instead of scanning the whole knowledge layer.
 
 ## Skill Shape
 

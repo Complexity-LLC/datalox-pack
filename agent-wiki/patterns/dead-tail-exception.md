@@ -8,11 +8,16 @@ tags:
   - viability
   - artifact
 confidence: medium
+status: active
 related:
   - agent-wiki/patterns/viability-gate-review.md
-sources: []
+  - agent-wiki/concepts/ambiguous-viability-gate-review.md
+  - agent-wiki/comparisons/manual-threshold-shift-vs-exception-review.md
+sources:
+  - agent-wiki/sources/flow-cytometry-demo-notes.md
 author: yifanjin
 updated: 2026-04-12T15:10:00.000Z
+review_after: 2026-07-12
 ---
 
 # Dead tail exception
@@ -48,7 +53,10 @@ If repeat runs or orthogonal evidence show the same shift without the artifact s
 ## Evidence
 
 - Use this to explain why a visually ambiguous boundary does not automatically justify gate widening.
+- agent-wiki/sources/flow-cytometry-demo-notes.md
 
 ## Related
 
 - agent-wiki/patterns/viability-gate-review.md
+- agent-wiki/concepts/ambiguous-viability-gate-review.md
+- agent-wiki/comparisons/manual-threshold-shift-vs-exception-review.md

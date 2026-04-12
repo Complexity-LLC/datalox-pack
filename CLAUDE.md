@@ -8,18 +8,20 @@ On every loop:
 2. read `.datalox/config.json`
 3. detect the best matching skill from `skills/`
 4. read the linked pattern docs from `agent-wiki/patterns/`
-5. use the pattern docs' signal, interpretation, and recommended action in the current loop
+5. if needed, follow `related` and `sources` into the wider `agent-wiki/`
+6. use the pattern docs' signal, interpretation, and recommended action in the current loop
 
 When you learn something reusable:
 
 1. write a pattern doc into the host repo `agent-wiki/patterns/`
 2. update or create the corresponding skill in the host repo `skills/`
-3. lint the skill-pattern graph
+3. lint the skill-to-wiki graph
 
 Keep these files current:
 
 - `agent-wiki/index.md`
 - `agent-wiki/log.md`
 - `agent-wiki/lint.md`
+- `agent-wiki/hot.md`
 
 Keep Datalox additive to Claude's native skills. Do not require a running Datalox service.

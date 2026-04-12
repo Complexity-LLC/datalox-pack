@@ -8,7 +8,8 @@ Use it on every loop:
 2. read `.datalox/config.json`
 3. detect a skill from `skills/<name>/SKILL.md`
 4. read the linked pattern docs in `agent-wiki/patterns/`
-5. use the pattern docs' signal, interpretation, and recommended action
+5. if needed, follow `related` and `sources` into the wider `agent-wiki/`
+6. use the pattern docs' signal, interpretation, and recommended action
 
 When you learn something reusable:
 
@@ -19,5 +20,6 @@ When you learn something reusable:
    - `agent-wiki/index.md`
    - `agent-wiki/log.md`
    - `agent-wiki/lint.md`
+   - `agent-wiki/hot.md`
 
 Preserve native Gemini or platform skills. Datalox is additive.

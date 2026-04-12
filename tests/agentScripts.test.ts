@@ -63,6 +63,10 @@ async function createPack(tempDir: string) {
   await mkdir(path.join(tempDir, ".datalox"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/patterns"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/meta"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/sources"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/concepts"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/comparisons"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/questions"), { recursive: true });
   await mkdir(path.join(tempDir, "skills/review-ambiguous-viability-gate"), { recursive: true });
   await mkdir(path.join(tempDir, "skills/evolve-portable-pack"), { recursive: true });
 
@@ -176,11 +180,348 @@ Use when changing the portable pack or agent guidance.
   );
   await writeFile(
     path.join(tempDir, "agent-wiki/patterns/viability-gate-review.md"),
-    "# Review ambiguous viability gate\n\n## When to Use\n\nUse this pattern when viability review is ambiguous and the live/dead split is not clearly separable.\n\n## Signal\n\nLive and dead populations are not cleanly separated.\n\n## Interpretation\n\nThis is a judgment step, not a mechanical threshold change.\n\n## Recommended Action\n\nReview the linked exception pattern before changing the gate.\n\n## Examples\n\n- A boundary that looks unstable and needs exception review before widening the gate.\n",
+    `---
+type: pattern
+title: Review ambiguous viability gate
+workflow: flow_cytometry
+skill: flow-cytometry.review-ambiguous-viability-gate
+status: active
+related:
+  - agent-wiki/patterns/dead-tail-exception.md
+  - agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
+sources:
+  - agent-wiki/sources/flow-cytometry-demo-notes.md
+updated: 2026-04-12T16:00:00.000Z
+review_after: 2026-07-12
+---
+
+# Review ambiguous viability gate
+
+## When to Use
+
+Use this pattern when viability review is ambiguous and the live/dead split is not clearly separable.
+
+## Signal
+
+Live and dead populations are not cleanly separated.
+
+## Interpretation
+
+This is a judgment step, not a mechanical threshold change.
+
+## Recommended Action
+
+Review the linked exception pattern before changing the gate.
+
+## Examples
+
+- A boundary that looks unstable and needs exception review before widening the gate.
+
+## Evidence
+
+- agent-wiki/sources/flow-cytometry-demo-notes.md
+
+## Related
+
+- agent-wiki/patterns/dead-tail-exception.md
+- agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
+`,
   );
   await writeFile(
     path.join(tempDir, "agent-wiki/patterns/evolve-portable-pack.md"),
-    "# Evolve portable pack\n\n## When to Use\n\nUse this pattern when the pack design adds complexity faster than user-visible benefit.\n\n## Signal\n\nThe pack is getting too complicated.\n\n## Interpretation\n\nThe right response is usually to simplify the loop, not add another layer.\n\n## Recommended Action\n\nKeep the loop as skill detection plus pattern docs.\n\n## Examples\n\n- Replacing hidden pack layers with visible wiki artifacts that an agent can inspect directly.\n",
+    `---
+type: pattern
+title: Evolve portable pack
+workflow: repo_engineering
+status: active
+related:
+  - agent-wiki/concepts/loop-bridge.md
+sources:
+  - agent-wiki/sources/portable-pack-design-notes.md
+updated: 2026-04-12T16:00:00.000Z
+review_after: 2026-07-12
+---
+
+# Evolve portable pack
+
+## When to Use
+
+Use this pattern when the pack design adds complexity faster than user-visible benefit.
+
+## Signal
+
+The pack is getting too complicated.
+
+## Interpretation
+
+The right response is usually to simplify the loop, not add another layer.
+
+## Recommended Action
+
+Keep the loop as skill detection plus pattern docs.
+
+## Examples
+
+- Replacing hidden pack layers with visible wiki artifacts that an agent can inspect directly.
+
+## Evidence
+
+- agent-wiki/sources/portable-pack-design-notes.md
+
+## Related
+
+- agent-wiki/concepts/loop-bridge.md
+`,
+  );
+  await writeFile(
+    path.join(tempDir, "agent-wiki/patterns/dead-tail-exception.md"),
+    `---
+type: pattern
+title: Dead tail exception
+workflow: flow_cytometry
+status: active
+related:
+  - agent-wiki/patterns/viability-gate-review.md
+sources:
+  - agent-wiki/sources/flow-cytometry-demo-notes.md
+updated: 2026-04-12T16:00:00.000Z
+review_after: 2026-07-12
+---
+
+# Dead tail exception
+
+## When to Use
+
+Use this pattern when dim dead-tail overlap makes the gate boundary look unstable.
+
+## Signal
+
+Dim dead tail overlaps live shoulder.
+
+## Interpretation
+
+This often indicates artifact rather than a true biological shift.
+
+## Recommended Action
+
+Review the exception path before widening the gate.
+
+## Examples
+
+- A dim tail drifting into the live shoulder after staining prep.
+
+## Evidence
+
+- agent-wiki/sources/flow-cytometry-demo-notes.md
+
+## Related
+
+- agent-wiki/patterns/viability-gate-review.md
+`,
+  );
+  await writeFile(
+    path.join(tempDir, "agent-wiki/sources/flow-cytometry-demo-notes.md"),
+    `---
+type: source
+title: Flow cytometry demo notes
+workflow: flow_cytometry
+status: active
+related:
+  - agent-wiki/patterns/viability-gate-review.md
+sources: []
+updated: 2026-04-12T16:00:00.000Z
+review_after: 2026-07-12
+---
+
+# Flow cytometry demo notes
+
+## Overview
+
+Demo notes backing the seed flow-cytometry patterns.
+
+## Key Claims
+
+- Ambiguous viability review is a judgment step.
+
+## Limitations
+
+- Demo only.
+
+## Related
+
+- agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
+`,
+  );
+  await writeFile(
+    path.join(tempDir, "agent-wiki/concepts/loop-bridge.md"),
+    `---
+type: concept
+title: Loop bridge
+workflow: repo_engineering
+status: active
+related:
+  - agent-wiki/patterns/evolve-portable-pack.md
+sources:
+  - agent-wiki/sources/portable-pack-design-notes.md
+updated: 2026-04-12T16:00:00.000Z
+review_after: 2026-07-12
+---
+
+# Loop bridge
+
+## Definition
+
+A loop bridge resolves a skill before the turn and can patch knowledge after the turn.
+
+## Why It Matters
+
+It makes the pack active instead of merely discoverable.
+
+## Examples
+
+- MCP resolve_loop.
+
+## Related
+
+- agent-wiki/comparisons/repo-protocol-vs-loop-bridge.md
+`,
+  );
+  await writeFile(
+    path.join(tempDir, "agent-wiki/comparisons/repo-protocol-vs-loop-bridge.md"),
+    `---
+type: comparison
+title: Repo protocol vs loop bridge
+workflow: repo_engineering
+status: active
+related:
+  - agent-wiki/concepts/loop-bridge.md
+sources:
+  - agent-wiki/sources/portable-pack-design-notes.md
+updated: 2026-04-12T16:00:00.000Z
+review_after: 2026-07-12
+---
+
+# Repo protocol vs loop bridge
+
+## Overview
+
+This comparison explains when files are enough and when host integration is needed.
+
+## Comparison
+
+| Dimension | Repo protocol | Loop bridge |
+|-----------|---------------|-------------|
+| Automatic per-turn behavior | Low | High |
+
+## Verdict
+
+Use the loop bridge when you need per-turn behavior.
+
+## Related
+
+- agent-wiki/questions/when-should-a-new-skill-be-created.md
+`,
+  );
+  await writeFile(
+    path.join(tempDir, "agent-wiki/questions/when-should-qc-escalate-after-viability-review.md"),
+    `---
+type: question
+title: When should QC escalate after viability review?
+workflow: flow_cytometry
+status: active
+related:
+  - agent-wiki/patterns/viability-gate-review.md
+sources:
+  - agent-wiki/sources/flow-cytometry-demo-notes.md
+updated: 2026-04-12T16:00:00.000Z
+review_after: 2026-07-12
+---
+
+# When should QC escalate after viability review?
+
+## Question
+
+When should an ambiguous viability decision escalate to QC?
+
+## Answer
+
+Escalate when the gate change would materially affect downstream QC acceptance.
+
+## Escalate When
+
+- The result would flip from pass to fail.
+
+## Related
+
+- agent-wiki/patterns/viability-gate-review.md
+`,
+  );
+  await writeFile(
+    path.join(tempDir, "agent-wiki/questions/when-should-a-new-skill-be-created.md"),
+    `---
+type: question
+title: When should a new skill be created?
+workflow: repo_engineering
+status: active
+related:
+  - agent-wiki/concepts/loop-bridge.md
+sources:
+  - agent-wiki/sources/portable-pack-design-notes.md
+updated: 2026-04-12T16:00:00.000Z
+review_after: 2026-07-12
+---
+
+# When should a new skill be created?
+
+## Question
+
+When should the pack create a new skill?
+
+## Answer
+
+Only when a new recurring task boundary appears.
+
+## Escalate When
+
+- The new knowledge is just another exception.
+
+## Related
+
+- agent-wiki/comparisons/repo-protocol-vs-loop-bridge.md
+`,
+  );
+  await writeFile(
+    path.join(tempDir, "agent-wiki/sources/portable-pack-design-notes.md"),
+    `---
+type: source
+title: Portable pack design notes
+workflow: repo_engineering
+status: active
+related:
+  - agent-wiki/patterns/evolve-portable-pack.md
+sources: []
+updated: 2026-04-12T16:00:00.000Z
+review_after: 2026-07-12
+---
+
+# Portable pack design notes
+
+## Overview
+
+Design notes behind the pack loop.
+
+## Key Claims
+
+- Host integration controls per-turn behavior.
+
+## Limitations
+
+- Design assumptions may change.
+
+## Related
+
+- agent-wiki/concepts/loop-bridge.md
+`,
   );
 }
 
@@ -242,7 +583,8 @@ describe("agent scripts", () => {
     expect(body.runtimeEnabled).toBe(false);
     expect(body.detectOnEveryLoop).toBe(true);
     expect(body.counts.skills).toBe(2);
-    expect(body.counts.patterns).toBe(2);
+    expect(body.counts.patterns).toBe(3);
+    expect(body.counts.wikiPages).toBeGreaterThan(body.counts.patterns);
     expect(body.counts.hostSkills).toBe(2);
     expect(body.counts.seedSkills).toBe(0);
   });
@@ -312,6 +654,7 @@ describe("agent scripts", () => {
     );
     const indexFile = await readFile(path.join(tempDir, "agent-wiki/index.md"), "utf8");
     const logFile = await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8");
+    const hotFile = await readFile(path.join(tempDir, "agent-wiki/hot.md"), "utf8");
 
     expect(patternBody.pattern.relativePath).toContain("agent-wiki/patterns/");
     expect(skillFile).toContain(patternBody.pattern.relativePath);
@@ -320,6 +663,7 @@ describe("agent scripts", () => {
     expect(indexFile).toContain(patternBody.pattern.relativePath);
     expect(logFile).toContain("patch_pattern");
     expect(logFile).toContain("update_skill");
+    expect(hotFile).toContain("Agent Wiki Hot Cache");
   });
 
   it("learns from interaction by writing a pattern doc and updating a skill in skills", async () => {
@@ -414,6 +758,7 @@ describe("agent scripts", () => {
     expect(lintBody.issueCount).toBe(0);
     expect(await readFile(path.join(tempDir, "agent-wiki/lint.md"), "utf8")).toContain("Issue Count: 0");
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("lint_pack");
+    expect(await readFile(path.join(tempDir, "agent-wiki/hot.md"), "utf8")).toContain("Recent Changes");
   });
 
   it("lints the minimal skill-pattern graph", async () => {
@@ -552,7 +897,7 @@ Use when the pack is broken.
     const resolvedAgain = JSON.parse(resolveAgain.stdout);
     expect(resolvedAgain.matches[0].skillOrigin).toBe("host");
     expect(resolvedAgain.matches[0].patternDocs.length).toBe(2);
-  });
+  }, 15000);
 
   it("creates a new skill when no existing skill matches the interaction", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));

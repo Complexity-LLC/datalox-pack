@@ -7,9 +7,9 @@ The current version is intentionally narrow:
 - detect a skill on every agent loop
 - expose actionable guidance from linked pattern docs
 - keep generated skills in `skills/`
-- keep reusable pattern docs in `agent-wiki/patterns/`
-- lint the skill-pattern graph for broken links and invalid pattern docs
-- keep visible control artifacts in `agent-wiki/index.md`, `agent-wiki/log.md`, and `agent-wiki/lint.md`
+- keep reusable knowledge in `agent-wiki/`
+- lint the skill-to-wiki graph for broken links, stale pages, and unsupported contradictions
+- keep visible control artifacts in `agent-wiki/index.md`, `agent-wiki/log.md`, `agent-wiki/lint.md`, and `agent-wiki/hot.md`
 
 No server is required.
 
@@ -84,6 +84,7 @@ The human-visible payoff is in three generated files:
 - `agent-wiki/index.md`: what the agent currently knows
 - `agent-wiki/log.md`: what it changed, including `create_skill`, `update_skill`, `patch_pattern`, and `lint_pack`
 - `agent-wiki/lint.md`: whether the pack is still healthy
+- `agent-wiki/hot.md`: the recent context snapshot an agent can read first in the next session
 
 ## Read First
 
@@ -97,14 +98,22 @@ The human-visible payoff is in three generated files:
 ## Repo Contract
 
 - `skills/`: seed skills for the pack, stored as `skills/<name>/SKILL.md`
-- `agent-wiki/patterns/`: seed pattern docs for the pack
+- `agent-wiki/patterns/`: seed loop-time judgment pages
+- `agent-wiki/sources/`: seed source and provenance pages
+- `agent-wiki/concepts/`: seed reusable concept pages
+- `agent-wiki/comparisons/`: seed comparison pages
+- `agent-wiki/questions/`: seed recurring question pages
+- `agent-wiki/meta/`: seed maintenance pages
 - `agent-wiki/index.md`: generated skill-pattern map in the host repo
 - `agent-wiki/log.md`: generated operation log in the host repo
 - `agent-wiki/lint.md`: generated lint snapshot in the host repo
+- `agent-wiki/hot.md`: generated recent-context snapshot in the host repo
+- `agent-wiki/page-types.md`: wiki taxonomy for the supporting knowledge layer
 - `.datalox/skill.schema.md`: authoring contract for future skills
 - `START_HERE.md`: human-friendly first-run guide
 - host repos should write generated skills into their own `skills/`
 - host repos should write generated pattern docs into their own `agent-wiki/patterns/`
+- host repos can add richer supporting pages under the other `agent-wiki/` folders when patterns alone are not enough
 
 ## Optional Reference Implementation
 

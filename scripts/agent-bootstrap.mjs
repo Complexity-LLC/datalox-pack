@@ -22,6 +22,7 @@ const payload = {
     indexPath: `${paths.hostWikiDir}/index.md`,
     logPath: `${paths.hostWikiDir}/log.md`,
     lintPath: `${paths.hostWikiDir}/lint.md`,
+    hotPath: `${paths.hostWikiDir}/hot.md`,
   },
 };
 
@@ -42,5 +43,6 @@ if (args.json) {
   process.stdout.write(`Index: ${payload.artifacts.indexPath}\n`);
   process.stdout.write(`Log: ${payload.artifacts.logPath}\n`);
   process.stdout.write(`Lint snapshot: ${payload.artifacts.lintPath}\n`);
+  process.stdout.write(`Hot cache: ${payload.artifacts.hotPath}\n`);
   process.stdout.write("Status: portable pack is readable without a running Datalox service\n");
 }

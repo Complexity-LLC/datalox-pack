@@ -8,11 +8,16 @@ tags:
   - onboarding
   - multi_agent
 confidence: high
+status: active
 related:
   - agent-wiki/meta/evolve-portable-pack.md
-sources: []
+  - agent-wiki/concepts/loop-bridge.md
+  - agent-wiki/comparisons/repo-protocol-vs-loop-bridge.md
+sources:
+  - agent-wiki/sources/portable-pack-design-notes.md
 author: yifanjin
 updated: 2026-04-12T10:31:16.852Z
+review_after: 2026-07-12
 ---
 
 # Multi-agent bootstrap surfaces
@@ -48,7 +53,10 @@ If a host has a stronger native setup mechanism, use it, but keep the repo-level
 ## Evidence
 
 - This pattern was learned while making Datalox adoptable across Codex, Claude, Cursor, Windsurf, Copilot, and Gemini surfaces.
+- agent-wiki/sources/portable-pack-design-notes.md
 
 ## Related
 
 - agent-wiki/meta/evolve-portable-pack.md
+- agent-wiki/concepts/loop-bridge.md
+- agent-wiki/comparisons/repo-protocol-vs-loop-bridge.md

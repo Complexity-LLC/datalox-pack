@@ -9,7 +9,7 @@ The current version is intentionally small.
 Datalox gives an agent two repo-local things:
 
 - `Skill`: a lightweight entrypoint for a task or workflow
-- `Pattern Doc`: the reusable judgment or procedure a skill points to
+- `Agent Wiki`: the supporting knowledge layer a skill points to
 
 The loop is:
 
@@ -28,7 +28,8 @@ interaction -> pattern doc -> skill update
 ```
 
 Generated skills stay in `skills/`.
-Pattern docs live in `agent-wiki/patterns/`.
+Loop-time pattern docs live in `agent-wiki/patterns/`.
+Richer support can live in `agent-wiki/sources/`, `agent-wiki/concepts/`, `agent-wiki/comparisons/`, and `agent-wiki/questions/`.
 
 When the pack is external, those writes belong to the host repo while this repo remains the seed pack.
 

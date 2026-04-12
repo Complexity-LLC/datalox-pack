@@ -17,6 +17,11 @@ const SOURCE_KINDS = ["local_repo"];
 const DEFAULT_WIKI_DIR = "agent-wiki";
 const DEFAULT_PATTERN_DIR = `${DEFAULT_WIKI_DIR}/patterns`;
 const DEFAULT_META_DIR = `${DEFAULT_WIKI_DIR}/meta`;
+const DEFAULT_SOURCE_DIR = `${DEFAULT_WIKI_DIR}/sources`;
+const DEFAULT_CONCEPT_DIR = `${DEFAULT_WIKI_DIR}/concepts`;
+const DEFAULT_COMPARISON_DIR = `${DEFAULT_WIKI_DIR}/comparisons`;
+const DEFAULT_QUESTION_DIR = `${DEFAULT_WIKI_DIR}/questions`;
+const WIKI_PAGE_TYPES = ["pattern", "meta", "source", "concept", "comparison", "question"];
 
 async function fileExists(filePath) {
   try {
@@ -678,10 +683,18 @@ export function resolvePackPaths(config, options = {}) {
     hostSkillsDir: path.resolve(hostRoot, config.paths.hostSkillsDir ?? "skills"),
     hostPatternsDir: path.resolve(hostRoot, config.paths.hostPatternsDir ?? DEFAULT_PATTERN_DIR),
     hostMetaDir: path.resolve(hostRoot, DEFAULT_META_DIR),
+    hostSourcesDir: path.resolve(hostRoot, DEFAULT_SOURCE_DIR),
+    hostConceptsDir: path.resolve(hostRoot, DEFAULT_CONCEPT_DIR),
+    hostComparisonsDir: path.resolve(hostRoot, DEFAULT_COMPARISON_DIR),
+    hostQuestionsDir: path.resolve(hostRoot, DEFAULT_QUESTION_DIR),
     seedWikiDir: path.resolve(seedRoot, DEFAULT_WIKI_DIR),
     seedSkillsDir: path.resolve(seedRoot, config.paths.seedSkillsDir),
     seedPatternsDir: path.resolve(seedRoot, config.paths.seedPatternsDir),
     seedMetaDir: path.resolve(seedRoot, DEFAULT_META_DIR),
+    seedSourcesDir: path.resolve(seedRoot, DEFAULT_SOURCE_DIR),
+    seedConceptsDir: path.resolve(seedRoot, DEFAULT_CONCEPT_DIR),
+    seedComparisonsDir: path.resolve(seedRoot, DEFAULT_COMPARISON_DIR),
+    seedQuestionsDir: path.resolve(seedRoot, DEFAULT_QUESTION_DIR),
   };
 }
 
@@ -825,55 +838,68 @@ async function listSkillEntries(config, cwd = process.cwd(), sourcePath) {
 
 async function listPatternEntries(config, cwd = process.cwd(), sourcePath) {
   const paths = resolvePackPaths(config, { cwd, sourcePath });
-  const useSameDir = pathKey(paths.hostPatternsDir) === pathKey(paths.seedPatternsDir);
-  const useSameMetaDir = pathKey(paths.hostMetaDir) === pathKey(paths.seedMetaDir);
-  const [seedEntries, hostEntries, seedMetaEntries, hostMetaEntries] = await Promise.all([
-    useSameDir ? Promise.resolve([]) : readDirMarkdown(paths.seedPatternsDir),
-    readDirMarkdown(paths.hostPatternsDir),
-    useSameMetaDir ? Promise.resolve([]) : readDirMarkdown(paths.seedMetaDir),
-    readDirMarkdown(paths.hostMetaDir),
-  ]);
-
   const merged = new Map();
+  const dirSpecs = [
+    {
+      pageType: "pattern",
+      seedDir: paths.seedPatternsDir,
+      hostDir: paths.hostPatternsDir,
+    },
+    {
+      pageType: "meta",
+      seedDir: paths.seedMetaDir,
+      hostDir: paths.hostMetaDir,
+    },
+    {
+      pageType: "source",
+      seedDir: paths.seedSourcesDir,
+      hostDir: paths.hostSourcesDir,
+    },
+    {
+      pageType: "concept",
+      seedDir: paths.seedConceptsDir,
+      hostDir: paths.hostConceptsDir,
+    },
+    {
+      pageType: "comparison",
+      seedDir: paths.seedComparisonsDir,
+      hostDir: paths.hostComparisonsDir,
+    },
+    {
+      pageType: "question",
+      seedDir: paths.seedQuestionsDir,
+      hostDir: paths.hostQuestionsDir,
+    },
+  ];
 
-  for (const filePath of seedEntries) {
-    const relativePath = normalizePath(path.relative(paths.seedRoot, filePath));
-    merged.set(relativePath, {
-      filePath,
-      relativePath,
-      origin: "seed",
-      repoRoot: paths.seedRoot,
-    });
-  }
+  for (const spec of dirSpecs) {
+    const useSameDir = pathKey(spec.hostDir) === pathKey(spec.seedDir);
+    const [seedEntries, hostEntries] = await Promise.all([
+      useSameDir ? Promise.resolve([]) : readDirMarkdown(spec.seedDir),
+      readDirMarkdown(spec.hostDir),
+    ]);
 
-  for (const filePath of hostEntries) {
-    const relativePath = normalizePath(path.relative(paths.hostRoot, filePath));
-    merged.set(relativePath, {
-      filePath,
-      relativePath,
-      origin: "host",
-      repoRoot: paths.hostRoot,
-    });
-  }
+    for (const filePath of seedEntries) {
+      const relativePath = normalizePath(path.relative(paths.seedRoot, filePath));
+      merged.set(relativePath, {
+        filePath,
+        relativePath,
+        origin: "seed",
+        repoRoot: paths.seedRoot,
+        pageType: spec.pageType,
+      });
+    }
 
-  for (const filePath of seedMetaEntries) {
-    const relativePath = normalizePath(path.relative(paths.seedRoot, filePath));
-    merged.set(relativePath, {
-      filePath,
-      relativePath,
-      origin: "seed",
-      repoRoot: paths.seedRoot,
-    });
-  }
-
-  for (const filePath of hostMetaEntries) {
-    const relativePath = normalizePath(path.relative(paths.hostRoot, filePath));
-    merged.set(relativePath, {
-      filePath,
-      relativePath,
-      origin: "host",
-      repoRoot: paths.hostRoot,
-    });
+    for (const filePath of hostEntries) {
+      const relativePath = normalizePath(path.relative(paths.hostRoot, filePath));
+      merged.set(relativePath, {
+        filePath,
+        relativePath,
+        origin: "host",
+        repoRoot: paths.hostRoot,
+        pageType: spec.pageType,
+      });
+    }
   }
 
   return Array.from(merged.values()).sort((left, right) => left.relativePath.localeCompare(right.relativePath));
@@ -919,7 +945,7 @@ async function resolvePatternFile(patternPath, cwd, sourcePath) {
 
 export async function countPackFiles(config, cwd = process.cwd(), sourcePath) {
   const paths = resolvePackPaths(config, { cwd, sourcePath });
-  const [skills, patterns, hostSkills, seedSkills, hostPatterns, seedPatterns] = await Promise.all([
+  const [skills, wikiEntries, hostSkills, seedSkills, hostPatterns, seedPatterns] = await Promise.all([
     listSkillEntries(config, cwd, sourcePath),
     listPatternEntries(config, cwd, sourcePath),
     readSkillMarkdownEntries(paths.hostSkillsDir),
@@ -934,7 +960,8 @@ export async function countPackFiles(config, cwd = process.cwd(), sourcePath) {
 
   return {
     skills: skills.length,
-    patterns: patterns.length,
+    patterns: wikiEntries.filter((entry) => entry.pageType === "pattern").length,
+    wikiPages: wikiEntries.length,
     hostSkills: hostSkills.length,
     seedSkills: seedSkills.length,
     hostPatterns: hostPatterns.length,
@@ -958,7 +985,20 @@ function comparePaths(left, right) {
   return left.localeCompare(right);
 }
 
-function renderIndexMarkdown({ config, skills, patternEntries, patternDocs }) {
+function parseTimestamp(value) {
+  const timestamp = value ? Date.parse(value) : NaN;
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function sortByUpdatedAt(entries, docs) {
+  return [...entries].sort((left, right) => {
+    const rightDoc = docs.get(right.relativePath);
+    const leftDoc = docs.get(left.relativePath);
+    return parseTimestamp(rightDoc?.updatedAt) - parseTimestamp(leftDoc?.updatedAt);
+  });
+}
+
+function renderIndexMarkdown({ config, skills, wikiEntries, wikiDocs }) {
   const generatedAt = new Date().toISOString();
   const patternUsage = new Map();
 
@@ -977,7 +1017,7 @@ function renderIndexMarkdown({ config, skills, patternEntries, patternDocs }) {
     `- Project: ${config.project.name}`,
     `- Generated: ${generatedAt}`,
     `- Skills: ${skills.length}`,
-    `- Pattern docs: ${patternEntries.length}`,
+    `- Wiki pages: ${wikiEntries.length}`,
     "",
     "## Skills",
     "",
@@ -1009,39 +1049,148 @@ function renderIndexMarkdown({ config, skills, patternEntries, patternDocs }) {
     lines.push("");
   }
 
-  lines.push("## Pattern Docs");
+  lines.push("## Wiki Pages");
   lines.push("");
 
-  for (const patternEntry of patternEntries) {
-    const doc = patternDocs.get(patternEntry.relativePath);
-    lines.push(`### ${doc?.title ?? path.basename(patternEntry.relativePath, ".md")}`);
-    lines.push("");
-    lines.push(`- Path: ${patternEntry.relativePath}`);
-    lines.push(`- Source: ${patternEntry.origin}`);
-    if (doc?.workflow) {
-      lines.push(`- Workflow: ${doc.workflow}`);
+  const pageGroups = new Map();
+  for (const entry of wikiEntries) {
+    const group = wikiDocs.get(entry.relativePath)?.pageType ?? entry.pageType ?? "pattern";
+    if (!pageGroups.has(group)) {
+      pageGroups.set(group, []);
     }
-    if (doc?.updatedAt) {
-      lines.push(`- Updated: ${doc.updatedAt}`);
-    }
-    if (doc?.author) {
-      lines.push(`- Author: ${doc.author}`);
-    }
-    const linkedSkills = unique(patternUsage.get(patternEntry.relativePath) ?? []).sort(comparePaths);
-    if (linkedSkills.length > 0) {
-      lines.push("- Linked Skills:");
-      for (const skillId of linkedSkills) {
-        lines.push(`  - ${skillId}`);
-      }
-    } else {
-      lines.push("- Linked Skills: none");
-    }
-    if (doc?.recommendedAction) {
-      lines.push(`- Recommended Action: ${truncateLine(doc.recommendedAction)}`);
-    }
-    lines.push("");
+    pageGroups.get(group).push(entry);
   }
 
+  for (const pageType of WIKI_PAGE_TYPES) {
+    const entries = sortByUpdatedAt(pageGroups.get(pageType) ?? [], wikiDocs);
+    if (entries.length === 0) {
+      continue;
+    }
+
+    lines.push(`### ${pageType.charAt(0).toUpperCase()}${pageType.slice(1)} Pages`);
+    lines.push("");
+
+    for (const pageEntry of entries) {
+      const doc = wikiDocs.get(pageEntry.relativePath);
+      lines.push(`#### ${doc?.title ?? path.basename(pageEntry.relativePath, ".md")}`);
+      lines.push("");
+      lines.push(`- Path: ${pageEntry.relativePath}`);
+      lines.push(`- Type: ${doc?.pageType ?? pageEntry.pageType}`);
+      lines.push(`- Source: ${pageEntry.origin}`);
+      if (doc?.workflow) {
+        lines.push(`- Workflow: ${doc.workflow}`);
+      }
+      if (doc?.status) {
+        lines.push(`- Status: ${doc.status}`);
+      }
+      if (doc?.updatedAt) {
+        lines.push(`- Updated: ${doc.updatedAt}`);
+      }
+      if (doc?.reviewAfter) {
+        lines.push(`- Review After: ${doc.reviewAfter}`);
+      }
+      if (doc?.author) {
+        lines.push(`- Author: ${doc.author}`);
+      }
+      if (pageType === "pattern" || pageType === "meta") {
+        const linkedSkills = unique(patternUsage.get(pageEntry.relativePath) ?? []).sort(comparePaths);
+        if (linkedSkills.length > 0) {
+          lines.push("- Linked Skills:");
+          for (const skillId of linkedSkills) {
+            lines.push(`  - ${skillId}`);
+          }
+        } else {
+          lines.push("- Linked Skills: none");
+        }
+        if (doc?.recommendedAction) {
+          lines.push(`- Recommended Action: ${truncateLine(doc.recommendedAction)}`);
+        }
+      }
+      if (doc?.related?.length > 0) {
+        lines.push("- Related:");
+        for (const relatedPath of doc.related.sort(comparePaths)) {
+          lines.push(`  - ${relatedPath}`);
+        }
+      }
+      if (doc?.sources?.length > 0) {
+        lines.push("- Sources:");
+        for (const sourcePath of doc.sources.sort(comparePaths)) {
+          lines.push(`  - ${sourcePath}`);
+        }
+      }
+      if (doc?.summary) {
+        lines.push(`- Summary: ${truncateLine(doc.summary)}`);
+      }
+      lines.push("");
+    }
+  }
+
+  return `${lines.join("\n").trimEnd()}\n`;
+}
+
+function renderHotMarkdown({ config, skills, wikiEntries, wikiDocs, recentLogLines }) {
+  const generatedAt = new Date().toISOString();
+  const recentSkills = [...skills]
+    .sort((left, right) => parseTimestamp(right.value.updatedAt) - parseTimestamp(left.value.updatedAt))
+    .slice(0, 3);
+  const recentPages = sortByUpdatedAt(wikiEntries, wikiDocs).slice(0, 6);
+  const nextReads = unique(
+    recentPages.flatMap((entry) => {
+      const doc = wikiDocs.get(entry.relativePath);
+      return [...(doc?.related ?? []), ...(doc?.sources ?? [])];
+    }),
+  ).slice(0, 8);
+  const lines = [
+    "# Agent Wiki Hot Cache",
+    "",
+    `- Project: ${config.project.name}`,
+    `- Generated: ${generatedAt}`,
+    "",
+    "## Recent Changes",
+    "",
+  ];
+
+  if (recentLogLines.length === 0) {
+    lines.push("- No recent changes recorded.");
+  } else {
+    lines.push(...recentLogLines);
+  }
+
+  lines.push("");
+  lines.push("## Recently Updated Skills");
+  lines.push("");
+  if (recentSkills.length === 0) {
+    lines.push("- No skills available.");
+  } else {
+    for (const skillEntry of recentSkills) {
+      lines.push(`- ${skillEntry.value.displayName ?? skillEntry.value.name} | ${skillEntry.value.workflow ?? "unknown"} | ${truncateLine(skillEntry.value.trigger || skillEntry.value.description || "no trigger")}`);
+    }
+  }
+
+  lines.push("");
+  lines.push("## Recently Updated Pages");
+  lines.push("");
+  if (recentPages.length === 0) {
+    lines.push("- No wiki pages available.");
+  } else {
+    for (const pageEntry of recentPages) {
+      const doc = wikiDocs.get(pageEntry.relativePath);
+      lines.push(`- ${doc?.pageType ?? pageEntry.pageType}: ${doc?.title ?? pageEntry.relativePath} | ${pageEntry.relativePath}`);
+    }
+  }
+
+  lines.push("");
+  lines.push("## Next Reads");
+  lines.push("");
+  if (nextReads.length === 0) {
+    lines.push("- No linked follow-up pages.");
+  } else {
+    for (const nextRead of nextReads) {
+      lines.push(`- ${nextRead}`);
+    }
+  }
+
+  lines.push("");
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
@@ -1065,6 +1214,34 @@ async function appendPackLog(config, cwd, sourcePath, entry) {
   await ensureDir(hostWikiDir);
   await writeFile(logPath, next, "utf8");
   return logPath;
+}
+
+async function writeHotSnapshot(config, cwd, sourcePath) {
+  const { hostWikiDir } = resolvePackPaths(config, { cwd, sourcePath });
+  const [skills, wikiEntries, logContent] = await Promise.all([
+    listLocalSkills(config, cwd, sourcePath),
+    listPatternEntries(config, cwd, sourcePath),
+    readTextIfPresent(path.join(hostWikiDir, "log.md")),
+  ]);
+  const wikiDocs = new Map();
+
+  for (const entry of wikiEntries) {
+    const content = await readFile(entry.filePath, "utf8");
+    wikiDocs.set(entry.relativePath, parsePatternDoc(entry.relativePath, content, false));
+  }
+
+  const recentLogLines = (logContent ?? "")
+    .split("\n")
+    .filter((line) => line.startsWith("- "))
+    .slice(-5);
+  const hotPath = path.join(hostWikiDir, "hot.md");
+  await ensureDir(hostWikiDir);
+  await writeFile(
+    hotPath,
+    renderHotMarkdown({ config, skills, wikiEntries, wikiDocs, recentLogLines }),
+    "utf8",
+  );
+  return hotPath;
 }
 
 function renderLintMarkdown(result) {
@@ -1101,22 +1278,22 @@ async function writeLintSnapshot(config, cwd, sourcePath, result) {
 
 export async function refreshIndex(config, cwd = process.cwd(), sourcePath) {
   const { hostWikiDir } = resolvePackPaths(config, { cwd, sourcePath });
-  const [skills, patternEntries] = await Promise.all([
+  const [skills, wikiEntries] = await Promise.all([
     listLocalSkills(config, cwd, sourcePath),
     listPatternEntries(config, cwd, sourcePath),
   ]);
-  const patternDocs = new Map();
+  const wikiDocs = new Map();
 
-  for (const entry of patternEntries) {
+  for (const entry of wikiEntries) {
     const content = await readFile(entry.filePath, "utf8");
-    patternDocs.set(entry.relativePath, parsePatternDoc(entry.relativePath, content, false));
+    wikiDocs.set(entry.relativePath, parsePatternDoc(entry.relativePath, content, false));
   }
 
   const indexPath = path.join(hostWikiDir, "index.md");
   await ensureDir(hostWikiDir);
   await writeFile(
     indexPath,
-    renderIndexMarkdown({ config, skills, patternEntries, patternDocs }),
+    renderIndexMarkdown({ config, skills, wikiEntries, wikiDocs }),
     "utf8",
   );
   return indexPath;
@@ -1135,11 +1312,13 @@ async function updateControlArtifacts(
   const lintPath = lintResult
     ? await writeLintSnapshot(config, cwd, sourcePath, lintResult)
     : null;
+  const hotPath = await writeHotSnapshot(config, cwd, sourcePath);
 
   return {
     indexPath,
     logPath,
     lintPath,
+    hotPath,
   };
 }
 
@@ -1331,12 +1510,34 @@ async function readTextIfPresent(filePath) {
   return (await fileExists(filePath)) ? readFile(filePath, "utf8") : null;
 }
 
-function parsePatternDoc(relativePath, content, includeContent) {
-  const { frontmatter, body } = splitFrontmatter(content);
+function inferWikiPageType(relativePath, frontmatterType) {
+  if (typeof frontmatterType === "string" && WIKI_PAGE_TYPES.includes(frontmatterType)) {
+    return frontmatterType;
+  }
+  if (relativePath.includes("/meta/")) return "meta";
+  if (relativePath.includes("/sources/")) return "source";
+  if (relativePath.includes("/concepts/")) return "concept";
+  if (relativePath.includes("/comparisons/")) return "comparison";
+  if (relativePath.includes("/questions/")) return "question";
+  return "pattern";
+}
+
+function normalizeSectionList(lines = []) {
+  return lines
+    .map((line) => line.replace(/^- /, "").trim())
+    .filter(Boolean);
+}
+
+function normalizeFrontmatterRefs(value) {
+  return unique(
+    toArray(value)
+      .map((item) => String(item).trim())
+      .filter(Boolean),
+  );
+}
+
+function extractMarkdownSections(body) {
   const lines = body.split("\n");
-  const title = frontmatter.title
-    ?? lines.find((line) => line.startsWith("# "))?.replace(/^# /, "").trim()
-    ?? path.basename(relativePath, ".md");
   const metadata = {};
   let activeSection = null;
   const sections = {};
@@ -1367,6 +1568,71 @@ function parsePatternDoc(relativePath, content, includeContent) {
     }
   }
 
+  return { lines, metadata, sections };
+}
+
+function parseWikiDoc(relativePath, content, includeContent) {
+  const { frontmatter, body } = splitFrontmatter(content);
+  const { lines, metadata, sections } = extractMarkdownSections(body);
+  const title = frontmatter.title
+    ?? lines.find((line) => line.startsWith("# "))?.replace(/^# /, "").trim()
+    ?? path.basename(relativePath, ".md");
+  const pageType = inferWikiPageType(relativePath, frontmatter.type);
+  const related = unique([
+    ...normalizeFrontmatterRefs(frontmatter.related),
+    ...normalizeSectionList(sections.related),
+  ]);
+  const sources = unique([
+    ...normalizeFrontmatterRefs(frontmatter.sources),
+    ...normalizeSectionList(sections.sources),
+  ]);
+  const evidenceLines = normalizeSectionList(sections.evidence);
+  const contradictionLines = [
+    ...(sections.contradictions ?? []).map((line) => line.trim()).filter(Boolean),
+    ...(body.includes("[!contradiction]") ? ["contradiction_callout_present"] : []),
+  ];
+  const summary = firstNonEmpty([
+    (sections.overview ?? []).join(" ").trim(),
+    (sections.definition ?? []).join(" ").trim(),
+    (sections.answer ?? []).join(" ").trim(),
+    (sections.verdict ?? []).join(" ").trim(),
+    (sections["recommended action"] ?? []).join(" ").trim(),
+    (sections.interpretation ?? []).join(" ").trim(),
+    (sections.signal ?? []).join(" ").trim(),
+  ]);
+
+  return {
+    path: relativePath,
+    pageType,
+    title,
+    summary,
+    frontmatter,
+    metadata,
+    body,
+    sections,
+    workflow: frontmatter.workflow ?? metadata.workflow ?? null,
+    skillId: frontmatter.skill ?? metadata.skill ?? null,
+    tags: Array.isArray(frontmatter.tags)
+      ? frontmatter.tags.map((value) => String(value).trim()).filter(Boolean)
+      : metadata.tags
+        ? String(metadata.tags).split(",").map((value) => value.trim()).filter(Boolean)
+        : [],
+    author: frontmatter.author ?? metadata.author ?? null,
+    updatedAt: frontmatter.updated ?? metadata.updated ?? null,
+    reviewAfter: frontmatter.reviewAfter ?? frontmatter.review_after ?? metadata.review_after ?? null,
+    confidence: frontmatter.confidence ?? null,
+    status: frontmatter.status ?? metadata.status ?? "active",
+    related,
+    sources,
+    evidenceLines,
+    contradictionLines,
+    content: includeContent ? content : null,
+  };
+}
+
+function parsePatternDoc(relativePath, content, includeContent) {
+  const page = parseWikiDoc(relativePath, content, includeContent);
+  const { frontmatter, metadata, sections } = page;
   const signal = (sections.signal ?? []).join(" ").trim();
   const whenToUse = (
     sections["when to use"]
@@ -1391,31 +1657,26 @@ function parsePatternDoc(relativePath, content, includeContent) {
     ?? []
   ).join(" ").trim();
   const exceptions = (sections.exceptions ?? []).join(" ").trim();
-  const evidence = (sections.evidence ?? []).join(" ").trim();
-  const related = [
-    ...toArray(frontmatter.related),
-    ...(sections.related ?? []).map((line) => line.replace(/^- /, "").trim()).filter(Boolean),
-  ].filter(Boolean);
-  const summary = recommendedAction || interpretation || signal;
+  const evidence = page.evidenceLines.join(" ").trim();
+  const summary = page.summary ?? recommendedAction ?? interpretation ?? signal;
 
   return {
     path: relativePath,
-    title,
+    pageType: page.pageType,
+    title: page.title,
     summary,
-    workflow: frontmatter.workflow ?? metadata.workflow ?? null,
-    skillId: frontmatter.skill ?? metadata.skill ?? null,
-    tags: Array.isArray(frontmatter.tags)
-      ? frontmatter.tags.map((value) => String(value).trim()).filter(Boolean)
-      : metadata.tags
-        ? String(metadata.tags).split(",").map((value) => value.trim()).filter(Boolean)
-        : [],
-    author: frontmatter.author ?? metadata.author ?? null,
-    updatedAt: frontmatter.updated ?? metadata.updated ?? null,
-    confidence: frontmatter.confidence ?? null,
-    sources: Array.isArray(frontmatter.sources)
-      ? frontmatter.sources.map((value) => String(value).trim()).filter(Boolean)
-      : [],
-    related,
+    workflow: page.workflow,
+    skillId: page.skillId,
+    tags: page.tags,
+    author: page.author,
+    updatedAt: page.updatedAt,
+    reviewAfter: page.reviewAfter,
+    confidence: page.confidence,
+    status: page.status,
+    sources: page.sources,
+    related: page.related,
+    contradictionLines: page.contradictionLines,
+    evidenceLines: page.evidenceLines,
     whenToUse,
     signal,
     interpretation,
@@ -1424,7 +1685,7 @@ function parsePatternDoc(relativePath, content, includeContent) {
     exceptions,
     examples,
     evidence,
-    content: includeContent ? content : null,
+    content: page.content,
   };
 }
 
@@ -1480,11 +1741,16 @@ function buildLoopGuidance(patternDocs, whyMatched) {
     whatToDoNow: unique(patternDocs.map((doc) => doc.recommendedAction).filter(Boolean)),
     watchFor: unique(patternDocs.map((doc) => doc.signal).filter(Boolean)),
     interpretations: unique(patternDocs.map((doc) => doc.interpretation).filter(Boolean)),
+    nextReads: unique(
+      patternDocs.flatMap((doc) => [...(doc.related ?? []), ...(doc.sources ?? [])]),
+    ),
     supportingPatterns: patternDocs.map((doc) => ({
       path: doc.path,
       title: doc.title,
       interpretation: doc.interpretation || null,
       recommendedAction: doc.recommendedAction || null,
+      related: doc.related ?? [],
+      sources: doc.sources ?? [],
     })),
   };
 }
@@ -1604,6 +1870,8 @@ export async function writePatternDoc(
     interpretation,
     recommendedAction,
     skillId,
+    related = [],
+    sources = [],
     tags = [],
   },
   cwd = process.cwd(),
@@ -1626,8 +1894,11 @@ export async function writePatternDoc(
     tags.length > 0 ? "tags:" : "tags: []",
     ...(tags.length > 0 ? tags.map((tag) => `  - ${tag}`) : []),
     "confidence: medium",
-    "related: []",
-    "sources: []",
+    "status: active",
+    related.length > 0 ? "related:" : "related: []",
+    ...(related.length > 0 ? related.map((item) => `  - ${item}`) : []),
+    sources.length > 0 ? "sources:" : "sources: []",
+    ...(sources.length > 0 ? sources.map((item) => `  - ${item}`) : []),
     `author: ${author}`,
     `updated: ${updatedAt}`,
     "---",
@@ -1655,6 +1926,18 @@ export async function writePatternDoc(
     "",
     "- Add a concrete observed case here when this pattern repeats.",
     "",
+    "## Evidence",
+    "",
+    ...(sources.length > 0
+      ? sources.map((item) => `- ${item}`)
+      : ["- Add a concrete source, reviewer note, or case trace here."]),
+    "",
+    "## Related",
+    "",
+    ...(related.length > 0
+      ? related.map((item) => `- ${item}`)
+      : ["- Add a wiki page path such as agent-wiki/concepts/example.md."]),
+    "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -1681,6 +1964,8 @@ export async function writePatternDoc(
       interpretation,
       recommendedAction,
       skillId: skillId ?? null,
+      related,
+      sources,
       tags,
       author,
       updatedAt,
@@ -1918,6 +2203,18 @@ export async function learnFromInteraction(
     recommendedAction,
   });
 
+  let inheritedRelated = [];
+  let inheritedSources = [];
+  if (sourceSkill?.value?.patternPaths?.length) {
+    const existingPatternDocs = await Promise.all(
+      sourceSkill.value.patternPaths.map((patternPath) =>
+        loadPatternDoc(cwd, sourcePath, patternPath, false)
+      ),
+    );
+    inheritedRelated = unique(sourceSkill.value.patternPaths);
+    inheritedSources = unique(existingPatternDocs.flatMap((doc) => doc.sources ?? []));
+  }
+
   const pattern = await writePatternDoc(
     {
       title: derived.title,
@@ -1926,6 +2223,8 @@ export async function learnFromInteraction(
       interpretation: derived.interpretation,
       recommendedAction: derived.recommendedAction,
       skillId: sourceSkill?.value?.id,
+      related: inheritedRelated,
+      sources: inheritedSources,
       tags: unique([...tags, effectiveWorkflow]),
     },
     cwd,
@@ -1978,15 +2277,29 @@ export async function learnFromInteraction(
 
 export async function lintPack(cwd = process.cwd()) {
   const { config, sourcePath } = await loadAgentConfig(cwd);
-  const [skills, patternFiles] = await Promise.all([
+  const [skills, wikiFiles] = await Promise.all([
     listLocalSkills(config, cwd, sourcePath),
     listPatternEntries(config, cwd, sourcePath),
   ]);
 
   const issues = [];
   const referencedPatternPaths = new Set();
+  const referencedWikiPaths = new Set();
   const nameKeys = new Map();
   const triggerKeys = new Map();
+  const wikiPaths = new Set(wikiFiles.map((entry) => normalizePath(entry.relativePath)));
+  const parsedDocs = new Map();
+
+  const isExternalRef = (value) => /^(https?:)?\/\//.test(value) || value.startsWith("doi:") || value.startsWith("urn:");
+  const parseDocForEntry = async (entry) => {
+    if (!parsedDocs.has(entry.relativePath)) {
+      parsedDocs.set(
+        entry.relativePath,
+        parsePatternDoc(entry.relativePath, await readFile(entry.filePath, "utf8"), false),
+      );
+    }
+    return parsedDocs.get(entry.relativePath);
+  };
 
   for (const { filePath, value: skill } of skills) {
     const nameKey = `${skill.workflow}::${skill.name}`;
@@ -2068,6 +2381,7 @@ export async function lintPack(cwd = process.cwd()) {
 
     for (const patternPath of toArray(skill.patternPaths)) {
       referencedPatternPaths.add(normalizePath(patternPath));
+      referencedWikiPaths.add(normalizePath(patternPath));
       const resolvedPattern = await resolvePatternFile(patternPath, cwd, sourcePath);
       if (!resolvedPattern) {
         issues.push({
@@ -2080,11 +2394,7 @@ export async function lintPack(cwd = process.cwd()) {
         continue;
       }
 
-      const parsed = parsePatternDoc(
-        resolvedPattern.relativePath,
-        await readFile(resolvedPattern.filePath, "utf8"),
-        false,
-      );
+      const parsed = await parseDocForEntry(resolvedPattern);
 
       if (!parsed.signal) {
         issues.push({
@@ -2131,17 +2441,107 @@ export async function lintPack(cwd = process.cwd()) {
           message: "Pattern doc should contain at least one example or concrete case note.",
         });
       }
+      if (!parsed.evidenceLines?.length && !parsed.sources?.length) {
+        issues.push({
+          level: "warning",
+          code: "pattern_missing_evidence",
+          skillId: skill.id,
+          path: normalizePath(patternPath),
+          message: "Pattern doc should include Evidence or at least one source reference.",
+        });
+      }
+      if (!parsed.related?.length) {
+        issues.push({
+          level: "warning",
+          code: "pattern_missing_related",
+          skillId: skill.id,
+          path: normalizePath(patternPath),
+          message: "Pattern doc should link at least one related wiki page.",
+        });
+      }
     }
   }
 
-  for (const patternEntry of patternFiles) {
-    const relativePath = patternEntry.relativePath;
-    if (!referencedPatternPaths.has(relativePath)) {
+  for (const wikiEntry of wikiFiles) {
+    const parsed = await parseDocForEntry(wikiEntry);
+    const localRefs = [...(parsed.related ?? []), ...(parsed.sources ?? [])]
+      .map((value) => String(value).trim())
+      .filter(Boolean)
+      .filter((value) => !isExternalRef(value));
+
+    for (const ref of localRefs) {
+      referencedWikiPaths.add(ref);
+    }
+  }
+
+  for (const wikiEntry of wikiFiles) {
+    const relativePath = wikiEntry.relativePath;
+    const parsed = await parseDocForEntry(wikiEntry);
+    const localRefs = [...(parsed.related ?? []), ...(parsed.sources ?? [])]
+      .map((value) => String(value).trim())
+      .filter(Boolean)
+      .filter((value) => !isExternalRef(value));
+
+    if (
+      (wikiEntry.pageType === "pattern" || parsed.pageType === "pattern")
+      && !referencedPatternPaths.has(relativePath)
+      && !referencedWikiPaths.has(relativePath)
+    ) {
       issues.push({
         level: "warning",
         code: "orphan_pattern_doc",
         path: relativePath,
-        message: "Pattern doc is not referenced by any skill.",
+        message: "Pattern doc is not referenced by any skill or other wiki page.",
+      });
+    }
+
+    for (const ref of localRefs) {
+      if (!wikiPaths.has(ref)) {
+        issues.push({
+          level: "warning",
+          code: "missing_wiki_reference",
+          path: relativePath,
+          message: `Referenced wiki page not found: ${ref}`,
+        });
+      }
+    }
+
+    if (parsed.reviewAfter && parseTimestamp(parsed.reviewAfter) > 0 && parseTimestamp(parsed.reviewAfter) < Date.now()) {
+      issues.push({
+        level: "warning",
+        code: "stale_page_review_due",
+        path: relativePath,
+        message: `Wiki page review is overdue since ${parsed.reviewAfter}.`,
+      });
+    }
+
+    if (parsed.status === "superseded" && !localRefs.some((ref) => wikiPaths.has(ref))) {
+      issues.push({
+        level: "warning",
+        code: "superseded_page_without_successor",
+        path: relativePath,
+        message: "Superseded wiki page should point to a replacement via Related or Sources.",
+      });
+    }
+
+    if (parsed.contradictionLines?.length > 0 && !parsed.evidenceLines?.length && !parsed.sources?.length) {
+      issues.push({
+        level: "warning",
+        code: "unsupported_contradiction",
+        path: relativePath,
+        message: "Contradictions should cite evidence or source pages.",
+      });
+    }
+  }
+
+  for (const wikiEntry of wikiFiles) {
+    const doc = parsedDocs.get(wikiEntry.relativePath);
+    if (doc?.pageType !== "pattern" && doc?.pageType !== "meta" && !referencedWikiPaths.has(wikiEntry.relativePath)) {
+      issues.push({
+        level: "warning",
+        code: "orphan_wiki_page",
+        path: wikiEntry.relativePath,
+        message: "Wiki page is not referenced by any pattern, source, or related link.",
       });
     }
   }
@@ -2152,7 +2552,8 @@ export async function lintPack(cwd = process.cwd()) {
     issues,
     counts: {
       skills: skills.length,
-      patternDocs: patternFiles.length,
+      patternDocs: wikiFiles.filter((entry) => entry.pageType === "pattern").length,
+      wikiPages: wikiFiles.length,
     },
   };
   const artifacts = await updateControlArtifacts(config, cwd, sourcePath, {

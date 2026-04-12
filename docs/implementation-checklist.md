@@ -18,16 +18,21 @@ Keep the current pack as the durable knowledge layer:
 
 - `skills/<skill-name>/SKILL.md`
 - `agent-wiki/patterns/*.md`
+- `agent-wiki/sources/*.md`
+- `agent-wiki/concepts/*.md`
+- `agent-wiki/comparisons/*.md`
+- `agent-wiki/questions/*.md`
 - `agent-wiki/index.md`
 - `agent-wiki/log.md`
 - `agent-wiki/lint.md`
+- `agent-wiki/hot.md`
 
 Add a loop bridge that:
 
 1. resolves the current skill before the model acts
 2. injects compact guidance into the loop
 3. patches knowledge after reusable learning
-4. refreshes index, log, and lint
+4. refreshes index, log, lint, and hot cache
 
 ## Phase 1: Shared Core
 

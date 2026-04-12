@@ -8,11 +8,16 @@ tags:
   - qc
   - escalation
 confidence: high
+status: active
 related:
   - agent-wiki/patterns/viability-gate-review.md
-sources: []
+  - agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
+  - agent-wiki/concepts/ambiguous-viability-gate-review.md
+sources:
+  - agent-wiki/sources/flow-cytometry-demo-notes.md
 author: yifanjin
 updated: 2026-04-12T15:10:00.000Z
+review_after: 2026-07-12
 ---
 
 # QC escalation policy
@@ -48,7 +53,10 @@ If the downstream effect is negligible and already covered by a documented opera
 ## Evidence
 
 - This pattern exists to prevent local gate tuning from bypassing QC judgment boundaries.
+- agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
 
 ## Related
 
 - agent-wiki/patterns/viability-gate-review.md
+- agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
+- agent-wiki/concepts/ambiguous-viability-gate-review.md

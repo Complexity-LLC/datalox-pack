@@ -8,12 +8,17 @@ tags:
   - viability
   - review
 confidence: high
+status: active
 related:
   - agent-wiki/patterns/dead-tail-exception.md
   - agent-wiki/patterns/qc-escalation-policy.md
-sources: []
+  - agent-wiki/concepts/ambiguous-viability-gate-review.md
+  - agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
+sources:
+  - agent-wiki/sources/flow-cytometry-demo-notes.md
 author: yifanjin
 updated: 2026-04-12T15:10:00.000Z
+review_after: 2026-07-12
 ---
 
 # Review ambiguous viability gate
@@ -49,8 +54,12 @@ If the ambiguity is clearly explained by a known artifact pattern, follow that e
 ## Evidence
 
 - This pattern is the default grounding pattern for `review-ambiguous-viability-gate`.
+- agent-wiki/sources/flow-cytometry-demo-notes.md
+- agent-wiki/concepts/ambiguous-viability-gate-review.md
 
 ## Related
 
 - agent-wiki/patterns/dead-tail-exception.md
 - agent-wiki/patterns/qc-escalation-policy.md
+- agent-wiki/concepts/ambiguous-viability-gate-review.md
+- agent-wiki/questions/when-should-qc-escalate-after-viability-review.md

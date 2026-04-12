@@ -13,6 +13,7 @@ The visible control artifacts are:
 - `agent-wiki/index.md`
 - `agent-wiki/log.md`
 - `agent-wiki/lint.md`
+- `agent-wiki/hot.md`
 
 The practical multi-agent entry files are:
 
@@ -30,8 +31,13 @@ The practical multi-agent entry files are:
 .datalox/
   manifest.json
   config.json
-  patterns/
 skills/
+agent-wiki/
+  patterns/
+  sources/
+  concepts/
+  comparisons/
+  questions/
 ```
 
 ## Runtime Behavior
@@ -40,7 +46,8 @@ skills/
 2. read `.datalox/config.json`
 3. detect a matching skill from `skills/<name>/SKILL.md`
 4. read the skill's `metadata.datalox.pattern_paths`
-5. use those pattern docs during the current loop
+5. if needed, follow `related` and `sources` into the wider `agent-wiki/`
+6. use those pages during the current loop
 
 If the pack is external, the host repo still owns all generated writes.
 
@@ -51,10 +58,11 @@ When the agent learns something reusable:
 1. write a new pattern doc into `agent-wiki/patterns/`
 2. update or create a skill in `skills/`
 3. keep the new pattern doc path in that skill's `metadata.datalox.pattern_paths`
+4. add richer supporting pages under the other `agent-wiki/` folders when a pattern alone is not enough
 
 Generated skills stay in `skills/` on purpose so agent-native skill logic can still see them.
 Generated pattern docs stay in the host repo `agent-wiki/patterns/`.
-Patch operations should also refresh `agent-wiki/index.md` and append `agent-wiki/log.md`.
+Patch operations should also refresh `agent-wiki/index.md`, append `agent-wiki/log.md`, and refresh `agent-wiki/hot.md`.
 
 ## Lint Rules
 
@@ -64,11 +72,13 @@ The minimal linter checks:
 - skills missing core playbook sections
 - missing pattern files
 - pattern docs missing required sections
-- orphan pattern docs
+- orphan pattern docs and orphan supporting wiki pages
+- pages with overdue `review_after`
+- contradiction pages without supporting evidence
 - duplicate or overlapping skills in the same workflow
 
 Run lint after patching local knowledge.
-Lint should refresh `agent-wiki/lint.md` and append `agent-wiki/log.md`.
+Lint should refresh `agent-wiki/lint.md`, append `agent-wiki/log.md`, and refresh `agent-wiki/hot.md`.
 
 ## Optional Helpers
 

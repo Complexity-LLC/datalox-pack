@@ -19,10 +19,12 @@ skill: skill_id
 tags:
   - tag
 confidence: low | medium | high
+status: active | stale | superseded
 related: []
 sources: []
 author: name
 updated: 2026-04-12T10:31:16.852Z
+review_after: 2026-07-12
 ---
 ```
 
@@ -66,7 +68,16 @@ Citations, source notes, reviewer comments, or file references that justify the 
 
 ### Related
 
-Other patterns, skills, or docs that should be read alongside this one.
+Other wiki pages that should be read alongside this one. Prefer explicit wiki-relative paths such as:
+
+- `agent-wiki/concepts/example.md`
+- `agent-wiki/questions/example.md`
+- `agent-wiki/comparisons/example.md`
+- `agent-wiki/sources/example.md`
+
+### Contradictions
+
+Use this section when the pattern is under dispute or when a newer source challenges the current interpretation.
 
 ## Authoring Rules
 
@@ -74,7 +85,9 @@ Other patterns, skills, or docs that should be read alongside this one.
 - Use specific observations, not category labels.
 - Write actions that are usable inside one agent loop.
 - Add at least one example whenever the pattern comes from a real recurring case.
-- Keep contradictions or unresolved ambiguity in `Exceptions` or `Evidence`, not hidden inside one sentence.
+- Treat `Evidence` and `Related` as required in practice, even if lint only warns.
+- Use `sources` and `related` to point to richer supporting wiki pages when the pattern alone is not enough.
+- Keep contradictions or unresolved ambiguity visible in `Contradictions`, `Exceptions`, or `Evidence`, not hidden inside one sentence.
 
 ## Lint Rules
 
@@ -88,4 +101,8 @@ Lint treats these as warnings:
 
 - missing `When to Use`
 - missing `Examples`
+- missing `Evidence` and no `sources`
+- missing `Related`
+- overdue `review_after`
+- contradiction notes without evidence or source support
 - orphan pattern doc not linked by any skill

@@ -24,7 +24,8 @@
   "controlArtifacts": {
     "indexPath": "agent-wiki/index.md",
     "logPath": "agent-wiki/log.md",
-    "lintPath": "agent-wiki/lint.md"
+    "lintPath": "agent-wiki/lint.md",
+    "hotPath": "agent-wiki/hot.md"
   },
   "startup": {
     "readOnEveryLoop": true,
@@ -49,6 +50,14 @@
     "preserveNativeSkills": true,
     "generatedSkillsDir": "skills",
     "patternDocsDir": "agent-wiki/patterns",
+    "knowledgeDirs": [
+      "agent-wiki/patterns",
+      "agent-wiki/sources",
+      "agent-wiki/concepts",
+      "agent-wiki/comparisons",
+      "agent-wiki/questions",
+      "agent-wiki/meta"
+    ],
     "hostRepoOwnsWrites": true
   },
   "distribution": {

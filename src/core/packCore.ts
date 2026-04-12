@@ -73,11 +73,20 @@ const SINGLE_FILE_ADOPTION_PATHS = [
   ".datalox/manifest.json",
   ".datalox/skill.schema.md",
   "agent-wiki/pattern.schema.md",
+  "agent-wiki/source.schema.md",
+  "agent-wiki/concept.schema.md",
+  "agent-wiki/comparison.schema.md",
+  "agent-wiki/question.schema.md",
+  "agent-wiki/page-types.md",
 ];
 const TREE_ADOPTION_PATHS = [
   "skills",
   "agent-wiki/patterns",
   "agent-wiki/meta",
+  "agent-wiki/sources",
+  "agent-wiki/concepts",
+  "agent-wiki/comparisons",
+  "agent-wiki/questions",
 ];
 
 async function loadLegacyPackModule() {

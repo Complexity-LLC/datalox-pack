@@ -8,11 +8,16 @@ tags:
   - portable_pack
   - control
 confidence: high
+status: active
 related:
   - agent-wiki/patterns/repo-engineering-multi-agent-bootstrap-surfaces.md
-sources: []
+  - agent-wiki/concepts/loop-bridge.md
+  - agent-wiki/questions/when-should-a-new-skill-be-created.md
+sources:
+  - agent-wiki/sources/portable-pack-design-notes.md
 author: yifanjin
 updated: 2026-04-12T15:10:00.000Z
+review_after: 2026-07-12
 ---
 
 # Evolve portable pack
@@ -48,7 +53,10 @@ If a new layer is required to keep host integration reliable, add it only when i
 ## Evidence
 
 - This meta pattern is the control rule for pack simplification work in this repo.
+- agent-wiki/sources/portable-pack-design-notes.md
 
 ## Related
 
 - agent-wiki/patterns/repo-engineering-multi-agent-bootstrap-surfaces.md
+- agent-wiki/concepts/loop-bridge.md
+- agent-wiki/questions/when-should-a-new-skill-be-created.md

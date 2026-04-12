@@ -59,10 +59,19 @@ copy_if_missing "$PACK_ROOT/.datalox/config.json" "$HOST_REPO/.datalox/config.js
 copy_if_missing "$PACK_ROOT/.datalox/config.schema.json" "$HOST_REPO/.datalox/config.schema.json"
 copy_if_missing "$PACK_ROOT/.datalox/manifest.json" "$HOST_REPO/.datalox/manifest.json"
 copy_if_missing "$PACK_ROOT/agent-wiki/pattern.schema.md" "$HOST_REPO/agent-wiki/pattern.schema.md"
+copy_if_missing "$PACK_ROOT/agent-wiki/source.schema.md" "$HOST_REPO/agent-wiki/source.schema.md"
+copy_if_missing "$PACK_ROOT/agent-wiki/concept.schema.md" "$HOST_REPO/agent-wiki/concept.schema.md"
+copy_if_missing "$PACK_ROOT/agent-wiki/comparison.schema.md" "$HOST_REPO/agent-wiki/comparison.schema.md"
+copy_if_missing "$PACK_ROOT/agent-wiki/question.schema.md" "$HOST_REPO/agent-wiki/question.schema.md"
+copy_if_missing "$PACK_ROOT/agent-wiki/page-types.md" "$HOST_REPO/agent-wiki/page-types.md"
 
 copy_tree_if_missing "$PACK_ROOT/skills" "$HOST_REPO/skills"
 copy_tree_if_missing "$PACK_ROOT/agent-wiki/patterns" "$HOST_REPO/agent-wiki/patterns"
 copy_tree_if_missing "$PACK_ROOT/agent-wiki/meta" "$HOST_REPO/agent-wiki/meta"
+copy_tree_if_missing "$PACK_ROOT/agent-wiki/sources" "$HOST_REPO/agent-wiki/sources"
+copy_tree_if_missing "$PACK_ROOT/agent-wiki/concepts" "$HOST_REPO/agent-wiki/concepts"
+copy_tree_if_missing "$PACK_ROOT/agent-wiki/comparisons" "$HOST_REPO/agent-wiki/comparisons"
+copy_tree_if_missing "$PACK_ROOT/agent-wiki/questions" "$HOST_REPO/agent-wiki/questions"
 
 echo
 echo "Datalox adopted into host repo:"
@@ -71,4 +80,4 @@ echo
 echo "Next:"
 echo "  1. Open the host repo in your agent"
 echo "  2. Tell it once: Read DATALOX.md and use the Datalox pack"
-echo "  3. Watch agent-wiki/index.md, agent-wiki/log.md, and agent-wiki/lint.md"
+echo "  3. Watch agent-wiki/index.md, agent-wiki/log.md, agent-wiki/lint.md, and agent-wiki/hot.md"

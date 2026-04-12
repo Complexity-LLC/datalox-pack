@@ -13,13 +13,15 @@ Then operate with this loop:
 
 1. detect the best matching skill in `skills/`
 2. use the linked pattern docs in `agent-wiki/patterns/`
-3. patch reusable knowledge back into the host repo
-4. lint the pack
+3. if needed, follow `related` and `sources` into the wider `agent-wiki/`
+4. patch reusable knowledge back into the host repo
+5. lint the pack
 
 Keep these visible artifacts current:
 
 - `agent-wiki/index.md`
 - `agent-wiki/log.md`
 - `agent-wiki/lint.md`
+- `agent-wiki/hot.md`
 
 Do not replace native agent skills. Datalox is additive.
