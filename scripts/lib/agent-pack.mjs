@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { runInNewContext } from "node:vm";
 
 const AUTHOR_ENV = "DATALOX_AUTHOR";
 const CONFIG_PATH_ENV = "DATALOX_CONFIG_JSON";
@@ -241,8 +242,34 @@ function toCamelCase(value) {
   return value.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
 }
 
+function normalizeFrontmatterValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeFrontmatterValue(item));
+  }
+
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nestedValue]) => [
+        toCamelCase(key),
+        normalizeFrontmatterValue(nestedValue),
+      ]),
+    );
+  }
+
+  return value;
+}
+
+function parseFlowLiteral(rawValue) {
+  return normalizeFrontmatterValue(
+    runInNewContext(`(${rawValue})`, Object.create(null), { timeout: 100 }),
+  );
+}
+
 function parseFrontmatterScalar(value) {
   const trimmed = value.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return parseFlowLiteral(trimmed);
+  }
   if (
     (trimmed.startsWith('"') && trimmed.endsWith('"'))
     || (trimmed.startsWith("'") && trimmed.endsWith("'"))
@@ -250,6 +277,75 @@ function parseFrontmatterScalar(value) {
     return trimmed.slice(1, -1);
   }
   return trimmed;
+}
+
+function collectFlowBlock(lines, startIndex, indentLevel) {
+  let index = startIndex;
+  let depth = 0;
+  let inString = false;
+  let stringQuote = null;
+  let escaped = false;
+  const blockLines = [];
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim() && blockLines.length === 0) {
+      index += 1;
+      continue;
+    }
+
+    const indent = line.match(/^ */)?.[0].length ?? 0;
+    if (blockLines.length > 0 && indent < indentLevel && depth <= 0) {
+      break;
+    }
+
+    const content = line.slice(Math.min(indentLevel, indent));
+    blockLines.push(content);
+
+    for (const char of content) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (inString) {
+        if (char === "\\") {
+          escaped = true;
+          continue;
+        }
+        if (char === stringQuote) {
+          inString = false;
+          stringQuote = null;
+        }
+        continue;
+      }
+
+      if (char === '"' || char === "'") {
+        inString = true;
+        stringQuote = char;
+        continue;
+      }
+
+      if (char === "{" || char === "[") {
+        depth += 1;
+        continue;
+      }
+
+      if (char === "}" || char === "]") {
+        depth -= 1;
+      }
+    }
+
+    index += 1;
+    if (blockLines.length > 0 && depth <= 0) {
+      break;
+    }
+  }
+
+  return {
+    value: parseFlowLiteral(blockLines.join("\n")),
+    nextIndex: index,
+  };
 }
 
 function parseFrontmatterBlock(lines, startIndex, indentLevel) {
@@ -298,6 +394,20 @@ function parseFrontmatterBlock(lines, startIndex, indentLevel) {
       continue;
     }
 
+    let nestedStartIndex = index + 1;
+    while (nestedStartIndex < lines.length && !lines[nestedStartIndex].trim()) {
+      nestedStartIndex += 1;
+    }
+    const nestedLine = lines[nestedStartIndex];
+    const nestedIndent = nestedLine?.match(/^ */)?.[0].length ?? 0;
+    const nestedContent = nestedLine ? nestedLine.slice(Math.min(indent + 2, nestedIndent)).trim() : "";
+    if (nestedContent.startsWith("{") || nestedContent.startsWith("[")) {
+      const nested = collectFlowBlock(lines, nestedStartIndex, indent + 2);
+      object[toCamelCase(key)] = nested.value;
+      index = nested.nextIndex;
+      continue;
+    }
+
     const nested = parseFrontmatterBlock(lines, index + 1, indent + 2);
     object[toCamelCase(key)] = nested.value;
     index = nested.nextIndex;
@@ -330,6 +440,20 @@ function parseFrontmatter(rawFrontmatter) {
     if (rawValue.trim()) {
       result[toCamelCase(key)] = parseFrontmatterScalar(rawValue);
       index += 1;
+      continue;
+    }
+
+    let nestedStartIndex = index + 1;
+    while (nestedStartIndex < lines.length && !lines[nestedStartIndex].trim()) {
+      nestedStartIndex += 1;
+    }
+    const nestedLine = lines[nestedStartIndex];
+    const nestedIndent = nestedLine?.match(/^ */)?.[0].length ?? 0;
+    const nestedContent = nestedLine ? nestedLine.slice(Math.min(2, nestedIndent)).trim() : "";
+    if (nestedContent.startsWith("{") || nestedContent.startsWith("[")) {
+      const nested = collectFlowBlock(lines, nestedStartIndex, 2);
+      result[toCamelCase(key)] = nested.value;
+      index = nested.nextIndex;
       continue;
     }
 

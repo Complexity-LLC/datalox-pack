@@ -167,6 +167,55 @@ Use when changing the portable pack or agent guidance.
   );
 }
 
+async function addFlowStyleSkill(tempDir: string) {
+  await mkdir(path.join(tempDir, "skills/github"), { recursive: true });
+  await writeFile(
+    path.join(tempDir, "skills/github/SKILL.md"),
+    `---
+name: github
+description: "GitHub operations via \`gh\` CLI: issues, PRs, CI runs, code review, API queries."
+metadata:
+  {
+    "openclaw":
+      {
+        "emoji": "🐙",
+        "requires": { "bins": ["gh"] },
+        "install":
+          [
+            {
+              "id": "brew",
+              "kind": "brew",
+              "formula": "gh",
+              "bins": ["gh"],
+              "label": "Install GitHub CLI (brew)",
+            },
+          ],
+      },
+  }
+---
+
+# GitHub Skill
+
+Use the \`gh\` CLI to interact with GitHub repositories, issues, PRs, and CI.
+
+## When to Use
+
+- Checking PR status, reviews, or merge readiness
+- Viewing CI/workflow run status and logs
+
+## Workflow
+
+1. Use \`gh\` commands rather than browser-only flows.
+2. Prefer direct repo and PR identifiers when available.
+
+## Expected Output
+
+- State the GitHub action being performed.
+- Return the relevant PR or CI status clearly.
+`,
+  );
+}
+
 async function createHostRepo(tempDir: string) {
   await mkdir(path.join(tempDir, ".datalox"), { recursive: true });
   await writeFile(
@@ -257,6 +306,23 @@ describe("bridge surfaces", () => {
     const linted = JSON.parse(lintResult.stdout);
     expect(linted.ok).toBe(true);
     expect(await readFile(path.join(tempDir, ".datalox/log.md"), "utf8")).toContain("update_skill");
+  });
+
+  it("parses flow-style frontmatter in agent-native skills", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-flow-skill-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+    await addFlowStyleSkill(tempDir);
+
+    const resolveResult = runBuiltCli(tempDir, [
+      "resolve",
+      "--task",
+      "check PR status and CI",
+      "--json",
+    ]);
+    expect(resolveResult.status).toBe(0);
+    const resolved = JSON.parse(resolveResult.stdout);
+    expect(resolved.matches.some((match: any) => match.skill.name === "github")).toBe(true);
   });
 
   it("adopts the pack into a host repo through the built CLI", async () => {
