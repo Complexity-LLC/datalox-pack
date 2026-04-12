@@ -169,6 +169,24 @@ For multi-agent skill discovery:
 
 - `bash bin/setup-multi-agent.sh`
 
-For the next implementation step toward loop ownership:
+For loop ownership in supported hosts:
+
+- prefer the MCP bridge at `node dist/src/mcp/server.js`
+- use the CLI bridge at `node dist/src/cli/main.js` when MCP is not available
+
+Minimal MCP host config:
+
+```json
+{
+  "mcpServers": {
+    "datalox-pack": {
+      "command": "node",
+      "args": ["/absolute/path/to/datalox-pack/dist/src/mcp/server.js"]
+    }
+  }
+}
+```
+
+Implementation status and remaining work:
 
 - see `docs/implementation-checklist.md`

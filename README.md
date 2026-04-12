@@ -33,6 +33,37 @@ To wire skills into common agent tools:
 bash bin/setup-multi-agent.sh
 ```
 
+## Loop Bridge
+
+For automatic loop-time adoption in supported hosts, use the MCP server first and the CLI as fallback:
+
+```bash
+npm install
+npm run build
+node dist/src/mcp/server.js
+```
+
+The companion CLI exposes the same core operations:
+
+```bash
+node dist/src/cli/main.js resolve --task "review ambiguous live dead gate" --workflow flow_cytometry --json
+node dist/src/cli/main.js patch --task "review ambiguous live dead gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception pattern before widening gate" --json
+node dist/src/cli/main.js lint --json
+```
+
+Example MCP host config:
+
+```json
+{
+  "mcpServers": {
+    "datalox-pack": {
+      "command": "node",
+      "args": ["/absolute/path/to/datalox-pack/dist/src/mcp/server.js"]
+    }
+  }
+}
+```
+
 ## Core Loop
 
 The pack is built around one minimal loop:
@@ -77,7 +108,7 @@ The human-visible payoff is in three generated files:
 
 ## Optional Reference Implementation
 
-The Node scripts are optional helpers for testing the same protocol:
+The legacy Node scripts are optional helpers for testing the same protocol:
 
 ```bash
 # detect + use

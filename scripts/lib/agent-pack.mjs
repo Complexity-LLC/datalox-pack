@@ -991,6 +991,14 @@ async function updateControlArtifacts(
   };
 }
 
+export async function refreshControlArtifacts(
+  cwd = process.cwd(),
+  { logEntry, lintResult } = {},
+) {
+  const { config, sourcePath } = await loadAgentConfig(cwd);
+  return updateControlArtifacts(config, cwd, sourcePath, { logEntry, lintResult });
+}
+
 export async function listLocalSkills(config, cwd = process.cwd(), sourcePath) {
   return listSkillEntries(config, cwd, sourcePath);
 }

@@ -4,6 +4,10 @@
   "private": false,
   "type": "module",
   "description": "Portable Datalox pack with loop-time skill detection and pattern docs.",
+  "bin": {
+    "datalox": "./bin/datalox.js",
+    "datalox-mcp": "./bin/datalox-mcp.js"
+  },
   "scripts": {
     "agent:bootstrap": "node scripts/agent-bootstrap.mjs",
     "agent:resolve": "node scripts/agent-resolve.mjs",
@@ -12,13 +16,20 @@
     "agent:learn-skill": "node scripts/agent-learn-skill.mjs",
     "agent:learn-from-interaction": "node scripts/agent-learn-from-interaction.mjs",
     "build": "tsc",
+    "datalox": "node dist/src/cli/main.js",
+    "mcp:stdio": "node dist/src/mcp/server.js",
     "prepare": "tsc",
     "check": "tsc --noEmit",
-    "test": "vitest run"
+    "pretest": "npm run build",
+    "test": "vitest run tests"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
   }
 }

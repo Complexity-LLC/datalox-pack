@@ -31,105 +31,105 @@ Add a loop bridge that:
 
 ## Phase 1: Shared Core
 
-- [ ] Extract the reusable logic from [agent-pack.mjs](/Users/yifanjin/datalox-pack/scripts/lib/agent-pack.mjs) into a shared core module.
-- [ ] Keep the core transport-free. No CLI-only or MCP-only assumptions.
-- [ ] Move these operations behind stable functions:
+- [x] Extract the reusable logic from [agent-pack.mjs](/Users/yifanjin/datalox-pack/scripts/lib/agent-pack.mjs) into a shared core module.
+- [x] Keep the core transport-free. No CLI-only or MCP-only assumptions.
+- [x] Move these operations behind stable functions:
   - `resolveLoop`
   - `patchKnowledge`
   - `lintPack`
   - `adoptPack`
   - `refreshControlArtifacts`
-- [ ] Keep markdown files as the source of truth. Do not introduce a separate compiled database as the primary store.
-- [ ] Preserve host-write, seed-read behavior.
+- [x] Keep markdown files as the source of truth. Do not introduce a separate compiled database as the primary store.
+- [x] Preserve host-write, seed-read behavior.
 
 ## Phase 2: MCP First
 
-- [ ] Create an MCP server package or entrypoint in this repo.
-- [ ] Expose only four tools:
+- [x] Create an MCP server package or entrypoint in this repo.
+- [x] Expose only four tools:
   - `resolve_loop`
   - `patch_knowledge`
   - `lint_pack`
   - `adopt_pack`
-- [ ] Make MCP responses strict JSON, not markdown.
-- [ ] Keep the MCP layer thin. It should only validate input, call core functions, and return structured output.
-- [ ] Make `resolve_loop` return:
+- [x] Make MCP responses strict JSON, not markdown.
+- [x] Keep the MCP layer thin. It should only validate input, call core functions, and return structured output.
+- [x] Make `resolve_loop` return:
   - selected skill
   - why matched
   - what to do now
   - watch for
   - supporting pattern docs
-- [ ] Make `patch_knowledge` return:
+- [x] Make `patch_knowledge` return:
   - pattern written
   - skill `create_skill` or `update_skill`
   - refreshed artifact paths
-- [ ] Make `lint_pack` return issues plus the refreshed `.datalox/lint.md` path.
-- [ ] Add one documented MCP integration example for Claude/Codex-compatible hosts.
+- [x] Make `lint_pack` return issues plus the refreshed `.datalox/lint.md` path.
+- [x] Add one documented MCP integration example for Claude/Codex-compatible hosts.
 
 ## Phase 3: CLI Companion
 
-- [ ] Replace script-first public usage with one stable `datalox` command surface.
-- [ ] Support these commands:
+- [x] Replace script-first public usage with one stable `datalox` command surface.
+- [x] Support these commands:
   - `datalox adopt`
   - `datalox resolve`
   - `datalox patch`
   - `datalox lint`
-- [ ] Keep `--json` on every command.
-- [ ] Make CLI a wrapper over the same core used by MCP.
-- [ ] Keep the existing scripts only as temporary compatibility shims or remove them once the CLI is stable.
+- [x] Keep `--json` on every command.
+- [x] Make CLI a wrapper over the same core used by MCP.
+- [x] Keep the existing scripts only as temporary compatibility shims or remove them once the CLI is stable.
 
 ## Phase 4: Loop Ownership
 
-- [ ] Define the pre-turn contract:
+- [x] Define the pre-turn contract:
   - current task
   - optional workflow
   - optional step
   - repo context
-- [ ] Define the post-turn contract:
+- [x] Define the post-turn contract:
   - observation
   - interpretation
   - recommended action
   - optional explicit skill id
-- [ ] Ensure the bridge, not the model alone, decides when to call resolve and patch.
-- [ ] Keep skill creation conservative:
+- [x] Ensure the bridge, not the model alone, decides when to call resolve and patch.
+- [x] Keep skill creation conservative:
   - create a new skill only when no existing skill matches strongly enough
   - otherwise patch the matched skill with a new pattern doc
 
 ## Phase 5: Control And Trust
 
-- [ ] Keep `.datalox/index.md` refreshed after create/update operations.
-- [ ] Keep `.datalox/log.md` refreshed after create/update/lint operations.
-- [ ] Keep `.datalox/lint.md` refreshed after lint operations.
-- [ ] Preserve explicit events in the log:
+- [x] Keep `.datalox/index.md` refreshed after create/update operations.
+- [x] Keep `.datalox/log.md` refreshed after create/update/lint operations.
+- [x] Keep `.datalox/lint.md` refreshed after lint operations.
+- [x] Preserve explicit events in the log:
   - `create_skill`
   - `update_skill`
   - `patch_pattern`
   - `lint_pack`
-- [ ] Keep lint enforcing both:
+- [x] Keep lint enforcing both:
   - structural graph health
   - skill playbook quality
 
 ## Phase 6: Verification
 
-- [ ] Add one end-to-end MCP test:
+- [x] Add one end-to-end MCP test:
   - resolve
   - patch
   - lint
   - artifact refresh
-- [ ] Add one end-to-end CLI test for the same loop.
-- [ ] Add one host-repo adoption test where the pack is external and all writes land in the host repo.
-- [ ] Add one explicit no-match test that proves a new skill is created.
-- [ ] Keep `npm run check` and `npm test` green.
+- [x] Add one end-to-end CLI test for the same loop.
+- [x] Add one host-repo adoption test where the pack is external and all writes land in the host repo.
+- [x] Add one explicit no-match test that proves a new skill is created.
+- [x] Keep `npm run check` and `npm test` green.
 
 ## Acceptance Criteria
 
 This work is done when:
 
-- [ ] A supported agent host can call Datalox before each loop through MCP.
-- [ ] The returned guidance changes the agent's behavior in the current turn.
-- [ ] Reusable learning can be written back through MCP or CLI.
-- [ ] New skills are visibly created when there is no good match.
-- [ ] Existing skills are patched instead of duplicated when a match already exists.
-- [ ] `.datalox/index.md`, `.datalox/log.md`, and `.datalox/lint.md` remain the visible control surface.
+- [x] A supported agent host can call Datalox before each loop through MCP.
+- [x] The returned guidance changes the agent's behavior in the current turn.
+- [x] Reusable learning can be written back through MCP or CLI.
+- [x] New skills are visibly created when there is no good match.
+- [x] Existing skills are patched instead of duplicated when a match already exists.
+- [x] `.datalox/index.md`, `.datalox/log.md`, and `.datalox/lint.md` remain the visible control surface.
 
 ## Non-Goals
 
