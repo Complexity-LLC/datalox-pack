@@ -10,9 +10,9 @@ The product loop is:
 
 The visible control artifacts are:
 
-- `.datalox/index.md`
-- `.datalox/log.md`
-- `.datalox/lint.md`
+- `agent-wiki/index.md`
+- `agent-wiki/log.md`
+- `agent-wiki/lint.md`
 
 The practical multi-agent entry files are:
 
@@ -48,13 +48,13 @@ If the pack is external, the host repo still owns all generated writes.
 
 When the agent learns something reusable:
 
-1. write a new pattern doc into `.datalox/patterns/`
+1. write a new pattern doc into `agent-wiki/patterns/`
 2. update or create a skill in `skills/`
 3. keep the new pattern doc path in that skill's `metadata.datalox.pattern_paths`
 
 Generated skills stay in `skills/` on purpose so agent-native skill logic can still see them.
-Generated pattern docs stay in the host repo `.datalox/patterns/`.
-Patch operations should also refresh `.datalox/index.md` and append `.datalox/log.md`.
+Generated pattern docs stay in the host repo `agent-wiki/patterns/`.
+Patch operations should also refresh `agent-wiki/index.md` and append `agent-wiki/log.md`.
 
 ## Lint Rules
 
@@ -68,7 +68,7 @@ The minimal linter checks:
 - duplicate or overlapping skills in the same workflow
 
 Run lint after patching local knowledge.
-Lint should refresh `.datalox/lint.md` and append `.datalox/log.md`.
+Lint should refresh `agent-wiki/lint.md` and append `agent-wiki/log.md`.
 
 ## Optional Helpers
 

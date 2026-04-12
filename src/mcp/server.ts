@@ -108,7 +108,7 @@ server.registerTool(
 server.registerTool(
   "lint_pack",
   {
-    description: "Lint the local Datalox pack and refresh .datalox/lint.md.",
+    description: "Lint the local Datalox pack and refresh agent-wiki/lint.md.",
     inputSchema: {
       repo_path: z.string().describe("Absolute or relative path to the host repo."),
     },

@@ -1,6 +1,7 @@
 {
   "paths": {
-    "skillsDir": "skills"
+    "hostSkillsDir": "skills",
+    "hostPatternsDir": "agent-wiki/patterns"
   },
   "runtime": {
     "baseUrl": "https://api.example.datalox.com",

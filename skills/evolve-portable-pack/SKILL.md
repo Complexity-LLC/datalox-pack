@@ -7,8 +7,8 @@ metadata:
     workflow: repo_engineering
     trigger: Use when changing the portable pack or agent guidance in this repo.
     pattern_paths:
-      - .datalox/meta/evolve-portable-pack.md
-      - .datalox/patterns/repo-engineering-multi-agent-bootstrap-surfaces.md
+      - agent-wiki/meta/evolve-portable-pack.md
+      - agent-wiki/patterns/repo-engineering-multi-agent-bootstrap-surfaces.md
     tags:
       - repo_engineering
       - portable_pack
@@ -63,7 +63,7 @@ Use this skill when changing the portable pack itself, its instruction surfaces,
 
 - Keep skill bodies operational, not metadata-heavy.
 - Prefer plain markdown skills and pattern docs over extra configuration layers.
-- Make the benefit visible in `.datalox/index.md`, `.datalox/log.md`, and `.datalox/lint.md`.
+- Make the benefit visible in `agent-wiki/index.md`, `agent-wiki/log.md`, and `agent-wiki/lint.md`.
 - Avoid pack-only abstractions that another agent cannot discover from the repo.
 
 ## Expected Output
@@ -75,5 +75,5 @@ Use this skill when changing the portable pack itself, its instruction surfaces,
 
 ## Pattern Docs
 
-- .datalox/meta/evolve-portable-pack.md
-- .datalox/patterns/repo-engineering-multi-agent-bootstrap-surfaces.md
+- agent-wiki/meta/evolve-portable-pack.md
+- agent-wiki/patterns/repo-engineering-multi-agent-bootstrap-surfaces.md

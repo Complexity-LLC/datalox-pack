@@ -10,9 +10,9 @@ your agent gets better after one correction, and you can see what it learned.
 2. Tell the agent once:
    `Read DATALOX.md and use the Datalox pack.`
 3. Watch these files:
-   - `.datalox/index.md`
-   - `.datalox/log.md`
-   - `.datalox/lint.md`
+   - `agent-wiki/index.md`
+   - `agent-wiki/log.md`
+   - `agent-wiki/lint.md`
 
 ## What You Should See
 

@@ -28,6 +28,6 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(hostDir, "WIKI.md"), "utf8")).toContain("Treat this repository as a Datalox pack");
     expect(await readFile(path.join(hostDir, ".github/copilot-instructions.md"), "utf8")).toContain("portable Datalox pack");
     expect(await readFile(path.join(hostDir, "skills/evolve-portable-pack/SKILL.md"), "utf8")).toContain("Evolve Portable Pack");
-    expect(await readFile(path.join(hostDir, ".datalox/pattern.schema.md"), "utf8")).toContain("Signal");
+    expect(await readFile(path.join(hostDir, "agent-wiki/pattern.schema.md"), "utf8")).toContain("Signal");
   });
 });

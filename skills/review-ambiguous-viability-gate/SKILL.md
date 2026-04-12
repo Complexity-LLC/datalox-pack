@@ -7,9 +7,9 @@ metadata:
     workflow: flow_cytometry
     trigger: Use when live/dead separation is ambiguous during viability gate review.
     pattern_paths:
-      - .datalox/patterns/viability-gate-review.md
-      - .datalox/patterns/dead-tail-exception.md
-      - .datalox/patterns/qc-escalation-policy.md
+      - agent-wiki/patterns/viability-gate-review.md
+      - agent-wiki/patterns/dead-tail-exception.md
+      - agent-wiki/patterns/qc-escalation-policy.md
     tags:
       - flow_cytometry
       - viability
@@ -50,6 +50,6 @@ Use this skill for ambiguous viability review. This is a judgment step, not a me
 
 ## Pattern Docs
 
-- .datalox/patterns/viability-gate-review.md
-- .datalox/patterns/dead-tail-exception.md
-- .datalox/patterns/qc-escalation-policy.md
+- agent-wiki/patterns/viability-gate-review.md
+- agent-wiki/patterns/dead-tail-exception.md
+- agent-wiki/patterns/qc-escalation-policy.md

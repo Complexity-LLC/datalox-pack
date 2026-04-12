@@ -17,10 +17,10 @@ Do not try to solve "universal automatic adoption" with repo files alone. The pa
 Keep the current pack as the durable knowledge layer:
 
 - `skills/<skill-name>/SKILL.md`
-- `.datalox/patterns/*.md`
-- `.datalox/index.md`
-- `.datalox/log.md`
-- `.datalox/lint.md`
+- `agent-wiki/patterns/*.md`
+- `agent-wiki/index.md`
+- `agent-wiki/log.md`
+- `agent-wiki/lint.md`
 
 Add a loop bridge that:
 
@@ -62,7 +62,7 @@ Add a loop bridge that:
   - pattern written
   - skill `create_skill` or `update_skill`
   - refreshed artifact paths
-- [x] Make `lint_pack` return issues plus the refreshed `.datalox/lint.md` path.
+- [x] Make `lint_pack` return issues plus the refreshed `agent-wiki/lint.md` path.
 - [x] Add one documented MCP integration example for Claude/Codex-compatible hosts.
 
 ## Phase 3: CLI Companion
@@ -96,9 +96,9 @@ Add a loop bridge that:
 
 ## Phase 5: Control And Trust
 
-- [x] Keep `.datalox/index.md` refreshed after create/update operations.
-- [x] Keep `.datalox/log.md` refreshed after create/update/lint operations.
-- [x] Keep `.datalox/lint.md` refreshed after lint operations.
+- [x] Keep `agent-wiki/index.md` refreshed after create/update operations.
+- [x] Keep `agent-wiki/log.md` refreshed after create/update/lint operations.
+- [x] Keep `agent-wiki/lint.md` refreshed after lint operations.
 - [x] Preserve explicit events in the log:
   - `create_skill`
   - `update_skill`
@@ -129,7 +129,7 @@ This work is done when:
 - [x] Reusable learning can be written back through MCP or CLI.
 - [x] New skills are visibly created when there is no good match.
 - [x] Existing skills are patched instead of duplicated when a match already exists.
-- [x] `.datalox/index.md`, `.datalox/log.md`, and `.datalox/lint.md` remain the visible control surface.
+- [x] `agent-wiki/index.md`, `agent-wiki/log.md`, and `agent-wiki/lint.md` remain the visible control surface.
 
 ## Non-Goals
 

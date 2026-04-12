@@ -28,7 +28,7 @@ interaction -> pattern doc -> skill update
 ```
 
 Generated skills stay in `skills/`.
-Pattern docs live in `.datalox/patterns/`.
+Pattern docs live in `agent-wiki/patterns/`.
 
 When the pack is external, those writes belong to the host repo while this repo remains the seed pack.
 

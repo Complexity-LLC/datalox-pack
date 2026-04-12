@@ -43,9 +43,9 @@ const baseConfig = {
   },
   paths: {
     seedSkillsDir: "skills",
-    seedPatternsDir: ".datalox/patterns",
+    seedPatternsDir: "agent-wiki/patterns",
     hostSkillsDir: "skills",
-    hostPatternsDir: ".datalox/patterns",
+    hostPatternsDir: "agent-wiki/patterns",
   },
   runtime: {
     enabled: false,
@@ -63,10 +63,11 @@ const baseConfig = {
 };
 
 async function createPack(tempDir: string) {
+  await mkdir(path.join(tempDir, ".datalox"), { recursive: true });
   await mkdir(path.join(tempDir, "skills/review-ambiguous-viability-gate"), { recursive: true });
   await mkdir(path.join(tempDir, "skills/evolve-portable-pack"), { recursive: true });
-  await mkdir(path.join(tempDir, ".datalox/patterns"), { recursive: true });
-  await mkdir(path.join(tempDir, ".datalox/meta"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/patterns"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/meta"), { recursive: true });
 
   await writeFile(path.join(tempDir, ".datalox/config.json"), JSON.stringify(baseConfig, null, 2));
   await writeFile(path.join(tempDir, "AGENTS.md"), "# Demo agent instructions\n");
@@ -86,7 +87,7 @@ metadata:
     workflow: flow_cytometry
     trigger: Use when live/dead separation is ambiguous during viability gate review.
     pattern_paths:
-      - .datalox/patterns/viability-gate-review.md
+      - agent-wiki/patterns/viability-gate-review.md
     tags:
       - flow_cytometry
       - viability
@@ -112,7 +113,7 @@ Use when live/dead separation is ambiguous during viability gate review.
 
 ## Pattern Docs
 
-- .datalox/patterns/viability-gate-review.md
+- agent-wiki/patterns/viability-gate-review.md
 `,
   );
   await writeFile(
@@ -126,7 +127,7 @@ metadata:
     workflow: repo_engineering
     trigger: Use when changing the portable pack or agent guidance.
     pattern_paths:
-      - .datalox/patterns/evolve-portable-pack.md
+      - agent-wiki/patterns/evolve-portable-pack.md
     tags:
       - repo_engineering
       - portable_pack
@@ -150,19 +151,19 @@ Use when changing the portable pack or agent guidance.
 
 ## Pattern Docs
 
-- .datalox/patterns/evolve-portable-pack.md
+- agent-wiki/patterns/evolve-portable-pack.md
 `,
   );
   await writeFile(
-    path.join(tempDir, ".datalox/patterns/viability-gate-review.md"),
-    "# Review ambiguous viability gate\n\n## Signal\n\nLive and dead populations are not cleanly separated.\n\n## Interpretation\n\nThis is a judgment step, not a mechanical threshold change.\n\n## Recommended Action\n\nReview the linked exception pattern before changing the gate.\n",
+    path.join(tempDir, "agent-wiki/patterns/viability-gate-review.md"),
+    "# Review ambiguous viability gate\n\n## When to Use\n\nUse this pattern when viability review is ambiguous and the live/dead split is not clearly separable.\n\n## Signal\n\nLive and dead populations are not cleanly separated.\n\n## Interpretation\n\nThis is a judgment step, not a mechanical threshold change.\n\n## Recommended Action\n\nReview the linked exception pattern before changing the gate.\n\n## Examples\n\n- A boundary that looks unstable and needs exception review before widening the gate.\n",
   );
   await writeFile(
-    path.join(tempDir, ".datalox/patterns/evolve-portable-pack.md"),
-    "# Evolve portable pack\n\n## Signal\n\nThe pack is getting too complicated.\n\n## Interpretation\n\nThe right response is usually to simplify the loop, not add another layer.\n\n## Recommended Action\n\nKeep the loop as skill detection plus pattern docs.\n",
+    path.join(tempDir, "agent-wiki/patterns/evolve-portable-pack.md"),
+    "# Evolve portable pack\n\n## When to Use\n\nUse this pattern when the pack design adds complexity faster than user-visible benefit.\n\n## Signal\n\nThe pack is getting too complicated.\n\n## Interpretation\n\nThe right response is usually to simplify the loop, not add another layer.\n\n## Recommended Action\n\nKeep the loop as skill detection plus pattern docs.\n\n## Examples\n\n- Replacing hidden pack layers with visible wiki artifacts that an agent can inspect directly.\n",
   );
   await writeFile(
-    path.join(tempDir, ".datalox/meta/evolve-portable-pack.md"),
+    path.join(tempDir, "agent-wiki/meta/evolve-portable-pack.md"),
     "# Evolve portable pack meta\n\n## Signal\n\nThe pack keeps growing new layers.\n\n## Interpretation\n\nPortable pack work should prefer simpler behavior surfaces.\n\n## Recommended Action\n\nKeep Datalox additive to native skills and avoid extra indirection.\n",
   );
 }
@@ -305,7 +306,7 @@ describe("bridge surfaces", () => {
     expect(lintResult.status).toBe(0);
     const linted = JSON.parse(lintResult.stdout);
     expect(linted.ok).toBe(true);
-    expect(await readFile(path.join(tempDir, ".datalox/log.md"), "utf8")).toContain("update_skill");
+    expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("update_skill");
   });
 
   it("parses flow-style frontmatter in agent-native skills", async () => {
@@ -398,7 +399,7 @@ describe("bridge surfaces", () => {
       });
       const linted = extractStructuredResult(lintResult) as any;
       expect(linted.ok).toBe(true);
-      expect(await readFile(path.join(tempDir, ".datalox/log.md"), "utf8")).toContain("lint_pack");
+      expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("lint_pack");
     } finally {
       await client.close();
       await transport.close();

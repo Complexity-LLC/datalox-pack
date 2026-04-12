@@ -14,6 +14,9 @@ const PACK_MODES = ["repo_only", "service_backed"];
 const AGENT_PROFILES = ["local_first", "runtime_first"];
 const AGENT_INTERFACES = ["skill_loop", "runtime_compile"];
 const SOURCE_KINDS = ["local_repo"];
+const DEFAULT_WIKI_DIR = "agent-wiki";
+const DEFAULT_PATTERN_DIR = `${DEFAULT_WIKI_DIR}/patterns`;
+const DEFAULT_META_DIR = `${DEFAULT_WIKI_DIR}/meta`;
 
 async function fileExists(filePath) {
   try {
@@ -671,12 +674,14 @@ export function resolvePackPaths(config, options = {}) {
   return {
     hostRoot,
     seedRoot,
-    hostPackDir: path.resolve(hostRoot, ".datalox"),
+    hostWikiDir: path.resolve(hostRoot, DEFAULT_WIKI_DIR),
     hostSkillsDir: path.resolve(hostRoot, config.paths.hostSkillsDir ?? "skills"),
-    hostPatternsDir: path.resolve(hostRoot, config.paths.hostPatternsDir ?? ".datalox/patterns"),
-    hostMetaDir: path.resolve(hostRoot, ".datalox/meta"),
+    hostPatternsDir: path.resolve(hostRoot, config.paths.hostPatternsDir ?? DEFAULT_PATTERN_DIR),
+    hostMetaDir: path.resolve(hostRoot, DEFAULT_META_DIR),
+    seedWikiDir: path.resolve(seedRoot, DEFAULT_WIKI_DIR),
     seedSkillsDir: path.resolve(seedRoot, config.paths.seedSkillsDir),
     seedPatternsDir: path.resolve(seedRoot, config.paths.seedPatternsDir),
+    seedMetaDir: path.resolve(seedRoot, DEFAULT_META_DIR),
   };
 }
 
@@ -821,9 +826,12 @@ async function listSkillEntries(config, cwd = process.cwd(), sourcePath) {
 async function listPatternEntries(config, cwd = process.cwd(), sourcePath) {
   const paths = resolvePackPaths(config, { cwd, sourcePath });
   const useSameDir = pathKey(paths.hostPatternsDir) === pathKey(paths.seedPatternsDir);
-  const [seedEntries, hostEntries] = await Promise.all([
+  const useSameMetaDir = pathKey(paths.hostMetaDir) === pathKey(paths.seedMetaDir);
+  const [seedEntries, hostEntries, seedMetaEntries, hostMetaEntries] = await Promise.all([
     useSameDir ? Promise.resolve([]) : readDirMarkdown(paths.seedPatternsDir),
     readDirMarkdown(paths.hostPatternsDir),
+    useSameMetaDir ? Promise.resolve([]) : readDirMarkdown(paths.seedMetaDir),
+    readDirMarkdown(paths.hostMetaDir),
   ]);
 
   const merged = new Map();
@@ -839,6 +847,26 @@ async function listPatternEntries(config, cwd = process.cwd(), sourcePath) {
   }
 
   for (const filePath of hostEntries) {
+    const relativePath = normalizePath(path.relative(paths.hostRoot, filePath));
+    merged.set(relativePath, {
+      filePath,
+      relativePath,
+      origin: "host",
+      repoRoot: paths.hostRoot,
+    });
+  }
+
+  for (const filePath of seedMetaEntries) {
+    const relativePath = normalizePath(path.relative(paths.seedRoot, filePath));
+    merged.set(relativePath, {
+      filePath,
+      relativePath,
+      origin: "seed",
+      repoRoot: paths.seedRoot,
+    });
+  }
+
+  for (const filePath of hostMetaEntries) {
     const relativePath = normalizePath(path.relative(paths.hostRoot, filePath));
     merged.set(relativePath, {
       filePath,
@@ -944,7 +972,7 @@ function renderIndexMarkdown({ config, skills, patternEntries, patternDocs }) {
   }
 
   const lines = [
-    "# Datalox Index",
+    "# Agent Wiki Index",
     "",
     `- Project: ${config.project.name}`,
     `- Generated: ${generatedAt}`,
@@ -1029,19 +1057,19 @@ function renderLogLine({ timestamp, action, detail, path: filePath }) {
 }
 
 async function appendPackLog(config, cwd, sourcePath, entry) {
-  const { hostPackDir } = resolvePackPaths(config, { cwd, sourcePath });
-  const logPath = path.join(hostPackDir, "log.md");
-  const header = "# Datalox Log\n\n";
+  const { hostWikiDir } = resolvePackPaths(config, { cwd, sourcePath });
+  const logPath = path.join(hostWikiDir, "log.md");
+  const header = "# Agent Wiki Log\n\n";
   const existing = await readTextIfPresent(logPath);
   const next = `${existing ?? header}${existing ? "\n" : ""}${renderLogLine(entry)}\n`;
-  await ensureDir(hostPackDir);
+  await ensureDir(hostWikiDir);
   await writeFile(logPath, next, "utf8");
   return logPath;
 }
 
 function renderLintMarkdown(result) {
   const lines = [
-    "# Datalox Lint",
+    "# Agent Wiki Lint",
     "",
     `- Generated: ${new Date().toISOString()}`,
     `- OK: ${result.ok}`,
@@ -1064,15 +1092,15 @@ function renderLintMarkdown(result) {
 }
 
 async function writeLintSnapshot(config, cwd, sourcePath, result) {
-  const { hostPackDir } = resolvePackPaths(config, { cwd, sourcePath });
-  const lintPath = path.join(hostPackDir, "lint.md");
-  await ensureDir(hostPackDir);
+  const { hostWikiDir } = resolvePackPaths(config, { cwd, sourcePath });
+  const lintPath = path.join(hostWikiDir, "lint.md");
+  await ensureDir(hostWikiDir);
   await writeFile(lintPath, renderLintMarkdown(result), "utf8");
   return lintPath;
 }
 
 export async function refreshIndex(config, cwd = process.cwd(), sourcePath) {
-  const { hostPackDir } = resolvePackPaths(config, { cwd, sourcePath });
+  const { hostWikiDir } = resolvePackPaths(config, { cwd, sourcePath });
   const [skills, patternEntries] = await Promise.all([
     listLocalSkills(config, cwd, sourcePath),
     listPatternEntries(config, cwd, sourcePath),
@@ -1084,8 +1112,8 @@ export async function refreshIndex(config, cwd = process.cwd(), sourcePath) {
     patternDocs.set(entry.relativePath, parsePatternDoc(entry.relativePath, content, false));
   }
 
-  const indexPath = path.join(hostPackDir, "index.md");
-  await ensureDir(hostPackDir);
+  const indexPath = path.join(hostWikiDir, "index.md");
+  await ensureDir(hostWikiDir);
   await writeFile(
     indexPath,
     renderIndexMarkdown({ config, skills, patternEntries, patternDocs }),
@@ -1304,8 +1332,10 @@ async function readTextIfPresent(filePath) {
 }
 
 function parsePatternDoc(relativePath, content, includeContent) {
-  const lines = content.split("\n");
-  const title = lines.find((line) => line.startsWith("# "))?.replace(/^# /, "").trim()
+  const { frontmatter, body } = splitFrontmatter(content);
+  const lines = body.split("\n");
+  const title = frontmatter.title
+    ?? lines.find((line) => line.startsWith("# "))?.replace(/^# /, "").trim()
     ?? path.basename(relativePath, ".md");
   const metadata = {};
   let activeSection = null;
@@ -1338,26 +1368,62 @@ function parsePatternDoc(relativePath, content, includeContent) {
   }
 
   const signal = (sections.signal ?? []).join(" ").trim();
+  const whenToUse = (
+    sections["when to use"]
+    ?? sections["when-to-use"]
+    ?? []
+  ).join(" ").trim();
   const interpretation = (sections.interpretation ?? []).join(" ").trim();
   const recommendedAction = (
     sections["recommended action"]
     ?? sections.action
     ?? []
   ).join(" ").trim();
+  const examples = (
+    sections.examples
+    ?? []
+  )
+    .map((line) => line.replace(/^- /, "").trim())
+    .filter(Boolean);
+  const doNot = (
+    sections["do not"]
+    ?? sections.donot
+    ?? []
+  ).join(" ").trim();
+  const exceptions = (sections.exceptions ?? []).join(" ").trim();
+  const evidence = (sections.evidence ?? []).join(" ").trim();
+  const related = [
+    ...toArray(frontmatter.related),
+    ...(sections.related ?? []).map((line) => line.replace(/^- /, "").trim()).filter(Boolean),
+  ].filter(Boolean);
   const summary = recommendedAction || interpretation || signal;
 
   return {
     path: relativePath,
     title,
     summary,
-    workflow: metadata.workflow ?? null,
-    skillId: metadata.skill ?? null,
-    tags: metadata.tags ? String(metadata.tags).split(",").map((value) => value.trim()).filter(Boolean) : [],
-    author: metadata.author ?? null,
-    updatedAt: metadata.updated ?? null,
+    workflow: frontmatter.workflow ?? metadata.workflow ?? null,
+    skillId: frontmatter.skill ?? metadata.skill ?? null,
+    tags: Array.isArray(frontmatter.tags)
+      ? frontmatter.tags.map((value) => String(value).trim()).filter(Boolean)
+      : metadata.tags
+        ? String(metadata.tags).split(",").map((value) => value.trim()).filter(Boolean)
+        : [],
+    author: frontmatter.author ?? metadata.author ?? null,
+    updatedAt: frontmatter.updated ?? metadata.updated ?? null,
+    confidence: frontmatter.confidence ?? null,
+    sources: Array.isArray(frontmatter.sources)
+      ? frontmatter.sources.map((value) => String(value).trim()).filter(Boolean)
+      : [],
+    related,
+    whenToUse,
     signal,
     interpretation,
     recommendedAction,
+    doNot,
+    exceptions,
+    examples,
+    evidence,
     content: includeContent ? content : null,
   };
 }
@@ -1547,14 +1613,31 @@ export async function writePatternDoc(
   const stableId = id ?? `${workflow}-${slugify(title)}`;
   const author = resolveAuthor();
   const updatedAt = new Date().toISOString();
+  const titleText = title.trim();
+  const defaultWhenToUse = signal.trim().endsWith(".")
+    ? signal.trim()
+    : `${signal.trim()}.`;
   const content = [
-    `# ${title}`,
+    "---",
+    "type: pattern",
+    `title: ${titleText}`,
+    `workflow: ${workflow}`,
+    skillId ? `skill: ${skillId}` : null,
+    tags.length > 0 ? "tags:" : "tags: []",
+    ...(tags.length > 0 ? tags.map((tag) => `  - ${tag}`) : []),
+    "confidence: medium",
+    "related: []",
+    "sources: []",
+    `author: ${author}`,
+    `updated: ${updatedAt}`,
+    "---",
     "",
-    `- Workflow: ${workflow}`,
-    skillId ? `- Skill: ${skillId}` : null,
-    tags.length > 0 ? `- Tags: ${tags.join(", ")}` : null,
-    `- Author: ${author}`,
-    `- Updated: ${updatedAt}`,
+    `# ${titleText}`,
+    "",
+    "## When to Use",
+    "",
+    `Use this pattern when ${defaultWhenToUse.charAt(0).toLowerCase()}${defaultWhenToUse.slice(1)}`,
+    "",
     "",
     "## Signal",
     "",
@@ -1567,6 +1650,10 @@ export async function writePatternDoc(
     "## Recommended Action",
     "",
     recommendedAction,
+    "",
+    "## Examples",
+    "",
+    "- Add a concrete observed case here when this pattern repeats.",
     "",
   ]
     .filter(Boolean)
@@ -1891,8 +1978,6 @@ export async function learnFromInteraction(
 
 export async function lintPack(cwd = process.cwd()) {
   const { config, sourcePath } = await loadAgentConfig(cwd);
-  const paths = resolvePackPaths(config, { cwd, sourcePath });
-  const metaPatternPaths = await readDirMarkdown(paths.hostMetaDir);
   const [skills, patternFiles] = await Promise.all([
     listLocalSkills(config, cwd, sourcePath),
     listPatternEntries(config, cwd, sourcePath),
@@ -2007,7 +2092,7 @@ export async function lintPack(cwd = process.cwd()) {
           code: "pattern_missing_signal",
           skillId: skill.id,
           path: normalizePath(patternPath),
-          message: "Pattern doc is missing a Signal section. See .datalox/pattern.schema.md.",
+          message: "Pattern doc is missing a Signal section. See agent-wiki/pattern.schema.md.",
         });
       }
       if (!parsed.interpretation) {
@@ -2016,7 +2101,7 @@ export async function lintPack(cwd = process.cwd()) {
           code: "pattern_missing_interpretation",
           skillId: skill.id,
           path: normalizePath(patternPath),
-          message: "Pattern doc is missing an Interpretation section. See .datalox/pattern.schema.md.",
+          message: "Pattern doc is missing an Interpretation section. See agent-wiki/pattern.schema.md.",
         });
       }
       if (!parsed.recommendedAction) {
@@ -2025,7 +2110,25 @@ export async function lintPack(cwd = process.cwd()) {
           code: "pattern_missing_action",
           skillId: skill.id,
           path: normalizePath(patternPath),
-          message: "Pattern doc is missing a Recommended Action section. See .datalox/pattern.schema.md.",
+          message: "Pattern doc is missing a Recommended Action section. See agent-wiki/pattern.schema.md.",
+        });
+      }
+      if (!parsed.whenToUse) {
+        issues.push({
+          level: "warning",
+          code: "pattern_missing_when_to_use",
+          skillId: skill.id,
+          path: normalizePath(patternPath),
+          message: "Pattern doc should contain a When to Use section. See agent-wiki/pattern.schema.md.",
+        });
+      }
+      if (!parsed.examples?.length) {
+        issues.push({
+          level: "warning",
+          code: "pattern_missing_examples",
+          skillId: skill.id,
+          path: normalizePath(patternPath),
+          message: "Pattern doc should contain at least one example or concrete case note.",
         });
       }
     }
@@ -2039,18 +2142,6 @@ export async function lintPack(cwd = process.cwd()) {
         code: "orphan_pattern_doc",
         path: relativePath,
         message: "Pattern doc is not referenced by any skill.",
-      });
-    }
-  }
-
-  for (const metaFilePath of metaPatternPaths) {
-    const relativePath = normalizePath(path.relative(paths.hostRoot, metaFilePath));
-    if (!referencedPatternPaths.has(relativePath)) {
-      issues.push({
-        level: "warning",
-        code: "orphan_pattern_doc",
-        path: relativePath,
-        message: "Meta pattern doc is not referenced by any skill.",
       });
     }
   }
@@ -2070,7 +2161,7 @@ export async function lintPack(cwd = process.cwd()) {
       detail: result.ok
         ? "pack lint completed with no blocking issues"
         : `pack lint found ${result.issueCount} issue(s)`,
-      path: ".datalox/lint.md",
+      path: `${DEFAULT_WIKI_DIR}/lint.md`,
     },
     lintResult: result,
   });

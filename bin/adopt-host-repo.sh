@@ -12,6 +12,7 @@ fi
 HOST_REPO="$(cd "$HOST_REPO" && pwd)"
 
 mkdir -p "$HOST_REPO/.datalox" \
+         "$HOST_REPO/agent-wiki" \
          "$HOST_REPO/.github" \
          "$HOST_REPO/.cursor/rules" \
          "$HOST_REPO/.windsurf/rules" \
@@ -57,11 +58,11 @@ copy_if_missing "$PACK_ROOT/.windsurf/rules/datalox-pack.md" "$HOST_REPO/.windsu
 copy_if_missing "$PACK_ROOT/.datalox/config.json" "$HOST_REPO/.datalox/config.json"
 copy_if_missing "$PACK_ROOT/.datalox/config.schema.json" "$HOST_REPO/.datalox/config.schema.json"
 copy_if_missing "$PACK_ROOT/.datalox/manifest.json" "$HOST_REPO/.datalox/manifest.json"
-copy_if_missing "$PACK_ROOT/.datalox/pattern.schema.md" "$HOST_REPO/.datalox/pattern.schema.md"
+copy_if_missing "$PACK_ROOT/agent-wiki/pattern.schema.md" "$HOST_REPO/agent-wiki/pattern.schema.md"
 
 copy_tree_if_missing "$PACK_ROOT/skills" "$HOST_REPO/skills"
-copy_tree_if_missing "$PACK_ROOT/.datalox/patterns" "$HOST_REPO/.datalox/patterns"
-copy_tree_if_missing "$PACK_ROOT/.datalox/meta" "$HOST_REPO/.datalox/meta"
+copy_tree_if_missing "$PACK_ROOT/agent-wiki/patterns" "$HOST_REPO/agent-wiki/patterns"
+copy_tree_if_missing "$PACK_ROOT/agent-wiki/meta" "$HOST_REPO/agent-wiki/meta"
 
 echo
 echo "Datalox adopted into host repo:"
@@ -70,4 +71,4 @@ echo
 echo "Next:"
 echo "  1. Open the host repo in your agent"
 echo "  2. Tell it once: Read DATALOX.md and use the Datalox pack"
-echo "  3. Watch .datalox/index.md, .datalox/log.md, and .datalox/lint.md"
+echo "  3. Watch agent-wiki/index.md, agent-wiki/log.md, and agent-wiki/lint.md"

@@ -1,6 +1,6 @@
-# Datalox Lint
+# Agent Wiki Lint
 
-- Generated: 2026-04-12T10:31:16.792Z
+- Generated: 2026-04-12T15:10:51.523Z
 - OK: true
 - Issue Count: 0
 

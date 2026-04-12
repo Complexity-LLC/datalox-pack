@@ -31,7 +31,7 @@
   },
   "paths": {
     "seedSkillsDir": "skills",
-    "seedPatternsDir": ".datalox/patterns",
+    "seedPatternsDir": "agent-wiki/patterns",
     "hostSkillsDir": null,
     "hostPatternsDir": null
   },

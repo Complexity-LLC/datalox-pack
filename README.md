@@ -7,9 +7,9 @@ The current version is intentionally narrow:
 - detect a skill on every agent loop
 - expose actionable guidance from linked pattern docs
 - keep generated skills in `skills/`
-- keep reusable pattern docs in `.datalox/patterns/`
+- keep reusable pattern docs in `agent-wiki/patterns/`
 - lint the skill-pattern graph for broken links and invalid pattern docs
-- keep visible control artifacts in `.datalox/index.md`, `.datalox/log.md`, and `.datalox/lint.md`
+- keep visible control artifacts in `agent-wiki/index.md`, `agent-wiki/log.md`, and `agent-wiki/lint.md`
 
 No server is required.
 
@@ -81,9 +81,9 @@ When this pack is used from another repo, it acts as a seed pack. Reads can come
 
 The human-visible payoff is in three generated files:
 
-- `.datalox/index.md`: what the agent currently knows
-- `.datalox/log.md`: what it changed, including `create_skill`, `update_skill`, `patch_pattern`, and `lint_pack`
-- `.datalox/lint.md`: whether the pack is still healthy
+- `agent-wiki/index.md`: what the agent currently knows
+- `agent-wiki/log.md`: what it changed, including `create_skill`, `update_skill`, `patch_pattern`, and `lint_pack`
+- `agent-wiki/lint.md`: whether the pack is still healthy
 
 ## Read First
 
@@ -97,14 +97,14 @@ The human-visible payoff is in three generated files:
 ## Repo Contract
 
 - `skills/`: seed skills for the pack, stored as `skills/<name>/SKILL.md`
-- `.datalox/patterns/`: seed pattern docs for the pack
-- `.datalox/index.md`: generated skill-pattern map in the host repo
-- `.datalox/log.md`: generated operation log in the host repo
-- `.datalox/lint.md`: generated lint snapshot in the host repo
+- `agent-wiki/patterns/`: seed pattern docs for the pack
+- `agent-wiki/index.md`: generated skill-pattern map in the host repo
+- `agent-wiki/log.md`: generated operation log in the host repo
+- `agent-wiki/lint.md`: generated lint snapshot in the host repo
 - `.datalox/skill.schema.md`: authoring contract for future skills
 - `START_HERE.md`: human-friendly first-run guide
 - host repos should write generated skills into their own `skills/`
-- host repos should write generated pattern docs into their own `.datalox/patterns/`
+- host repos should write generated pattern docs into their own `agent-wiki/patterns/`
 
 ## Optional Reference Implementation
 
@@ -129,7 +129,7 @@ node scripts/agent-lint.mjs
 ```
 
 After the patch step, the next resolve call should return the updated skill with the new pattern doc already linked in.
-The host repo should also show updated `.datalox/index.md` and `.datalox/log.md`.
+The host repo should also show updated `agent-wiki/index.md` and `agent-wiki/log.md`.
 
 ## Skill Authoring Rule
 

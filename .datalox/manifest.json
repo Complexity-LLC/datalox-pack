@@ -17,14 +17,14 @@
   ],
   "entrypoints": {
     "seedSkillsDir": "skills",
-    "seedPatternsDir": ".datalox/patterns",
+    "seedPatternsDir": "agent-wiki/patterns",
     "hostSkillsDir": null,
     "hostPatternsDir": null
   },
   "controlArtifacts": {
-    "indexPath": ".datalox/index.md",
-    "logPath": ".datalox/log.md",
-    "lintPath": ".datalox/lint.md"
+    "indexPath": "agent-wiki/index.md",
+    "logPath": "agent-wiki/log.md",
+    "lintPath": "agent-wiki/lint.md"
   },
   "startup": {
     "readOnEveryLoop": true,
@@ -48,7 +48,7 @@
   "agentRules": {
     "preserveNativeSkills": true,
     "generatedSkillsDir": "skills",
-    "patternDocsDir": ".datalox/patterns",
+    "patternDocsDir": "agent-wiki/patterns",
     "hostRepoOwnsWrites": true
   },
   "distribution": {

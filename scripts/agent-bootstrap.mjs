@@ -19,9 +19,9 @@ const payload = {
   paths,
   counts,
   artifacts: {
-    indexPath: `${paths.hostPackDir}/index.md`,
-    logPath: `${paths.hostPackDir}/log.md`,
-    lintPath: `${paths.hostPackDir}/lint.md`,
+    indexPath: `${paths.hostWikiDir}/index.md`,
+    logPath: `${paths.hostWikiDir}/log.md`,
+    lintPath: `${paths.hostWikiDir}/lint.md`,
   },
 };
 

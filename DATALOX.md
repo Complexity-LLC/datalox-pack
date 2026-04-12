@@ -11,9 +11,9 @@ An agent should use it on every loop with one minimal cycle:
 
 The pack must also keep three visible control artifacts in the host repo:
 
-- `.datalox/index.md`
-- `.datalox/log.md`
-- `.datalox/lint.md`
+- `agent-wiki/index.md`
+- `agent-wiki/log.md`
+- `agent-wiki/lint.md`
 
 Do not replace the agent's native skills. Datalox is additive.
 
@@ -55,7 +55,7 @@ This is the `detect -> use` part of the loop.
 
 When the agent discovers a reusable pattern:
 
-1. write a pattern doc into `.datalox/patterns/`
+1. write a pattern doc into `agent-wiki/patterns/`
 2. update or create a skill in `skills/`
 3. put the pattern doc path into that skill's `metadata.datalox.pattern_paths`
 
@@ -65,8 +65,8 @@ These writes belong to the host repo, not the seed pack repo.
 
 After patching, refresh:
 
-- `.datalox/index.md` so the current skill-pattern graph is visible
-- `.datalox/log.md` so the change is recorded chronologically
+- `agent-wiki/index.md` so the current skill-pattern graph is visible
+- `agent-wiki/log.md` so the change is recorded chronologically
 
 ## Lint Rule
 
@@ -86,12 +86,12 @@ There is no separate working layer in this version.
 
 After linting, refresh:
 
-- `.datalox/lint.md` with the latest pack health snapshot
-- `.datalox/log.md` with the lint result
+- `agent-wiki/lint.md` with the latest pack health snapshot
+- `agent-wiki/log.md` with the lint result
 
 ## Control Artifacts
 
-### `.datalox/index.md`
+### `agent-wiki/index.md`
 
 Human-readable map of the current effective pack:
 
@@ -101,7 +101,7 @@ Human-readable map of the current effective pack:
 - source origin (`host` or `seed`)
 - last updated metadata when available
 
-### `.datalox/log.md`
+### `agent-wiki/log.md`
 
 Append-only change trail. Record at least:
 
@@ -110,7 +110,7 @@ Append-only change trail. Record at least:
 - skills updated
 - lint runs
 
-### `.datalox/lint.md`
+### `agent-wiki/lint.md`
 
 Latest lint snapshot in markdown so a human can see why the pack is healthy or broken without running tools.
 
