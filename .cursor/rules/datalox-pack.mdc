@@ -1,0 +1,25 @@
+---
+description: Datalox pack rules for Cursor. Detect skills, use linked pattern docs, patch reusable knowledge, and keep control artifacts current.
+globs:
+  - "skills/**/SKILL.md"
+  - ".datalox/**/*.md"
+  - "DATALOX.md"
+  - "AGENTS.md"
+alwaysApply: true
+---
+
+# Datalox Pack
+
+Read `DATALOX.md` first.
+
+On each loop:
+
+1. detect the best skill in `skills/`
+2. read linked pattern docs in `.datalox/patterns/`
+3. act using their signal, interpretation, and recommended action
+4. if you learn something reusable, patch the host repo and refresh:
+   - `.datalox/index.md`
+   - `.datalox/log.md`
+   - `.datalox/lint.md`
+
+Preserve native Cursor behavior. Datalox is additive.

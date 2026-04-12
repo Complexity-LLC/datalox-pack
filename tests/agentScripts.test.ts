@@ -61,6 +61,8 @@ const baseConfig = {
 async function createPack(tempDir: string) {
   await mkdir(path.join(tempDir, "skills"), { recursive: true });
   await mkdir(path.join(tempDir, ".datalox/patterns"), { recursive: true });
+  await mkdir(path.join(tempDir, "skills/review-ambiguous-viability-gate"), { recursive: true });
+  await mkdir(path.join(tempDir, "skills/evolve-portable-pack"), { recursive: true });
 
   await writeFile(
     path.join(tempDir, ".datalox/config.json"),
@@ -82,51 +84,93 @@ async function createPack(tempDir: string) {
     ),
   );
   await writeFile(
-    path.join(tempDir, "skills/review-ambiguous-viability-gate.json"),
-    JSON.stringify(
-      {
-        version: 1,
-        id: "flow-cytometry.review-ambiguous-viability-gate",
-        name: "review-ambiguous-viability-gate",
-        displayName: "Review Ambiguous Viability Gate",
-        workflow: "flow_cytometry",
-        trigger: "Use when live/dead separation is ambiguous during viability gate review.",
-        description: "Read the linked pattern docs before changing the gate.",
-        patternPaths: [
-          ".datalox/patterns/viability-gate-review.md",
-        ],
-        tags: ["flow_cytometry", "viability", "review"],
-        status: "approved",
-      },
-      null,
-      2,
-    ),
+    path.join(tempDir, "skills/review-ambiguous-viability-gate/SKILL.md"),
+    `---
+name: review-ambiguous-viability-gate
+description: Use when live and dead populations are not cleanly separated during viability gate review.
+metadata:
+  datalox:
+    id: flow-cytometry.review-ambiguous-viability-gate
+    workflow: flow_cytometry
+    trigger: Use when live/dead separation is ambiguous during viability gate review.
+    pattern_paths:
+      - .datalox/patterns/viability-gate-review.md
+    tags:
+      - flow_cytometry
+      - viability
+      - review
+    status: approved
+---
+
+# Review Ambiguous Viability Gate
+
+## When to Use
+
+Use when live/dead separation is ambiguous during viability gate review.
+
+## Workflow
+
+1. Read the linked pattern docs before changing the gate.
+2. Treat this as a judgment step, not a mechanical threshold change.
+
+## Expected Output
+
+- State why this skill matched.
+- State the recommended gate action.
+
+## Pattern Docs
+
+- .datalox/patterns/viability-gate-review.md
+`,
   );
   await writeFile(
-    path.join(tempDir, "skills/evolve-portable-pack.json"),
-    JSON.stringify(
-      {
-        version: 1,
-        id: "repo-engineering.evolve-portable-pack",
-        name: "evolve-portable-pack",
-        displayName: "Evolve Portable Pack",
-        workflow: "repo_engineering",
-        trigger: "Use when changing the portable pack or agent guidance.",
-        description: "Keep the pack simple.",
-        patternPaths: [
-          ".datalox/patterns/evolve-portable-pack.md",
-        ],
-        repoHints: {
-          files: ["AGENTS.md", "CLAUDE.md", "package.json"],
-          pathPrefixes: ["skills/", ".datalox/"],
-          packageSignals: ["vitest", "demo-pack"],
-        },
-        tags: ["repo_engineering", "portable_pack"],
-        status: "approved",
-      },
-      null,
-      2,
-    ),
+    path.join(tempDir, "skills/evolve-portable-pack/SKILL.md"),
+    `---
+name: evolve-portable-pack
+description: Keep the pack simple.
+metadata:
+  datalox:
+    id: repo-engineering.evolve-portable-pack
+    workflow: repo_engineering
+    trigger: Use when changing the portable pack or agent guidance.
+    pattern_paths:
+      - .datalox/patterns/evolve-portable-pack.md
+    tags:
+      - repo_engineering
+      - portable_pack
+    repo_hints:
+      files:
+        - AGENTS.md
+        - CLAUDE.md
+        - package.json
+      path_prefixes:
+        - skills/
+        - .datalox/
+      package_signals:
+        - vitest
+        - demo-pack
+---
+
+# Evolve Portable Pack
+
+## When to Use
+
+Use when changing the portable pack or agent guidance.
+
+## Workflow
+
+1. Read the linked pattern docs before acting.
+2. Keep the pack simple.
+
+## Expected Output
+
+- State why this skill matched.
+- State the pack change being made.
+
+## Pattern Docs
+
+- .datalox/patterns/evolve-portable-pack.md
+`,
   );
   await writeFile(
     path.join(tempDir, ".datalox/patterns/viability-gate-review.md"),
@@ -260,15 +304,20 @@ describe("agent scripts", () => {
     expect(learnPatternResult.status).toBe(0);
 
     const patternBody = JSON.parse(learnPatternResult.stdout);
-    const skillFile = JSON.parse(
-      await readFile(
-        path.join(tempDir, "skills/review-ambiguous-viability-gate.json"),
-        "utf8",
-      ),
+    const skillFile = await readFile(
+      path.join(tempDir, "skills/review-ambiguous-viability-gate/SKILL.md"),
+      "utf8",
     );
+    const indexFile = await readFile(path.join(tempDir, ".datalox/index.md"), "utf8");
+    const logFile = await readFile(path.join(tempDir, ".datalox/log.md"), "utf8");
 
     expect(patternBody.pattern.relativePath).toContain(".datalox/patterns/");
-    expect(skillFile.patternPaths).toContain(patternBody.pattern.relativePath);
+    expect(skillFile).toContain(patternBody.pattern.relativePath);
+    expect(skillFile).toContain("## Workflow");
+    expect(indexFile).toContain("## Skills");
+    expect(indexFile).toContain(patternBody.pattern.relativePath);
+    expect(logFile).toContain("patch_pattern");
+    expect(logFile).toContain("update_skill");
   });
 
   it("learns from interaction by writing a pattern doc and updating a skill in skills", async () => {
@@ -296,6 +345,11 @@ describe("agent scripts", () => {
     const body = JSON.parse(learnResult.stdout);
     expect(body.pattern.relativePath).toContain(".datalox/patterns/");
     expect(body.skill.payload.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
+    expect(body.skill.operation).toBe("update_skill");
+    const indexFile = await readFile(path.join(tempDir, ".datalox/index.md"), "utf8");
+    const logFile = await readFile(path.join(tempDir, ".datalox/log.md"), "utf8");
+    expect(indexFile).toContain(body.pattern.relativePath);
+    expect(logFile).toContain("update_skill");
 
     const resolveResult = runNodeScript(tempDir, "scripts/agent-resolve.mjs", [
       "--task",
@@ -348,6 +402,7 @@ describe("agent scripts", () => {
     const patched = JSON.parse(patch.stdout);
     expect(patched.pattern.relativePath).toContain(".datalox/patterns/");
     expect(patched.skill.payload.patternPaths).toContain(patched.pattern.relativePath);
+    expect(patched.skill.operation).toBe("update_skill");
 
     const lint = runNodeScript(tempDir, "scripts/agent-lint.mjs", ["--json"]);
     expect(lint.status).toBe(0);
@@ -355,6 +410,8 @@ describe("agent scripts", () => {
     const lintBody = JSON.parse(lint.stdout);
     expect(lintBody.ok).toBe(true);
     expect(lintBody.issueCount).toBe(0);
+    expect(await readFile(path.join(tempDir, ".datalox/lint.md"), "utf8")).toContain("Issue Count: 0");
+    expect(await readFile(path.join(tempDir, ".datalox/log.md"), "utf8")).toContain("lint_pack");
   });
 
   it("lints the minimal skill-pattern graph", async () => {
@@ -362,27 +419,31 @@ describe("agent scripts", () => {
     tempDirs.push(tempDir);
     await createPack(tempDir);
 
+    await mkdir(path.join(tempDir, "skills/broken-skill"), { recursive: true });
     await writeFile(
-      path.join(tempDir, "skills/broken-skill.json"),
-      JSON.stringify(
-        {
-          version: 1,
-          id: "flow-cytometry.broken-skill",
-          name: "broken-skill",
-          displayName: "Broken Skill",
-          workflow: "flow_cytometry",
-          trigger: "Use when the pack is broken.",
-          description: "Broken test skill.",
-          patternPaths: [
-            ".datalox/patterns/missing-pattern.md",
-            ".datalox/patterns/bad-pattern.md"
-          ],
-          tags: ["flow_cytometry"],
-          status: "generated"
-        },
-        null,
-        2,
-      ),
+      path.join(tempDir, "skills/broken-skill/SKILL.md"),
+      `---
+name: broken-skill
+description: Broken test skill.
+metadata:
+  datalox:
+    id: flow-cytometry.broken-skill
+    workflow: flow_cytometry
+    trigger: Use when the pack is broken.
+    pattern_paths:
+      - .datalox/patterns/missing-pattern.md
+      - .datalox/patterns/bad-pattern.md
+    status: generated
+    tags:
+      - flow_cytometry
+---
+
+# Broken Skill
+
+## When to Use
+
+Use when the pack is broken.
+`,
     );
 
     await writeFile(
@@ -403,6 +464,8 @@ describe("agent scripts", () => {
     expect(body.issues.some((issue: { code: string }) => issue.code === "pattern_missing_interpretation")).toBe(true);
     expect(body.issues.some((issue: { code: string }) => issue.code === "pattern_missing_action")).toBe(true);
     expect(body.issues.some((issue: { code: string }) => issue.code === "orphan_pattern_doc")).toBe(true);
+    expect(body.issues.some((issue: { code: string }) => issue.code === "skill_missing_workflow_section")).toBe(true);
+    expect(await readFile(path.join(tempDir, ".datalox/lint.md"), "utf8")).toContain("missing_pattern_doc");
   });
 
   it("reads seed knowledge from an external pack and writes generated knowledge into the host repo", async () => {
@@ -453,16 +516,22 @@ describe("agent scripts", () => {
     expect(patchResult.status).toBe(0);
 
     const patched = JSON.parse(patchResult.stdout);
-    const hostSkillPath = path.join(hostDir, "skills/review-ambiguous-viability-gate.json");
+    const hostSkillPath = path.join(hostDir, "skills/review-ambiguous-viability-gate/SKILL.md");
     const hostPatternPath = path.join(hostDir, patched.pattern.relativePath);
-    const seedSkill = JSON.parse(
-      await readFile(path.join(packDir, "skills/review-ambiguous-viability-gate.json"), "utf8"),
+    const seedSkill = await readFile(
+      path.join(packDir, "skills/review-ambiguous-viability-gate/SKILL.md"),
+      "utf8",
     );
-    const hostSkill = JSON.parse(await readFile(hostSkillPath, "utf8"));
+    const hostSkill = await readFile(hostSkillPath, "utf8");
+    const hostIndex = await readFile(path.join(hostDir, ".datalox/index.md"), "utf8");
+    const hostLog = await readFile(path.join(hostDir, ".datalox/log.md"), "utf8");
 
-    expect(hostSkill.patternPaths).toContain(patched.pattern.relativePath);
-    expect(seedSkill.patternPaths).not.toContain(patched.pattern.relativePath);
+    expect(hostSkill).toContain(patched.pattern.relativePath);
+    expect(hostSkill).toContain("## Workflow");
+    expect(seedSkill).not.toContain(patched.pattern.relativePath);
     expect(await readFile(hostPatternPath, "utf8")).toContain("review exception pattern before widening gate");
+    expect(hostIndex).toContain(patched.pattern.relativePath);
+    expect(hostLog).toContain("update_skill");
 
     const resolveAgain = runNodeScript(
       hostDir,
@@ -481,5 +550,41 @@ describe("agent scripts", () => {
     const resolvedAgain = JSON.parse(resolveAgain.stdout);
     expect(resolvedAgain.matches[0].skillOrigin).toBe("host");
     expect(resolvedAgain.matches[0].patternDocs.length).toBe(2);
+  });
+
+  it("creates a new skill when no existing skill matches the interaction", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+
+    const learnResult = runNodeScript(tempDir, "scripts/agent-learn-from-interaction.mjs", [
+      "--task",
+      "stabilize manual pack adoption in non technical repos",
+      "--workflow",
+      "agent_adoption",
+      "--summary",
+      "Users need the pack to be visible and reversible during setup",
+      "--observation",
+      "new repos need a visible onboarding flow and trust controls",
+      "--interpretation",
+      "this is a recurring adoption workflow rather than a one-off note",
+      "--action",
+      "create a skill that guides adoption and points to the pattern doc",
+      "--json",
+    ]);
+    expect(learnResult.status).toBe(0);
+
+    const body = JSON.parse(learnResult.stdout);
+    const generatedSkillPath = body.skill.filePath;
+    const generatedSkill = await readFile(generatedSkillPath, "utf8");
+    const logFile = await readFile(path.join(tempDir, ".datalox/log.md"), "utf8");
+    const indexFile = await readFile(path.join(tempDir, ".datalox/index.md"), "utf8");
+
+    expect(body.skill.operation).toBe("create_skill");
+    expect(body.skill.payload.id).toBe("agent_adoption.stabilize-manual-pack-adoption-in-non-technical-repos");
+    expect(generatedSkill).toContain("## Workflow");
+    expect(generatedSkill).toContain(".datalox/patterns/");
+    expect(logFile).toContain("create_skill");
+    expect(indexFile).toContain("agent_adoption.stabilize-manual-pack-adoption-in-non-technical-repos");
   });
 });

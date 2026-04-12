@@ -31,6 +31,6 @@ if (args.json) {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 } else {
   process.stdout.write(`Pattern doc written: ${result.pattern.filePath}\n`);
-  process.stdout.write(`Skill written: ${result.skill.filePath}\n`);
+  process.stdout.write(`Skill ${result.skill.operation}: ${result.skill.filePath}\n`);
   process.stdout.write(`Top resolved skill: ${result.resolution.matches[0]?.skill.id ?? "none"}\n`);
 }

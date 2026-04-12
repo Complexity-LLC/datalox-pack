@@ -1,7 +1,6 @@
 import process from "node:process";
 
-import { loadAgentConfig } from "../dist/src/agent/loadAgentConfig.js";
-import { countPackFiles, parseArgs, resolvePackPaths } from "./lib/agent-pack.mjs";
+import { countPackFiles, loadAgentConfig, parseArgs, resolvePackPaths } from "./lib/agent-pack.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const { config, sourcePath, localOverridePath } = await loadAgentConfig(process.cwd());
@@ -19,6 +18,11 @@ const payload = {
   interfaceOrder: config.agent.interfaceOrder,
   paths,
   counts,
+  artifacts: {
+    indexPath: `${paths.hostPackDir}/index.md`,
+    logPath: `${paths.hostPackDir}/log.md`,
+    lintPath: `${paths.hostPackDir}/lint.md`,
+  },
 };
 
 if (args.json) {
@@ -35,5 +39,8 @@ if (args.json) {
   process.stdout.write(`Seed patterns dir: ${payload.paths.seedPatternsDir}\n`);
   process.stdout.write(`Host skills dir: ${payload.paths.hostSkillsDir}\n`);
   process.stdout.write(`Host patterns dir: ${payload.paths.hostPatternsDir}\n`);
+  process.stdout.write(`Index: ${payload.artifacts.indexPath}\n`);
+  process.stdout.write(`Log: ${payload.artifacts.logPath}\n`);
+  process.stdout.write(`Lint snapshot: ${payload.artifacts.lintPath}\n`);
   process.stdout.write("Status: portable pack is readable without a running Datalox service\n");
 }

@@ -8,13 +8,23 @@
   "instructionPaths": [
     "DATALOX.md",
     "AGENTS.md",
-    "CLAUDE.md"
+    "CLAUDE.md",
+    "WIKI.md",
+    "GEMINI.md",
+    ".github/copilot-instructions.md",
+    ".cursor/rules/datalox-pack.mdc",
+    ".windsurf/rules/datalox-pack.md"
   ],
   "entrypoints": {
     "seedSkillsDir": "skills",
     "seedPatternsDir": ".datalox/patterns",
     "hostSkillsDir": null,
     "hostPatternsDir": null
+  },
+  "controlArtifacts": {
+    "indexPath": ".datalox/index.md",
+    "logPath": ".datalox/log.md",
+    "lintPath": ".datalox/lint.md"
   },
   "startup": {
     "readOnEveryLoop": true,
@@ -23,7 +33,9 @@
       ".datalox/config.json",
       "DATALOX.md",
       "AGENTS.md",
-      "CLAUDE.md"
+      "CLAUDE.md",
+      "WIKI.md",
+      "GEMINI.md"
     ],
     "skillSelectionSignals": [
       "current task text",
@@ -38,5 +50,10 @@
     "generatedSkillsDir": "skills",
     "patternDocsDir": ".datalox/patterns",
     "hostRepoOwnsWrites": true
+  },
+  "distribution": {
+    "oneClickBootstrap": "bash bin/adopt-from-github.sh <host-repo>",
+    "multiAgentSetup": "bash bin/setup-multi-agent.sh",
+    "friendlyEntryPoint": "START_HERE.md"
   }
 }

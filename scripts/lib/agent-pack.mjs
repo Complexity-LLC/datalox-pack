@@ -3,9 +3,16 @@ import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { loadAgentConfig } from "../../dist/src/agent/loadAgentConfig.js";
-
 const AUTHOR_ENV = "DATALOX_AUTHOR";
+const CONFIG_PATH_ENV = "DATALOX_CONFIG_JSON";
+const BASE_URL_ENV = "DATALOX_BASE_URL";
+const DEFAULT_WORKFLOW_ENV = "DATALOX_DEFAULT_WORKFLOW";
+const AGENT_PROFILE_ENV = "DATALOX_AGENT_PROFILE";
+const MODE_ENV = "DATALOX_MODE";
+const PACK_MODES = ["repo_only", "service_backed"];
+const AGENT_PROFILES = ["local_first", "runtime_first"];
+const AGENT_INTERFACES = ["skill_loop", "runtime_compile"];
+const SOURCE_KINDS = ["local_repo"];
 
 async function fileExists(filePath) {
   try {
@@ -22,6 +29,488 @@ async function readJson(filePath) {
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function deepMerge(base, override) {
+  if (!isRecord(base) || !isRecord(override)) {
+    return override;
+  }
+
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    const baseValue = merged[key];
+    merged[key] = isRecord(baseValue) && isRecord(value)
+      ? deepMerge(baseValue, value)
+      : value;
+  }
+  return merged;
+}
+
+function expectString(value, fieldName) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`Agent config field ${fieldName} must be a non-empty string`);
+  }
+  return value;
+}
+
+function expectBoolean(value, fieldName) {
+  if (typeof value !== "boolean") {
+    throw new Error(`Agent config field ${fieldName} must be a boolean`);
+  }
+  return value;
+}
+
+function expectPositiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Agent config field ${fieldName} must be a positive integer`);
+  }
+  return value;
+}
+
+function expectStringArray(value, fieldName) {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error(`Agent config field ${fieldName} must be an array of strings`);
+  }
+  return value;
+}
+
+function expectEnumArray(value, fieldName, allowedValues) {
+  const values = expectStringArray(value, fieldName);
+  for (const item of values) {
+    if (!allowedValues.includes(item)) {
+      throw new Error(`Agent config field ${fieldName} contains invalid value ${item}`);
+    }
+  }
+  return values;
+}
+
+function expectEnumValue(value, fieldName, allowedValues) {
+  const resolved = expectString(value, fieldName);
+  if (!allowedValues.includes(resolved)) {
+    throw new Error(`Agent config field ${fieldName} must be one of ${allowedValues.join(", ")}`);
+  }
+  return resolved;
+}
+
+function validateAgentConfig(raw) {
+  const project = raw.project;
+  const sources = raw.sources;
+  const agent = raw.agent;
+  const paths = raw.paths;
+  const runtime = raw.runtime;
+  const auth = raw.auth;
+
+  if (!isRecord(project)) throw new Error("Agent config field project must be an object");
+  if (!Array.isArray(sources)) throw new Error("Agent config field sources must be an array");
+  if (!isRecord(agent)) throw new Error("Agent config field agent must be an object");
+  if (!isRecord(paths)) throw new Error("Agent config field paths must be an object");
+  if (!isRecord(runtime)) throw new Error("Agent config field runtime must be an object");
+  if (!isRecord(auth)) throw new Error("Agent config field auth must be an object");
+  if (!isRecord(runtime.endpoints)) {
+    throw new Error("Agent config field runtime.endpoints must be an object");
+  }
+
+  return {
+    version: expectPositiveInteger(raw.version, "version"),
+    mode: expectEnumValue(raw.mode, "mode", PACK_MODES),
+    project: {
+      id: expectString(project.id, "project.id"),
+      name: expectString(project.name, "project.name"),
+    },
+    sources: sources.map((source, index) => {
+      if (!isRecord(source)) {
+        throw new Error(`Agent config field sources[${index}] must be an object`);
+      }
+      return {
+        kind: expectEnumValue(source.kind, `sources[${index}].kind`, SOURCE_KINDS),
+        name: expectString(source.name, `sources[${index}].name`),
+        enabled: expectBoolean(source.enabled, `sources[${index}].enabled`),
+        root: expectString(source.root, `sources[${index}].root`),
+      };
+    }),
+    agent: {
+      profile: expectEnumValue(agent.profile, "agent.profile", AGENT_PROFILES),
+      nativeSkillPolicy: expectEnumValue(
+        agent.nativeSkillPolicy,
+        "agent.nativeSkillPolicy",
+        ["preserve"],
+      ),
+      detectOnEveryLoop: expectBoolean(agent.detectOnEveryLoop, "agent.detectOnEveryLoop"),
+      configReadOrder: expectStringArray(agent.configReadOrder, "agent.configReadOrder"),
+      interfaceOrder: expectEnumArray(agent.interfaceOrder, "agent.interfaceOrder", AGENT_INTERFACES),
+    },
+    paths: {
+      seedSkillsDir: expectString(paths.seedSkillsDir, "paths.seedSkillsDir"),
+      seedPatternsDir: expectString(paths.seedPatternsDir, "paths.seedPatternsDir"),
+      hostSkillsDir: paths.hostSkillsDir === null
+        ? null
+        : expectString(paths.hostSkillsDir, "paths.hostSkillsDir"),
+      hostPatternsDir: paths.hostPatternsDir === null
+        ? null
+        : expectString(paths.hostPatternsDir, "paths.hostPatternsDir"),
+    },
+    runtime: {
+      enabled: expectBoolean(runtime.enabled, "runtime.enabled"),
+      baseUrl: expectString(runtime.baseUrl, "runtime.baseUrl"),
+      defaultWorkflow: expectString(runtime.defaultWorkflow, "runtime.defaultWorkflow"),
+      requestTimeoutMs: expectPositiveInteger(runtime.requestTimeoutMs, "runtime.requestTimeoutMs"),
+      endpoints: {
+        compile: expectString(runtime.endpoints.compile, "runtime.endpoints.compile"),
+      },
+    },
+    auth: {
+      apiKeyEnv: expectString(auth.apiKeyEnv, "auth.apiKeyEnv"),
+      contributorKeyEnv: expectString(auth.contributorKeyEnv, "auth.contributorKeyEnv"),
+    },
+  };
+}
+
+function applyEnvironmentOverrides(config) {
+  const appliedEnvOverrides = [];
+  const nextConfig = {
+    ...config,
+    agent: { ...config.agent },
+    runtime: { ...config.runtime },
+  };
+
+  if (process.env[BASE_URL_ENV]) {
+    nextConfig.runtime.baseUrl = process.env[BASE_URL_ENV];
+    appliedEnvOverrides.push(BASE_URL_ENV);
+  }
+  if (process.env[DEFAULT_WORKFLOW_ENV]) {
+    nextConfig.runtime.defaultWorkflow = process.env[DEFAULT_WORKFLOW_ENV];
+    appliedEnvOverrides.push(DEFAULT_WORKFLOW_ENV);
+  }
+  if (process.env[AGENT_PROFILE_ENV]) {
+    nextConfig.agent.profile = expectEnumValue(
+      process.env[AGENT_PROFILE_ENV],
+      AGENT_PROFILE_ENV,
+      AGENT_PROFILES,
+    );
+    appliedEnvOverrides.push(AGENT_PROFILE_ENV);
+  }
+  if (process.env[MODE_ENV]) {
+    nextConfig.mode = expectEnumValue(process.env[MODE_ENV], MODE_ENV, PACK_MODES);
+    appliedEnvOverrides.push(MODE_ENV);
+  }
+
+  return { config: nextConfig, appliedEnvOverrides };
+}
+
+async function readJsonObject(filePath) {
+  const parsed = await readJson(filePath);
+  if (!isRecord(parsed)) {
+    throw new Error(`Agent config at ${filePath} must be a JSON object`);
+  }
+  return parsed;
+}
+
+export async function loadAgentConfig(cwd = process.cwd()) {
+  const configuredPath = process.env[CONFIG_PATH_ENV];
+  if (configuredPath) {
+    const sourcePath = path.isAbsolute(configuredPath)
+      ? configuredPath
+      : path.resolve(cwd, configuredPath);
+    const validated = validateAgentConfig(await readJsonObject(sourcePath));
+    const { config, appliedEnvOverrides } = applyEnvironmentOverrides(validated);
+    return {
+      config,
+      sourcePath,
+      appliedEnvOverrides: [CONFIG_PATH_ENV, ...appliedEnvOverrides],
+    };
+  }
+
+  const sourcePath = path.resolve(cwd, ".datalox/config.json");
+  const localOverridePath = path.resolve(cwd, ".datalox/config.local.json");
+  const baseConfig = await readJsonObject(sourcePath);
+  const mergedConfig = (await fileExists(localOverridePath))
+    ? deepMerge(baseConfig, await readJsonObject(localOverridePath))
+    : baseConfig;
+  const validated = validateAgentConfig(mergedConfig);
+  const { config, appliedEnvOverrides } = applyEnvironmentOverrides(validated);
+
+  return {
+    config,
+    sourcePath,
+    localOverridePath: (await fileExists(localOverridePath)) ? localOverridePath : undefined,
+    appliedEnvOverrides,
+  };
+}
+
+function toCamelCase(value) {
+  return value.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
+}
+
+function parseFrontmatterScalar(value) {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+    || (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function parseFrontmatterBlock(lines, startIndex, indentLevel) {
+  let index = startIndex;
+  const values = [];
+  const object = {};
+  let mode = null;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    const indent = line.match(/^ */)?.[0].length ?? 0;
+    if (indent < indentLevel) {
+      break;
+    }
+
+    const content = line.slice(indent);
+    if (content.startsWith("- ")) {
+      if (mode === null) mode = "array";
+      if (mode !== "array") {
+        throw new Error("Invalid frontmatter: cannot mix array and object entries in one block");
+      }
+      values.push(parseFrontmatterScalar(content.slice(2)));
+      index += 1;
+      continue;
+    }
+
+    const match = content.match(/^([A-Za-z0-9_]+):(?:\s*(.*))?$/);
+    if (!match) {
+      throw new Error(`Invalid frontmatter line: ${content}`);
+    }
+
+    if (mode === null) mode = "object";
+    if (mode !== "object") {
+      throw new Error("Invalid frontmatter: cannot mix object and array entries in one block");
+    }
+
+    const [, key, rawValue = ""] = match;
+    if (rawValue.trim()) {
+      object[toCamelCase(key)] = parseFrontmatterScalar(rawValue);
+      index += 1;
+      continue;
+    }
+
+    const nested = parseFrontmatterBlock(lines, index + 1, indent + 2);
+    object[toCamelCase(key)] = nested.value;
+    index = nested.nextIndex;
+  }
+
+  return {
+    value: mode === "array" ? values : object,
+    nextIndex: index,
+  };
+}
+
+function parseFrontmatter(rawFrontmatter) {
+  const lines = rawFrontmatter.split("\n");
+  const result = {};
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    const match = line.match(/^([A-Za-z0-9_]+):(?:\s*(.*))?$/);
+    if (!match) {
+      throw new Error(`Invalid frontmatter line: ${line}`);
+    }
+
+    const [, key, rawValue = ""] = match;
+    if (rawValue.trim()) {
+      result[toCamelCase(key)] = parseFrontmatterScalar(rawValue);
+      index += 1;
+      continue;
+    }
+
+    const nested = parseFrontmatterBlock(lines, index + 1, 2);
+    result[toCamelCase(key)] = nested.value;
+    index = nested.nextIndex;
+  }
+
+  return result;
+}
+
+function splitFrontmatter(content) {
+  if (!content.startsWith("---\n")) {
+    return {
+      frontmatter: {},
+      body: content.trim(),
+    };
+  }
+
+  const endMarker = "\n---\n";
+  const endIndex = content.indexOf(endMarker, 4);
+  if (endIndex === -1) {
+    throw new Error("Skill markdown is missing closing frontmatter fence");
+  }
+
+  return {
+    frontmatter: parseFrontmatter(content.slice(4, endIndex)),
+    body: content.slice(endIndex + endMarker.length).trim(),
+  };
+}
+
+function inferSkillNameFromPath(filePath) {
+  const baseName = path.basename(filePath).toLowerCase();
+  if (baseName === "skill.md") {
+    return path.basename(path.dirname(filePath));
+  }
+  return path.basename(filePath, path.extname(filePath));
+}
+
+function parseSkillDoc(filePath, content) {
+  const { frontmatter, body } = splitFrontmatter(content);
+  const heading = body.split("\n").find((line) => line.startsWith("# "))?.replace(/^# /, "").trim();
+  const metadata = isRecord(frontmatter.metadata) ? frontmatter.metadata : {};
+  const datalox = isRecord(metadata.datalox) ? metadata.datalox : {};
+  const name = frontmatter.name ?? inferSkillNameFromPath(filePath);
+  const displayName = datalox.displayName ?? frontmatter.displayName ?? heading ?? name;
+
+  return {
+    id: datalox.id ?? frontmatter.id ?? name,
+    name,
+    displayName,
+    workflow: datalox.workflow ?? frontmatter.workflow ?? null,
+    trigger: datalox.trigger ?? frontmatter.trigger ?? "",
+    description: frontmatter.description ?? "",
+    patternPaths: toArray(datalox.patternPaths ?? frontmatter.patternPaths),
+    repoHints: isRecord(datalox.repoHints)
+      ? datalox.repoHints
+      : isRecord(frontmatter.repoHints)
+        ? frontmatter.repoHints
+        : undefined,
+    tags: toArray(datalox.tags ?? frontmatter.tags),
+    status: datalox.status ?? frontmatter.status ?? "generated",
+    author: datalox.author ?? frontmatter.author ?? null,
+    updatedAt: datalox.updatedAt ?? frontmatter.updatedAt ?? null,
+    body,
+  };
+}
+
+function hasMarkdownSection(body, sectionName) {
+  const pattern = new RegExp(`^##\\s+${sectionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "m");
+  return pattern.test(body);
+}
+
+function renderFrontmatterValue(key, value, indentLevel = 0) {
+  const indent = " ".repeat(indentLevel);
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return `${indent}${key}: []`;
+    }
+    return [
+      `${indent}${key}:`,
+      ...value.map((item) => `${indent}  - ${item}`),
+    ].join("\n");
+  }
+
+  if (isRecord(value)) {
+    const entries = Object.entries(value);
+    if (entries.length === 0) {
+      return `${indent}${key}: {}`;
+    }
+    return [
+      `${indent}${key}:`,
+      ...entries.map(([nestedKey, nestedValue]) =>
+        renderFrontmatterValue(
+          nestedKey.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`),
+          nestedValue,
+          indentLevel + 2,
+        )
+      ),
+    ].join("\n");
+  }
+
+  return `${indent}${key}: ${String(value)}`;
+}
+
+function renderSkillMarkdown(payload) {
+  const frontmatter = [
+    "---",
+    renderFrontmatterValue("name", payload.name),
+    renderFrontmatterValue("description", payload.description),
+    renderFrontmatterValue("metadata", {
+      datalox: {
+        id: payload.id,
+        displayName: payload.displayName,
+        workflow: payload.workflow,
+        trigger: payload.trigger,
+        patternPaths: payload.patternPaths ?? [],
+        tags: payload.tags ?? [],
+        status: payload.status,
+        ...(payload.author ? { author: payload.author } : {}),
+        ...(payload.updatedAt ? { updatedAt: payload.updatedAt } : {}),
+        ...(payload.repoHints ? { repoHints: payload.repoHints } : {}),
+      },
+    }),
+    "---",
+  ]
+    .filter((line) => line !== null && line !== undefined)
+    .join("\n");
+
+  const patternSection = (payload.patternPaths ?? []).length > 0
+    ? [
+        "## Pattern Docs",
+        "",
+        ...(payload.patternPaths ?? []).map((patternPath) => `- ${patternPath}`),
+        "",
+      ].join("\n")
+    : null;
+
+  const repoHintFiles = toArray(payload.repoHints?.files);
+  const repoHintPrefixes = toArray(payload.repoHints?.pathPrefixes);
+  const repoHintSignals = toArray(payload.repoHints?.packageSignals);
+  const checkFirstSection = repoHintFiles.length > 0 || repoHintPrefixes.length > 0 || repoHintSignals.length > 0
+    ? [
+        "## Check First",
+        "",
+        ...(repoHintFiles.length > 0 ? ["Relevant files:", ...repoHintFiles.map((item) => `- ${item}`), ""] : []),
+        ...(repoHintPrefixes.length > 0 ? ["Relevant paths:", ...repoHintPrefixes.map((item) => `- ${item}`), ""] : []),
+        ...(repoHintSignals.length > 0 ? ["Repo signals:", ...repoHintSignals.map((item) => `- ${item}`), ""] : []),
+      ].join("\n")
+    : null;
+
+  const body = [
+    `# ${payload.displayName}`,
+    "",
+    payload.description,
+    "",
+    "## When to Use",
+    "",
+    payload.trigger,
+    "",
+    "## Workflow",
+    "",
+    "1. Confirm the current task really matches this skill.",
+    "2. Read the linked pattern docs before acting.",
+    "3. Apply the pattern docs' signal, interpretation, and recommended action to the current loop.",
+    "4. If the case exposes a reusable gap, add or update a pattern doc and patch this skill.",
+    "5. Run lint and refresh the visible control artifacts after patching knowledge.",
+    "",
+    "## Expected Output",
+    "",
+    "- State why this skill matched.",
+    "- State what to do now based on the linked pattern docs.",
+    "- State what to watch for if the case is ambiguous or risky.",
+    "",
+    checkFirstSection,
+    patternSection,
+  ]
+    .filter((line) => line !== null && line !== undefined)
+    .join("\n");
+
+  return `${frontmatter}\n\n${body}\n`;
 }
 
 function resolveSeedRoot(config, sourcePath) {
@@ -58,6 +547,7 @@ export function resolvePackPaths(config, options = {}) {
   return {
     hostRoot,
     seedRoot,
+    hostPackDir: path.resolve(hostRoot, ".datalox"),
     hostSkillsDir: path.resolve(hostRoot, config.paths.hostSkillsDir ?? "skills"),
     hostPatternsDir: path.resolve(hostRoot, config.paths.hostPatternsDir ?? ".datalox/patterns"),
     hostMetaDir: path.resolve(hostRoot, ".datalox/meta"),
@@ -124,20 +614,35 @@ function unique(values) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-async function readDirJson(dirPath) {
+async function readSkillMarkdownEntries(dirPath) {
   if (!(await fileExists(dirPath))) {
     return [];
   }
 
   const entries = await readdir(dirPath, { withFileTypes: true });
-  const jsonFiles = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-    .sort((left, right) => left.name.localeCompare(right.name));
+  const skillFiles = entries
+    .flatMap((entry) => {
+      if (entry.isDirectory()) {
+        return [path.join(dirPath, entry.name, "SKILL.md")];
+      }
+      if (entry.isFile() && entry.name.endsWith(".md")) {
+        return [path.join(dirPath, entry.name)];
+      }
+      return [];
+    })
+    .sort((left, right) => left.localeCompare(right));
+
+  const existingFiles = [];
+  for (const filePath of skillFiles) {
+    if (await fileExists(filePath)) {
+      existingFiles.push(filePath);
+    }
+  }
 
   return Promise.all(
-    jsonFiles.map(async (entry) => ({
-      filePath: path.join(dirPath, entry.name),
-      value: await readJson(path.join(dirPath, entry.name)),
+    existingFiles.map(async (filePath) => ({
+      filePath,
+      value: parseSkillDoc(filePath, await readFile(filePath, "utf8")),
     })),
   );
 }
@@ -155,15 +660,15 @@ async function readDirMarkdown(dirPath) {
 }
 
 function skillIdentity(skill, filePath) {
-  return skill.id || skill.name || path.basename(filePath, ".json");
+  return skill.id || skill.name || inferSkillNameFromPath(filePath);
 }
 
 async function listSkillEntries(config, cwd = process.cwd(), sourcePath) {
   const paths = resolvePackPaths(config, { cwd, sourcePath });
   const useSameDir = pathKey(paths.hostSkillsDir) === pathKey(paths.seedSkillsDir);
   const [seedEntries, hostEntries] = await Promise.all([
-    useSameDir ? Promise.resolve([]) : readDirJson(paths.seedSkillsDir),
-    readDirJson(paths.hostSkillsDir),
+    useSameDir ? Promise.resolve([]) : readSkillMarkdownEntries(paths.seedSkillsDir),
+    readSkillMarkdownEntries(paths.hostSkillsDir),
   ]);
 
   const merged = new Map();
@@ -265,10 +770,10 @@ export async function countPackFiles(config, cwd = process.cwd(), sourcePath) {
   const [skills, patterns, hostSkills, seedSkills, hostPatterns, seedPatterns] = await Promise.all([
     listSkillEntries(config, cwd, sourcePath),
     listPatternEntries(config, cwd, sourcePath),
-    readDirJson(paths.hostSkillsDir),
+    readSkillMarkdownEntries(paths.hostSkillsDir),
     pathKey(paths.hostSkillsDir) === pathKey(paths.seedSkillsDir)
       ? Promise.resolve([])
-      : readDirJson(paths.seedSkillsDir),
+      : readSkillMarkdownEntries(paths.seedSkillsDir),
     readDirMarkdown(paths.hostPatternsDir),
     pathKey(paths.hostPatternsDir) === pathKey(paths.seedPatternsDir)
       ? Promise.resolve([])
@@ -282,6 +787,207 @@ export async function countPackFiles(config, cwd = process.cwd(), sourcePath) {
     seedSkills: seedSkills.length,
     hostPatterns: hostPatterns.length,
     seedPatterns: seedPatterns.length,
+  };
+}
+
+function formatTimestamp(value) {
+  return value ?? new Date().toISOString();
+}
+
+function truncateLine(value, maxLength = 140) {
+  const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength - 1).trim()}…`;
+}
+
+function comparePaths(left, right) {
+  return left.localeCompare(right);
+}
+
+function renderIndexMarkdown({ config, skills, patternEntries, patternDocs }) {
+  const generatedAt = new Date().toISOString();
+  const patternUsage = new Map();
+
+  for (const skillEntry of skills) {
+    for (const patternPath of toArray(skillEntry.value.patternPaths)) {
+      if (!patternUsage.has(patternPath)) {
+        patternUsage.set(patternPath, []);
+      }
+      patternUsage.get(patternPath).push(skillEntry.value.id);
+    }
+  }
+
+  const lines = [
+    "# Datalox Index",
+    "",
+    `- Project: ${config.project.name}`,
+    `- Generated: ${generatedAt}`,
+    `- Skills: ${skills.length}`,
+    `- Pattern docs: ${patternEntries.length}`,
+    "",
+    "## Skills",
+    "",
+  ];
+
+  for (const skillEntry of skills) {
+    const skill = skillEntry.value;
+    lines.push(`### ${skill.displayName ?? skill.name}`);
+    lines.push("");
+    lines.push(`- Id: ${skill.id}`);
+    lines.push(`- Workflow: ${skill.workflow ?? "unknown"}`);
+    lines.push(`- Trigger: ${truncateLine(skill.trigger || "none")}`);
+    lines.push(`- Status: ${skill.status ?? "generated"}`);
+    lines.push(`- Source: ${skillEntry.origin}`);
+    if (skill.updatedAt) {
+      lines.push(`- Updated: ${skill.updatedAt}`);
+    }
+    if (skill.author) {
+      lines.push(`- Author: ${skill.author}`);
+    }
+    if (toArray(skill.patternPaths).length === 0) {
+      lines.push("- Pattern Docs: none");
+    } else {
+      lines.push("- Pattern Docs:");
+      for (const patternPath of toArray(skill.patternPaths).sort(comparePaths)) {
+        lines.push(`  - ${patternPath}`);
+      }
+    }
+    lines.push("");
+  }
+
+  lines.push("## Pattern Docs");
+  lines.push("");
+
+  for (const patternEntry of patternEntries) {
+    const doc = patternDocs.get(patternEntry.relativePath);
+    lines.push(`### ${doc?.title ?? path.basename(patternEntry.relativePath, ".md")}`);
+    lines.push("");
+    lines.push(`- Path: ${patternEntry.relativePath}`);
+    lines.push(`- Source: ${patternEntry.origin}`);
+    if (doc?.workflow) {
+      lines.push(`- Workflow: ${doc.workflow}`);
+    }
+    if (doc?.updatedAt) {
+      lines.push(`- Updated: ${doc.updatedAt}`);
+    }
+    if (doc?.author) {
+      lines.push(`- Author: ${doc.author}`);
+    }
+    const linkedSkills = unique(patternUsage.get(patternEntry.relativePath) ?? []).sort(comparePaths);
+    if (linkedSkills.length > 0) {
+      lines.push("- Linked Skills:");
+      for (const skillId of linkedSkills) {
+        lines.push(`  - ${skillId}`);
+      }
+    } else {
+      lines.push("- Linked Skills: none");
+    }
+    if (doc?.recommendedAction) {
+      lines.push(`- Recommended Action: ${truncateLine(doc.recommendedAction)}`);
+    }
+    lines.push("");
+  }
+
+  return `${lines.join("\n").trimEnd()}\n`;
+}
+
+function renderLogLine({ timestamp, action, detail, path: filePath }) {
+  const parts = [formatTimestamp(timestamp), action];
+  if (detail) {
+    parts.push(truncateLine(detail));
+  }
+  if (filePath) {
+    parts.push(filePath);
+  }
+  return `- ${parts.join(" | ")}`;
+}
+
+async function appendPackLog(config, cwd, sourcePath, entry) {
+  const { hostPackDir } = resolvePackPaths(config, { cwd, sourcePath });
+  const logPath = path.join(hostPackDir, "log.md");
+  const header = "# Datalox Log\n\n";
+  const existing = await readTextIfPresent(logPath);
+  const next = `${existing ?? header}${existing ? "\n" : ""}${renderLogLine(entry)}\n`;
+  await ensureDir(hostPackDir);
+  await writeFile(logPath, next, "utf8");
+  return logPath;
+}
+
+function renderLintMarkdown(result) {
+  const lines = [
+    "# Datalox Lint",
+    "",
+    `- Generated: ${new Date().toISOString()}`,
+    `- OK: ${result.ok}`,
+    `- Issue Count: ${result.issueCount}`,
+    "",
+    "## Issues",
+    "",
+  ];
+
+  if (result.issues.length === 0) {
+    lines.push("- No issues found.");
+  } else {
+    for (const issue of result.issues) {
+      const suffix = issue.path ? ` (${issue.path})` : "";
+      lines.push(`- [${issue.level}] ${issue.code}: ${issue.message}${suffix}`);
+    }
+  }
+
+  return `${lines.join("\n").trimEnd()}\n`;
+}
+
+async function writeLintSnapshot(config, cwd, sourcePath, result) {
+  const { hostPackDir } = resolvePackPaths(config, { cwd, sourcePath });
+  const lintPath = path.join(hostPackDir, "lint.md");
+  await ensureDir(hostPackDir);
+  await writeFile(lintPath, renderLintMarkdown(result), "utf8");
+  return lintPath;
+}
+
+export async function refreshIndex(config, cwd = process.cwd(), sourcePath) {
+  const { hostPackDir } = resolvePackPaths(config, { cwd, sourcePath });
+  const [skills, patternEntries] = await Promise.all([
+    listLocalSkills(config, cwd, sourcePath),
+    listPatternEntries(config, cwd, sourcePath),
+  ]);
+  const patternDocs = new Map();
+
+  for (const entry of patternEntries) {
+    const content = await readFile(entry.filePath, "utf8");
+    patternDocs.set(entry.relativePath, parsePatternDoc(entry.relativePath, content, false));
+  }
+
+  const indexPath = path.join(hostPackDir, "index.md");
+  await ensureDir(hostPackDir);
+  await writeFile(
+    indexPath,
+    renderIndexMarkdown({ config, skills, patternEntries, patternDocs }),
+    "utf8",
+  );
+  return indexPath;
+}
+
+async function updateControlArtifacts(
+  config,
+  cwd = process.cwd(),
+  sourcePath,
+  { logEntry, lintResult } = {},
+) {
+  const indexPath = await refreshIndex(config, cwd, sourcePath);
+  const logPath = logEntry
+    ? await appendPackLog(config, cwd, sourcePath, logEntry)
+    : null;
+  const lintPath = lintResult
+    ? await writeLintSnapshot(config, cwd, sourcePath, lintResult)
+    : null;
+
+  return {
+    indexPath,
+    logPath,
+    lintPath,
   };
 }
 
@@ -313,6 +1019,7 @@ function buildSkillText(skill) {
     skill.workflow,
     skill.trigger,
     skill.description,
+    skill.body,
     ...(skill.tags ?? []),
   ]
     .filter(Boolean)
@@ -461,7 +1168,7 @@ function scoreSkill(skill, query, repoContext) {
 }
 
 async function readTextIfPresent(filePath) {
-  return fileExists(filePath) ? readFile(filePath, "utf8") : null;
+  return (await fileExists(filePath)) ? readFile(filePath, "utf8") : null;
 }
 
 function parsePatternDoc(relativePath, content, includeContent) {
@@ -514,6 +1221,8 @@ function parsePatternDoc(relativePath, content, includeContent) {
     workflow: metadata.workflow ?? null,
     skillId: metadata.skill ?? null,
     tags: metadata.tags ? String(metadata.tags).split(",").map((value) => value.trim()).filter(Boolean) : [],
+    author: metadata.author ?? null,
+    updatedAt: metadata.updated ?? null,
     signal,
     interpretation,
     recommendedAction,
@@ -677,13 +1386,6 @@ async function ensureDir(dirPath) {
   await mkdir(dirPath, { recursive: true });
 }
 
-async function writeStableJsonFile(baseDir, stem, payload) {
-  await ensureDir(baseDir);
-  const filePath = path.join(baseDir, `${slugify(stem)}.json`);
-  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-  return filePath;
-}
-
 async function writeStableTextFile(baseDir, stem, content) {
   await ensureDir(baseDir);
   const filePath = path.join(baseDir, `${slugify(stem)}.md`);
@@ -711,12 +1413,16 @@ export async function writePatternDoc(
   const { config, sourcePath } = await loadAgentConfig(cwd);
   const { hostPatternsDir, hostRoot } = resolvePackPaths(config, { cwd, sourcePath });
   const stableId = id ?? `${workflow}-${slugify(title)}`;
+  const author = resolveAuthor();
+  const updatedAt = new Date().toISOString();
   const content = [
     `# ${title}`,
     "",
     `- Workflow: ${workflow}`,
     skillId ? `- Skill: ${skillId}` : null,
     tags.length > 0 ? `- Tags: ${tags.join(", ")}` : null,
+    `- Author: ${author}`,
+    `- Updated: ${updatedAt}`,
     "",
     "## Signal",
     "",
@@ -736,6 +1442,13 @@ export async function writePatternDoc(
 
   const filePath = await writeStableTextFile(hostPatternsDir, stableId, content);
   const relativePath = normalizePath(path.relative(hostRoot, filePath));
+  const artifacts = await updateControlArtifacts(config, cwd, sourcePath, {
+    logEntry: {
+      action: "patch_pattern",
+      detail: `${title} for ${workflow}`,
+      path: relativePath,
+    },
+  });
 
   return {
     filePath,
@@ -750,9 +1463,10 @@ export async function writePatternDoc(
       recommendedAction,
       skillId: skillId ?? null,
       tags,
-      author: resolveAuthor(),
-      updatedAt: new Date().toISOString(),
+      author,
+      updatedAt,
     },
+    artifacts,
   };
 }
 
@@ -788,11 +1502,15 @@ export async function writeSkill(
     ? requestedFilePath
     : existingEntry?.origin === "host"
       ? existingEntry.filePath
-      : path.join(hostSkillsDir, `${slugify(stableName)}.json`);
-  const existing = existingEntry?.value ?? ((await fileExists(resolvedFilePath)) ? await readJson(resolvedFilePath) : null);
+      : path.join(hostSkillsDir, slugify(stableName), "SKILL.md");
+  const existing = existingEntry?.value ?? (
+    (await fileExists(resolvedFilePath))
+      ? parseSkillDoc(resolvedFilePath, await readFile(resolvedFilePath, "utf8"))
+      : null
+  );
+  const operation = existing ? "update_skill" : "create_skill";
 
   const payload = {
-    version: 1,
     id: stableId,
     name: stableName,
     displayName: displayName ?? stableName,
@@ -808,10 +1526,23 @@ export async function writeSkill(
   };
 
   await ensureDir(path.dirname(resolvedFilePath));
+  const content = renderSkillMarkdown(payload);
+  const writtenFilePath = await writeFile(resolvedFilePath, content, "utf8").then(() => resolvedFilePath);
+  const artifacts = await updateControlArtifacts(config, cwd, sourcePath, {
+    logEntry: {
+      action: operation,
+      detail: operation === "create_skill"
+        ? `${payload.id} created with ${payload.patternPaths.length} pattern doc(s)`
+        : `${payload.id} updated with ${payload.patternPaths.length} pattern doc(s)`,
+      path: normalizePath(path.relative(resolvePackPaths(config, { cwd, sourcePath }).hostRoot, writtenFilePath)),
+    },
+  });
 
   return {
-    filePath: await writeFile(resolvedFilePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8").then(() => resolvedFilePath),
+    filePath: writtenFilePath,
     payload,
+    operation,
+    artifacts,
   };
 }
 
@@ -939,11 +1670,15 @@ export async function learnFromInteraction(
       cwd,
     );
     if (resolution.matches.length > 0) {
-      sourceSkill = {
-        value: resolution.matches[0].skill,
-        filePath: resolution.matches[0].skillPath,
-        origin: resolution.matches[0].skillOrigin,
-      };
+      const topMatch = resolution.matches[0];
+      const workflowAllowsReuse = !workflow || topMatch.skill.workflow === workflow;
+      if (workflowAllowsReuse) {
+        sourceSkill = {
+          value: topMatch.skill,
+          filePath: topMatch.skillPath,
+          origin: topMatch.skillOrigin,
+        };
+      }
     }
   }
 
@@ -1050,6 +1785,46 @@ export async function lintPack(cwd = process.cwd()) {
       });
     }
 
+    if (!hasMarkdownSection(skill.body, "When to Use")) {
+      issues.push({
+        level: "warning",
+        code: "skill_missing_when_to_use_section",
+        skillId: skill.id,
+        path: normalizePath(path.relative(cwd, filePath)),
+        message: "Skill body should contain a 'When to Use' section. See .datalox/skill.schema.md.",
+      });
+    }
+
+    if (!hasMarkdownSection(skill.body, "Workflow")) {
+      issues.push({
+        level: "warning",
+        code: "skill_missing_workflow_section",
+        skillId: skill.id,
+        path: normalizePath(path.relative(cwd, filePath)),
+        message: "Skill body should contain a 'Workflow' section. See .datalox/skill.schema.md.",
+      });
+    }
+
+    if (!hasMarkdownSection(skill.body, "Expected Output")) {
+      issues.push({
+        level: "warning",
+        code: "skill_missing_expected_output_section",
+        skillId: skill.id,
+        path: normalizePath(path.relative(cwd, filePath)),
+        message: "Skill body should contain an 'Expected Output' section. See .datalox/skill.schema.md.",
+      });
+    }
+
+    if (!hasMarkdownSection(skill.body, "Pattern Docs")) {
+      issues.push({
+        level: "warning",
+        code: "skill_missing_pattern_docs_section",
+        skillId: skill.id,
+        path: normalizePath(path.relative(cwd, filePath)),
+        message: "Skill body should contain a 'Pattern Docs' section. See .datalox/skill.schema.md.",
+      });
+    }
+
     if (nameKeys.has(nameKey)) {
       issues.push({
         level: "warning",
@@ -1148,7 +1923,7 @@ export async function lintPack(cwd = process.cwd()) {
     }
   }
 
-  return {
+  const result = {
     ok: issues.every((issue) => issue.level !== "error"),
     issueCount: issues.length,
     issues,
@@ -1156,5 +1931,20 @@ export async function lintPack(cwd = process.cwd()) {
       skills: skills.length,
       patternDocs: patternFiles.length,
     },
+  };
+  const artifacts = await updateControlArtifacts(config, cwd, sourcePath, {
+    logEntry: {
+      action: "lint_pack",
+      detail: result.ok
+        ? "pack lint completed with no blocking issues"
+        : `pack lint found ${result.issueCount} issue(s)`,
+      path: ".datalox/lint.md",
+    },
+    lintResult: result,
+  });
+
+  return {
+    ...result,
+    artifacts,
   };
 }

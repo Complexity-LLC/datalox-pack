@@ -9,6 +9,12 @@ An agent should use it on every loop with one minimal cycle:
 3. patch
 4. lint
 
+The pack must also keep three visible control artifacts in the host repo:
+
+- `.datalox/index.md`
+- `.datalox/log.md`
+- `.datalox/lint.md`
+
 Do not replace the agent's native skills. Datalox is additive.
 
 ## Read Order
@@ -18,6 +24,15 @@ Do not replace the agent's native skills. Datalox is additive.
 3. `.datalox/config.json`
 4. this file
 5. `AGENTS.md` or a tool-specific instruction file if present
+
+Common committed tool-specific entry files in this repo:
+
+- `CLAUDE.md`
+- `WIKI.md`
+- `GEMINI.md`
+- `.github/copilot-instructions.md`
+- `.cursor/rules/datalox-pack.mdc`
+- `.windsurf/rules/datalox-pack.md`
 
 If this pack is used from another repo, read seed knowledge from this repo and write generated knowledge into the host repo.
 
@@ -29,7 +44,7 @@ At the start of every agent loop:
 2. inspect repo context when needed:
    changed git paths, repo root files, and package metadata
 3. select the best matching skill in `skills/`
-4. read the pattern docs listed in that skill's `patternPaths`
+4. read the pattern docs listed in that skill's `metadata.datalox.pattern_paths`
 5. act using the pattern docs' signal, interpretation, and recommended action
 
 Host repo skills and pattern docs override seed-pack files when both define the same knowledge.
@@ -42,11 +57,16 @@ When the agent discovers a reusable pattern:
 
 1. write a pattern doc into `.datalox/patterns/`
 2. update or create a skill in `skills/`
-3. put the pattern doc path into that skill's `patternPaths`
+3. put the pattern doc path into that skill's `metadata.datalox.pattern_paths`
 
 This is the `patch` part of the loop.
 
 These writes belong to the host repo, not the seed pack repo.
+
+After patching, refresh:
+
+- `.datalox/index.md` so the current skill-pattern graph is visible
+- `.datalox/log.md` so the change is recorded chronologically
 
 ## Lint Rule
 
@@ -54,7 +74,7 @@ Run lint over the local pack when changing skills or pattern docs.
 
 Lint checks:
 
-- skills missing `patternPaths`
+- skills missing `metadata.datalox.pattern_paths`
 - missing pattern doc paths
 - pattern docs missing `Signal`, `Interpretation`, or `Recommended Action`
 - orphan pattern docs
@@ -64,19 +84,91 @@ This is the `lint` part of the loop.
 
 There is no separate working layer in this version.
 
+After linting, refresh:
+
+- `.datalox/lint.md` with the latest pack health snapshot
+- `.datalox/log.md` with the lint result
+
+## Control Artifacts
+
+### `.datalox/index.md`
+
+Human-readable map of the current effective pack:
+
+- skills
+- triggers
+- linked pattern docs
+- source origin (`host` or `seed`)
+- last updated metadata when available
+
+### `.datalox/log.md`
+
+Append-only change trail. Record at least:
+
+- pattern docs written
+- skills created
+- skills updated
+- lint runs
+
+### `.datalox/lint.md`
+
+Latest lint snapshot in markdown so a human can see why the pack is healthy or broken without running tools.
+
 ## Skill Shape
 
-Each skill is a JSON file in `skills/` with:
+Each skill should live at `skills/<skill-name>/SKILL.md`.
+
+Use YAML frontmatter plus markdown body.
+
+Top-level required frontmatter fields:
+
+- `name`
+- `description`
+
+Put Datalox-specific runtime fields under `metadata.datalox`.
+
+Recommended `metadata.datalox` fields:
 
 - `id`
-- `name`
 - `workflow`
 - `trigger`
-- `description`
-- `patternPaths`
+- `pattern_paths`
+- `tags`
+
+Optional `metadata.datalox` fields:
+
+- `display_name`
+- `status`
+- `author`
+- `updated_at`
+- `repo_hints`
+
+The skill body must be the primary workflow artifact. It should contain a real playbook:
+
+- `When to Use`
+- `Workflow`
+- `Expected Output`
+- `Pattern Docs`
+
+See `.datalox/skill.schema.md`.
 
 ## Current Default
 
 - mode: `repo_only`
 - runtime required: `false`
 - detect on every loop: `true`
+
+## Practical Distribution
+
+For host repo adoption:
+
+- local pack: `bash bin/adopt-host-repo.sh /path/to/host-repo`
+- GitHub-hosted pack: `bash bin/adopt-from-github.sh /path/to/host-repo`
+
+For multi-agent skill discovery:
+
+- `bash bin/setup-multi-agent.sh`
+
+For the next implementation step toward loop ownership:
+
+- see `docs/implementation-checklist.md`

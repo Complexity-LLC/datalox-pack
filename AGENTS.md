@@ -16,6 +16,12 @@ Use it on every agent loop:
 
 Preserve your native or platform-provided skills. Datalox is additive.
 
+Keep these host-repo artifacts current so humans can inspect the pack:
+
+- `.datalox/index.md`
+- `.datalox/log.md`
+- `.datalox/lint.md`
+
 ## Rules
 
 - if this repo is being used as an external pack, treat its skills and pattern docs as seed knowledge
@@ -24,3 +30,4 @@ Preserve your native or platform-provided skills. Datalox is additive.
 - keep skills lightweight and let them point to pattern docs
 - lint the skill-pattern graph after changing local knowledge
 - do not require a local server
+- if this repo is being adopted into another repo, `bash bin/adopt-host-repo.sh /path/to/host-repo` is the primary bootstrap path

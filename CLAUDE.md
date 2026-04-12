@@ -16,4 +16,10 @@ When you learn something reusable:
 2. update or create the corresponding skill in the host repo `skills/`
 3. lint the skill-pattern graph
 
+Keep these files current:
+
+- `.datalox/index.md`
+- `.datalox/log.md`
+- `.datalox/lint.md`
+
 Keep Datalox additive to Claude's native skills. Do not require a running Datalox service.
