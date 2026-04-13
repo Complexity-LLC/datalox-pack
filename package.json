@@ -6,7 +6,9 @@
   "description": "Portable Datalox pack with loop-time skill detection and pattern docs.",
   "bin": {
     "datalox": "./bin/datalox.js",
-    "datalox-mcp": "./bin/datalox-mcp.js"
+    "datalox-mcp": "./bin/datalox-mcp.js",
+    "datalox-codex": "./bin/datalox-codex.js",
+    "datalox-wrap": "./bin/datalox-wrap.js"
   },
   "scripts": {
     "agent:bootstrap": "node scripts/agent-bootstrap.mjs",

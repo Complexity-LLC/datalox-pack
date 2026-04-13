@@ -97,6 +97,8 @@ const SINGLE_FILE_ADOPTION_PATHS = [
   ".datalox/manifest.json",
   ".datalox/skill.schema.md",
   "bin/datalox-auto-promote.js",
+  "bin/datalox-codex.js",
+  "bin/datalox-wrap.js",
   "agent-wiki/pattern.schema.md",
   "agent-wiki/source.schema.md",
   "agent-wiki/concept.schema.md",

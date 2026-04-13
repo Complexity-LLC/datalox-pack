@@ -29,9 +29,13 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(hostDir, ".claude/settings.json"), "utf8")).toContain("\"Stop\"");
     expect(await readFile(path.join(hostDir, ".claude/hooks/auto-promote.sh"), "utf8")).toContain("datalox-auto-promote.js");
     expect(await readFile(path.join(hostDir, "bin/datalox-auto-promote.js"), "utf8")).toContain("promoteGap");
+    expect(await readFile(path.join(hostDir, "bin/datalox-codex.js"), "utf8")).toContain("\"codex\"");
+    expect(await readFile(path.join(hostDir, "bin/datalox-wrap.js"), "utf8")).toContain("\"wrap\"");
     expect(await readFile(path.join(hostDir, ".github/copilot-instructions.md"), "utf8")).toContain("portable Datalox pack");
     expect(await readFile(path.join(hostDir, "skills/evolve-portable-pack/SKILL.md"), "utf8")).toContain("Evolve Portable Pack");
+    expect(await readFile(path.join(hostDir, "skills/host-cli-wrapper/SKILL.md"), "utf8")).toContain("Host CLI Wrapper");
     expect(await readFile(path.join(hostDir, "agent-wiki/pattern.schema.md"), "utf8")).toContain("Signal");
+    expect(await readFile(path.join(hostDir, "agent-wiki/meta/host-cli-wrapper-fallback.md"), "utf8")).toContain("thin wrapper");
     expect(await readFile(path.join(hostDir, "agent-wiki/source.schema.md"), "utf8")).toContain("Source pages");
     expect(await readFile(path.join(hostDir, "agent-wiki/page-types.md"), "utf8")).toContain("patterns/");
   });

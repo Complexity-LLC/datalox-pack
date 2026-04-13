@@ -63,6 +63,10 @@
   "distribution": {
     "oneClickBootstrap": "bash bin/adopt-from-github.sh <host-repo>",
     "multiAgentSetup": "bash bin/setup-multi-agent.sh",
-    "friendlyEntryPoint": "START_HERE.md"
+    "friendlyEntryPoint": "START_HERE.md",
+    "wrapperFallback": {
+      "codex": "node bin/datalox-codex.js --repo <repo> --task \"<task>\" --prompt \"<prompt>\"",
+      "genericCli": "node bin/datalox-wrap.js command --repo <repo> --task \"<task>\" --prompt \"<prompt>\" -- <host-command> __DATALOX_PROMPT__"
+    }
   }
 }

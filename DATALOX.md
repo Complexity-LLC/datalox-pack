@@ -214,6 +214,8 @@ For loop ownership in supported hosts:
 - use `record_turn_result` / `datalox record` before promotion when you need explicit event grounding
 - use `promote_gap` / `datalox promote` when you want the pack to decide between event-only, wiki promotion, or skill creation
 - for hosts with hook APIs, use `node bin/datalox-auto-promote.js` as the post-turn hook command
+- for Codex `exec`, use `node bin/datalox-codex.js` so loop guidance is injected before the run
+- for other CLI hosts, use `node bin/datalox-wrap.js prompt` or `node bin/datalox-wrap.js command -- <host-command> __DATALOX_PROMPT__`
 
 Minimal MCP host config:
 

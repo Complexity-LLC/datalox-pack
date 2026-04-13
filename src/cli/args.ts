@@ -5,6 +5,10 @@ export function parseCliArgs(argv: string[]): CliArgs {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg === "--") {
+      parsed._.push(...argv.slice(index + 1));
+      break;
+    }
     if (!arg.startsWith("--")) {
       parsed._.push(arg);
       continue;

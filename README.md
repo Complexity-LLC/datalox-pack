@@ -40,6 +40,14 @@ For hosts with post-turn hook support, the automatic promotion entrypoint is:
 node bin/datalox-auto-promote.js
 ```
 
+For hosts without MCP or hook support, use the wrapper entrypoints:
+
+```bash
+node bin/datalox-wrap.js prompt --repo /path/to/repo --task "review ambiguous live dead gate" --prompt "Review the current gate"
+node bin/datalox-wrap.js command --repo /path/to/repo --task "review ambiguous live dead gate" --prompt "Review the current gate" -- your-agent-cli __DATALOX_PROMPT__
+node bin/datalox-codex.js --repo /path/to/repo --task "update pack docs" --prompt "Update the docs to mention wrappers."
+```
+
 ## Loop Bridge
 
 For automatic loop-time adoption in supported hosts, use the MCP server first and the CLI as fallback:
@@ -58,6 +66,9 @@ node dist/src/cli/main.js record --task "review ambiguous live dead gate" --work
 node dist/src/cli/main.js patch --task "review ambiguous live dead gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception pattern before widening gate" --json
 node dist/src/cli/main.js promote --task "review ambiguous live dead gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception pattern before widening gate" --json
 node dist/src/cli/main.js lint --json
+node dist/src/cli/main.js wrap prompt --repo . --task "review ambiguous live dead gate" --prompt "Review the gate"
+node dist/src/cli/main.js wrap command --repo . --task "review ambiguous live dead gate" --prompt "Review the gate" -- your-agent-cli __DATALOX_PROMPT__
+node dist/src/cli/main.js codex --repo . --task "update pack docs" --prompt "Update the docs to mention wrappers."
 ```
 
 Example MCP host config:
@@ -123,6 +134,8 @@ The human-visible payoff is in four generated files:
 - `agent-wiki/events/`: grounded turn-result records used for conservative promotion
 - `.datalox/skill.schema.md`: authoring contract for future skills
 - `START_HERE.md`: human-friendly first-run guide
+- `bin/datalox-wrap.js`: generic CLI wrapper for hosts without MCP or hooks
+- `bin/datalox-codex.js`: Codex `exec` wrapper that resolves loop guidance first
 - host repos should write generated skills into their own `skills/`
 - host repos should write generated pattern docs into their own `agent-wiki/patterns/`
 - host repos can add richer supporting pages under the other `agent-wiki/` folders when patterns alone are not enough

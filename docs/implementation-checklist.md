@@ -164,6 +164,15 @@ Add a loop bridge that:
 - [x] Keep Codex on MCP for loop ownership until it exposes a real post-turn hook surface.
 - [x] Add a test that feeds a stop-hook payload plus transcript into the hook runner and proves repeated events promote into a wiki page and then a skill.
 
+## Phase 9: Host Wrappers
+
+- [x] Add a Codex wrapper that resolves loop guidance before `codex exec`.
+- [x] Add a generic CLI wrapper that can inject `__DATALOX_PROMPT__` into arbitrary host commands.
+- [x] Expose wrapper env vars so unsupported hosts can read `DATALOX_PROMPT` and `DATALOX_GUIDANCE_JSON`.
+- [x] Copy wrapper entrypoints into adopted host repos.
+- [x] Ship a companion skill that tells agents when to use the wrapper fallback path.
+- [x] Add wrapper tests for prompt-only wrapping, generic command wrapping, and Codex wrapper execution.
+
 ## Acceptance Criteria
 
 This work is done when:

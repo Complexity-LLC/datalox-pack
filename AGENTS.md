@@ -36,4 +36,5 @@ Keep these host-repo artifacts current so humans can inspect the pack:
 - lint the skill-to-wiki graph after changing local knowledge
 - do not require a local server
 - if the host supports post-turn hooks, use `node bin/datalox-auto-promote.js` as the automatic promotion entrypoint
+- if the host has no MCP or hook support, use `node bin/datalox-codex.js` for Codex `exec` or `node bin/datalox-wrap.js` for other CLI hosts
 - if this repo is being adopted into another repo, `bash bin/adopt-host-repo.sh /path/to/host-repo` is the primary bootstrap path

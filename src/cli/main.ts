@@ -9,6 +9,8 @@ import {
   recordTurnResult,
   resolveLoop,
 } from "../core/packCore.js";
+import { runCodexWrapper } from "../adapters/codex/run.js";
+import { runGenericWrapper } from "../adapters/generic/run.js";
 import { parseCliArgs, toStringArray } from "./args.js";
 
 function usage(): string {
@@ -20,6 +22,9 @@ function usage(): string {
     "  datalox patch [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--tag <tag>] [--json]",
     "  datalox promote [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--tag <tag>] [--event-kind <kind>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--json]",
     "  datalox lint [--repo <path>] [--json]",
+    "  datalox wrap prompt [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--json]",
+    "  datalox wrap command [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--json] -- <command> [args with __DATALOX_PROMPT__ placeholders]",
+    "  datalox codex [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--codex-bin <path>] [--json] [-- <codex exec args>]",
   ].join("\n");
 }
 
@@ -31,9 +36,42 @@ function writeResult(result: unknown, asJson: boolean): void {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
+function parsePositiveInt(value: string | string[] | boolean | undefined): number | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function writePostRunSummary(prefix: string, postRun: unknown): void {
+  if (!postRun || typeof postRun !== "object") {
+    return;
+  }
+  const typed = postRun as {
+    mode?: string;
+    trigger?: string;
+    result?: {
+      event?: { relativePath?: string };
+      decision?: { action?: string; reason?: string; occurrenceCount?: number };
+    } | null;
+  };
+  const eventPath = typed.result?.event?.relativePath;
+  const decision = typed.result?.decision;
+  if (decision?.action) {
+    process.stderr.write(
+      `[${prefix}] ${decision.action} | ${decision.reason ?? "no reason"} | occurrences=${decision.occurrenceCount ?? "?"}${eventPath ? ` | ${eventPath}` : ""}\n`,
+    );
+    return;
+  }
+  process.stderr.write(
+    `[${prefix}] ${typed.mode ?? "record"} | ${typed.trigger ?? "record_only"}${eventPath ? ` | ${eventPath}` : ""}\n`,
+  );
+}
+
 async function main(): Promise<void> {
   const args = parseCliArgs(process.argv.slice(2));
-  const [command, positional] = args._;
+  const [command, positional, ...rest] = args._;
   const asJson = args.json === true;
 
   switch (command) {
@@ -187,6 +225,94 @@ async function main(): Promise<void> {
       process.stdout.write(`OK: ${result.ok}\n`);
       process.stdout.write(`Issue count: ${result.issueCount}\n`);
       return;
+    }
+    case "wrap": {
+      const subcommand = positional;
+      const wrapInput = {
+        repoPath: typeof args.repo === "string" ? args.repo : undefined,
+        task: typeof args.task === "string" ? args.task : undefined,
+        workflow: typeof args.workflow === "string" ? args.workflow : undefined,
+        step: typeof args.step === "string" ? args.step : undefined,
+        skill: typeof args.skill === "string" ? args.skill : undefined,
+        prompt: typeof args.prompt === "string" ? args.prompt : undefined,
+        summary: typeof args.summary === "string" ? args.summary : undefined,
+        tags: toStringArray(args.tag),
+        eventKind: typeof args["event-kind"] === "string" ? args["event-kind"] : undefined,
+        postRunMode: typeof args["post-run-mode"] === "string"
+          ? args["post-run-mode"] as "off" | "record" | "auto" | "promote"
+          : undefined,
+        minWikiOccurrences: parsePositiveInt(args["min-wiki-occurrences"]),
+        minSkillOccurrences: parsePositiveInt(args["min-skill-occurrences"]),
+      };
+
+      if (subcommand === "prompt") {
+        const result = await runGenericWrapper(wrapInput);
+        if (asJson) {
+          writeResult(result, true);
+          return;
+        }
+        process.stdout.write(`${result.envelope.wrappedPrompt}\n`);
+        return;
+      }
+
+      if (subcommand === "command") {
+        if (rest.length === 0) {
+          throw new Error("wrap command requires a command after --");
+        }
+        const [childCommand, ...childArgs] = rest;
+        const result = await runGenericWrapper({
+          ...wrapInput,
+          command: childCommand,
+          args: childArgs,
+        });
+        if (asJson) {
+          writeResult(result, true);
+          process.exit(result.child?.exitCode ?? 0);
+        }
+        if (result.child?.stdout) {
+          process.stdout.write(result.child.stdout);
+        }
+        if (result.child?.stderr) {
+          process.stderr.write(result.child.stderr);
+        }
+        writePostRunSummary("datalox-wrap", result.postRun);
+        process.exit(result.child?.exitCode ?? 0);
+      }
+
+      throw new Error("wrap requires subcommand prompt or command");
+    }
+    case "codex": {
+      const codexArgs = positional !== undefined ? [positional, ...rest] : rest;
+      const result = await runCodexWrapper({
+        repoPath: typeof args.repo === "string" ? args.repo : undefined,
+        task: typeof args.task === "string" ? args.task : undefined,
+        workflow: typeof args.workflow === "string" ? args.workflow : undefined,
+        step: typeof args.step === "string" ? args.step : undefined,
+        skill: typeof args.skill === "string" ? args.skill : undefined,
+        prompt: typeof args.prompt === "string" ? args.prompt : undefined,
+        summary: typeof args.summary === "string" ? args.summary : undefined,
+        tags: toStringArray(args.tag),
+        eventKind: typeof args["event-kind"] === "string" ? args["event-kind"] : undefined,
+        postRunMode: typeof args["post-run-mode"] === "string"
+          ? args["post-run-mode"] as "off" | "record" | "auto" | "promote"
+          : undefined,
+        minWikiOccurrences: parsePositiveInt(args["min-wiki-occurrences"]),
+        minSkillOccurrences: parsePositiveInt(args["min-skill-occurrences"]),
+        codexBin: typeof args["codex-bin"] === "string" ? args["codex-bin"] : undefined,
+        codexArgs,
+      });
+      if (asJson) {
+        writeResult(result, true);
+        process.exit(result.child.exitCode);
+      }
+      if (result.child.stdout) {
+        process.stdout.write(result.child.stdout);
+      }
+      if (result.child.stderr) {
+        process.stderr.write(result.child.stderr);
+      }
+      writePostRunSummary("datalox-codex", result.postRun);
+      process.exit(result.child.exitCode);
     }
     case "help":
     case "--help":

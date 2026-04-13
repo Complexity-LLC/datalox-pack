@@ -28,5 +28,6 @@ Keep these files current:
 Automatic host hook:
 
 - if `.claude/settings.json` and `.claude/hooks/auto-promote.sh` are present, they should call `node bin/datalox-auto-promote.js` on `Stop` and `SubagentStop`
+- if MCP and hooks are both unavailable, fall back to `node bin/datalox-wrap.js`
 
 Keep Datalox additive to Claude's native skills. Do not require a running Datalox service.
