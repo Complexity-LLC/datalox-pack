@@ -847,8 +847,10 @@ describe("bridge surfaces", () => {
     ]);
     expect(second.status).toBe(0);
     const secondBody = JSON.parse(second.stdout);
-    expect(secondBody.decision.action).toBe("create_wiki_pattern");
+    expect(secondBody.decision.action).toBe("create_skill_from_gap");
     expect(secondBody.promotion.pattern.relativePath).toContain("agent-wiki/patterns/");
+    expect(secondBody.promotion.skill.operation).toBe("create_skill");
+    expect(secondBody.promotion.skill.payload.maturity).toBe("draft");
 
     const third = runBuiltCli(tempDir, [
       "promote",
@@ -868,8 +870,9 @@ describe("bridge surfaces", () => {
     ]);
     expect(third.status).toBe(0);
     const thirdBody = JSON.parse(third.stdout);
-    expect(thirdBody.decision.action).toBe("create_skill_from_gap");
-    expect(thirdBody.promotion.skill.operation).toBe("create_skill");
+    expect(thirdBody.decision.action).toBe("patch_skill_with_pattern");
+    expect(thirdBody.promotion.skill.operation).toBe("update_skill");
+    expect(thirdBody.promotion.skill.payload.maturity).toBe("stable");
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("record_event");
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("create_skill");
   });

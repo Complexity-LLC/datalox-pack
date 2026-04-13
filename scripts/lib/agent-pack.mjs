@@ -288,6 +288,16 @@ function parseFrontmatterScalar(value) {
   return trimmed;
 }
 
+function toInteger(value, fallback = 0) {
+  if (Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
+    return Number.parseInt(value.trim(), 10);
+  }
+  return fallback;
+}
+
 function collectFlowBlock(lines, startIndex, indentLevel) {
   let index = startIndex;
   let depth = 0;
@@ -525,6 +535,9 @@ function parseSkillDoc(filePath, content) {
         : undefined,
     tags: toArray(datalox.tags ?? frontmatter.tags),
     status: datalox.status ?? frontmatter.status ?? "generated",
+    maturity: datalox.maturity ?? frontmatter.maturity ?? "stable",
+    evidenceCount: toInteger(datalox.evidenceCount, toInteger(frontmatter.evidenceCount, 0)),
+    lastUsedAt: datalox.lastUsedAt ?? frontmatter.lastUsedAt ?? null,
     author: datalox.author ?? frontmatter.author ?? null,
     updatedAt: datalox.updatedAt ?? frontmatter.updatedAt ?? null,
     body,
@@ -582,6 +595,9 @@ function renderSkillMarkdown(payload) {
         patternPaths: payload.patternPaths ?? [],
         tags: payload.tags ?? [],
         status: payload.status,
+        maturity: payload.maturity,
+        evidenceCount: payload.evidenceCount,
+        ...(payload.lastUsedAt ? { lastUsedAt: payload.lastUsedAt } : {}),
         ...(payload.author ? { author: payload.author } : {}),
         ...(payload.updatedAt ? { updatedAt: payload.updatedAt } : {}),
         ...(payload.repoHints ? { repoHints: payload.repoHints } : {}),
@@ -1047,9 +1063,16 @@ function renderIndexMarkdown({ config, skills, wikiEntries, wikiDocs }) {
     lines.push(`- Workflow: ${skill.workflow ?? "unknown"}`);
     lines.push(`- Trigger: ${truncateLine(skill.trigger || "none")}`);
     lines.push(`- Status: ${skill.status ?? "generated"}`);
+    lines.push(`- Maturity: ${skill.maturity ?? "stable"}`);
+    if (skill.evidenceCount) {
+      lines.push(`- Evidence Count: ${skill.evidenceCount}`);
+    }
     lines.push(`- Source: ${skillEntry.origin}`);
     if (skill.updatedAt) {
       lines.push(`- Updated: ${skill.updatedAt}`);
+    }
+    if (skill.lastUsedAt) {
+      lines.push(`- Last Used: ${skill.lastUsedAt}`);
     }
     if (skill.author) {
       lines.push(`- Author: ${skill.author}`);
@@ -2017,6 +2040,9 @@ export async function writeSkill(
     repoHints,
     tags = [],
     status,
+    maturity,
+    evidenceCount,
+    lastUsedAt,
   },
   cwd = process.cwd(),
 ) {
@@ -2055,6 +2081,12 @@ export async function writeSkill(
     repoHints: repoHints ?? existing?.repoHints,
     tags: unique([...(existing?.tags ?? []), ...tags]),
     status: status ?? existing?.status ?? "generated",
+    maturity: maturity ?? existing?.maturity ?? "stable",
+    evidenceCount: Math.max(
+      Number.isInteger(existing?.evidenceCount) ? existing.evidenceCount : 0,
+      Number.isInteger(evidenceCount) ? evidenceCount : 0,
+    ),
+    lastUsedAt: lastUsedAt ?? existing?.lastUsedAt ?? null,
     author: resolveAuthor(),
     updatedAt: new Date().toISOString(),
   };
@@ -2325,17 +2357,12 @@ function decidePromotionAction({ occurrenceCount, matchedSkillId, minWikiOccurre
     };
   }
 
-  if (occurrenceCount >= minSkillOccurrences) {
-    return {
-      action: "create_skill_from_gap",
-      reason: "repeated gap has no matching skill and crossed the new-skill threshold.",
-    };
-  }
-
   if (occurrenceCount >= minWikiOccurrences) {
     return {
-      action: "create_wiki_pattern",
-      reason: "gap repeated enough to justify a reusable wiki pattern, but not a new skill yet.",
+      action: "create_skill_from_gap",
+      reason: occurrenceCount >= minSkillOccurrences
+        ? "repeated gap has no matching skill and crossed the new-skill threshold."
+        : "repeated gap has no matching skill, so create a live draft skill immediately.",
     };
   }
 
@@ -2449,6 +2476,7 @@ export async function promoteGap(
       signal,
       interpretation,
       recommendedAction,
+      occurrenceCount: decision.occurrenceCount,
     },
     cwd,
   );
@@ -2474,6 +2502,7 @@ export async function learnFromInteraction(
     signal,
     interpretation,
     recommendedAction,
+    occurrenceCount,
   },
   cwd = process.cwd(),
 ) {
@@ -2551,16 +2580,28 @@ export async function learnFromInteraction(
 
   let skill = null;
   if (sourceSkill?.value) {
+    const existingEvidenceCount = Number.isInteger(sourceSkill.value.evidenceCount)
+      ? sourceSkill.value.evidenceCount
+      : 0;
+    const nextEvidenceCount = Math.max(existingEvidenceCount, occurrenceCount ?? existingEvidenceCount + 1, 1);
+    const nextMaturity = sourceSkill.value.maturity === "draft" && nextEvidenceCount >= 3
+      ? "stable"
+      : sourceSkill.value.maturity ?? "stable";
     skill = await writeSkill(
       {
         ...sourceSkill.value,
         filePath: sourceSkill.origin === "host" ? sourceSkill.filePath : undefined,
         patternPaths: [...(sourceSkill.value.patternPaths ?? []), pattern.relativePath],
+        maturity: nextMaturity,
+        evidenceCount: nextEvidenceCount,
+        lastUsedAt: new Date().toISOString(),
       },
       cwd,
     );
   } else {
     const generatedName = slugify(firstNonEmpty([task, step, derived.title, "generated-skill"]) ?? "generated-skill");
+    const nextEvidenceCount = Math.max(occurrenceCount ?? 1, 1);
+    const nextMaturity = nextEvidenceCount >= 3 ? "stable" : "draft";
     skill = await writeSkill(
       {
         id: `${effectiveWorkflow}.${generatedName}`,
@@ -2572,6 +2613,9 @@ export async function learnFromInteraction(
         patternPaths: [pattern.relativePath],
         tags: unique([...tags, effectiveWorkflow, "generated"]),
         status: "generated",
+        maturity: nextMaturity,
+        evidenceCount: nextEvidenceCount,
+        lastUsedAt: new Date().toISOString(),
       },
       cwd,
     );

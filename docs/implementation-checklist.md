@@ -143,8 +143,8 @@ Add a loop bridge that:
 - [x] Add a core `promoteGap` operation with conservative thresholds:
   - first occurrence -> `record_only`
   - repeated gap with an existing skill match -> patch skill with a new pattern
-  - repeated gap with no skill match -> create wiki pattern first, then create skill only after a higher threshold
-- [x] Keep new-skill creation stricter than wiki promotion.
+  - repeated gap with no skill match -> create a live draft skill immediately, then stabilize it on reuse
+- [x] Keep new-skill creation conservative enough to avoid noise, but immediate enough for users to feel the change.
 - [x] Log promotion decisions explicitly so humans can inspect why a gap became a wiki page or skill.
 - [x] Add integration tests for:
   - record-only behavior

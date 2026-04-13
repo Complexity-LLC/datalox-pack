@@ -350,11 +350,11 @@ EOF
 
     const second = runFailure();
     expect(second.status).toBe(1);
-    expect(second.stderr).toContain("create_wiki_pattern");
+    expect(second.stderr).toContain("create_skill_from_gap");
 
     const third = runFailure();
     expect(third.status).toBe(1);
-    expect(third.stderr).toContain("create_skill_from_gap");
+    expect(third.stderr).toContain("patch_skill_with_pattern");
 
     const logFile = await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8");
     const indexFile = await readFile(path.join(hostDir, "agent-wiki", "index.md"), "utf8");
@@ -365,8 +365,10 @@ EOF
 
     expect(logFile).toContain("record_event");
     expect(logFile).toContain("create_skill");
+    expect(logFile).toContain("update_skill");
     expect(indexFile).toContain("agent_adoption.stabilize-onboarding-in-non-technical-repos");
     expect(generatedSkill).toContain("## Workflow");
+    expect(generatedSkill).toContain("maturity: stable");
   }, 20000);
 
   it("copies wrapper entrypoints and skills into adopted host repos", async () => {

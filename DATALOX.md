@@ -68,8 +68,8 @@ Promotion rule:
 
 - occurrence `1`: `record_only`
 - occurrence `2` with an existing skill match: `patch_skill_with_pattern`
-- occurrence `2` with no skill match: `create_wiki_pattern`
-- occurrence `3+` with no skill match: `create_skill_from_gap`
+- occurrence `2` with no skill match: `create_skill_from_gap` as a live `draft` skill
+- next repeated reuse of that draft skill: patch it and stabilize it
 
 If the new knowledge still belongs to an existing task boundary, patch the current skill. Create a new skill only when the work represents a distinct recurring task with its own stable trigger and workflow.
 
