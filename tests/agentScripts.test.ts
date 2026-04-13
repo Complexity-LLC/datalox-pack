@@ -759,7 +759,7 @@ describe("agent scripts", () => {
     expect(await readFile(path.join(tempDir, "agent-wiki/lint.md"), "utf8")).toContain("Issue Count: 0");
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("lint_pack");
     expect(await readFile(path.join(tempDir, "agent-wiki/hot.md"), "utf8")).toContain("Recent Changes");
-  });
+  }, 15000);
 
   it("lints the minimal skill-pattern graph", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));

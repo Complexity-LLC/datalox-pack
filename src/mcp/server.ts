@@ -12,6 +12,8 @@ import {
   recordTurnResult,
   resolveLoop,
 } from "../core/packCore.js";
+import { publishWebCapture } from "../core/publishWebCapture.js";
+import { captureDesignFromUrl, captureWebArtifact } from "../core/webCapture.js";
 
 const server = new McpServer({
   name: "datalox-pack",
@@ -21,6 +23,92 @@ const server = new McpServer({
 const JsonResultSchema = {
   result: z.record(z.string(), z.unknown()).or(z.array(z.unknown())),
 };
+
+server.registerTool(
+  "capture_web_artifact",
+  {
+    description: "Capture a live website into repo-local source evidence and an optional reusable artifact such as DESIGN.md.",
+    inputSchema: {
+      repo_path: z.string().describe("Absolute or relative path to the host repo."),
+      url: z.string().describe("Website URL to capture."),
+      artifact_type: z.enum(["design_doc", "source_page"]).optional(),
+      title: z.string().optional(),
+      slug: z.string().optional(),
+      output_path: z.string().optional(),
+    },
+    outputSchema: JsonResultSchema,
+  },
+  async ({ repo_path, url, artifact_type, title, slug, output_path }) => {
+    const result = await captureWebArtifact({
+      repoPath: repo_path,
+      url,
+      artifactType: artifact_type,
+      title,
+      slug,
+      outputPath: output_path,
+    });
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      structuredContent: { result },
+    };
+  },
+);
+
+server.registerTool(
+  "capture_design_source",
+  {
+    description: "Compatibility alias: capture a live website into DESIGN.md plus a source page and screenshots in the host repo.",
+    inputSchema: {
+      repo_path: z.string().describe("Absolute or relative path to the host repo."),
+      url: z.string().describe("Website URL to capture."),
+      title: z.string().optional(),
+      slug: z.string().optional(),
+      output_path: z.string().optional(),
+    },
+    outputSchema: JsonResultSchema,
+  },
+  async ({ repo_path, url, title, slug, output_path }) => {
+    const result = await captureDesignFromUrl({
+      repoPath: repo_path,
+      url,
+      title,
+      slug,
+      outputPath: output_path,
+    });
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      structuredContent: { result },
+    };
+  },
+);
+
+server.registerTool(
+  "publish_web_capture",
+  {
+    description: "Publish one captured web instance to R2, write its manifest.json, and regenerate indexes/latest.json.",
+    inputSchema: {
+      repo_path: z.string().describe("Absolute or relative path to the host repo."),
+      capture: z.string().describe("Capture slug under agent-wiki/sources/web/<slug>.capture.json."),
+      bucket: z.string().optional(),
+      prefix: z.string().optional(),
+      public_base_url: z.string().optional(),
+    },
+    outputSchema: JsonResultSchema,
+  },
+  async ({ repo_path, capture, bucket, prefix, public_base_url }) => {
+    const result = await publishWebCapture({
+      repoPath: repo_path,
+      capture,
+      bucket,
+      prefix,
+      publicBaseUrl: public_base_url,
+    });
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      structuredContent: { result },
+    };
+  },
+);
 
 server.registerTool(
   "resolve_loop",

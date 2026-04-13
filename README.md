@@ -112,6 +112,93 @@ The human-visible payoff is in four generated files:
 - `agent-wiki/lint.md`: whether the pack is still healthy
 - `agent-wiki/hot.md`: the recent context snapshot an agent can read first in the next session
 
+## Concrete Workflow: Capture Web Knowledge
+
+This repo now supports a concrete web-capture path instead of only chat-derived promotion.
+
+```bash
+npx playwright install chromium
+node dist/src/cli/main.js capture-web \
+  --repo /path/to/host-repo \
+  --url https://example.com \
+  --artifact design-doc \
+  --json
+```
+
+That writes:
+
+- `agent-wiki/sources/web/<slug>.md`
+- `agent-wiki/assets/web/<slug>/desktop.png`
+- `agent-wiki/assets/web/<slug>/mobile.png`
+- `designs/web/<slug>.md` when `--artifact design-doc` is selected
+
+For MCP hosts, call `capture_web_artifact` with:
+
+- `repo_path`
+- `url`
+- `artifact_type: "design_doc"` or `artifact_type: "source_page"`
+
+The corresponding pack skill is:
+
+- `skills/capture-web-knowledge/SKILL.md`
+
+## Publish Curated Captures to R2
+
+Keep capture local first. Publish only the instances worth showing.
+
+Required environment variables:
+
+```bash
+export DATALOX_R2_ACCOUNT_ID=...
+export DATALOX_R2_ACCESS_KEY_ID=...
+export DATALOX_R2_SECRET_ACCESS_KEY=...
+export DATALOX_R2_BUCKET=...
+export DATALOX_R2_PUBLIC_BASE_URL=https://assets.example.com/
+```
+
+Optional:
+
+```bash
+export DATALOX_R2_PREFIX=design-corpus
+```
+
+Publish one captured instance:
+
+```bash
+node dist/src/cli/main.js publish-web-capture \
+  --repo /path/to/host-repo \
+  --capture <slug> \
+  --bucket "$DATALOX_R2_BUCKET" \
+  --json
+```
+
+That uploads:
+
+- source markdown
+- optional design brief markdown
+- desktop screenshot
+- mobile screenshot
+- `instances/<slug>/manifest.json`
+
+Then it regenerates:
+
+- `indexes/latest.json`
+
+The default bucket layout is:
+
+```text
+design-corpus/
+  instances/
+    <slug>/
+      manifest.json
+      source.md
+      <artifact>.md
+      desktop.png
+      mobile.png
+  indexes/
+    latest.json
+```
+
 ## Read First
 
 1. [.datalox/manifest.json](.datalox/manifest.json)

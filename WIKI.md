@@ -19,6 +19,12 @@ Then operate with this loop:
 5. promote repeated gaps into the host repo knowledge layer
 6. lint the pack
 
+Concrete design-capture workflow:
+
+- if the task is to learn a live website from observable evidence, use `skills/capture-web-knowledge/SKILL.md`
+- run `datalox capture-web --repo . --url <url> --artifact design-doc`
+- use `designs/web/<slug>.md` as the direct brief only when needed; keep the source page and screenshots as evidence
+
 Keep these visible artifacts current:
 
 - `agent-wiki/index.md`

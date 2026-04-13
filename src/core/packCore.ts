@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, existsSync } from "node:fs";
 import { access, cp, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export interface ResolveLoopInput {
   repoPath?: string;
@@ -121,7 +121,25 @@ export interface AutoBootstrapResult {
   probeAfter: BootstrapProbeResult;
 }
 
-const PACK_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+function resolvePackRootPath(): string {
+  const candidates = [
+    fileURLToPath(new URL("../../", import.meta.url)),
+    fileURLToPath(new URL("../../../", import.meta.url)),
+  ];
+
+  for (const candidate of candidates) {
+    if (
+      existsSync(path.join(candidate, "package.json"))
+      && existsSync(path.join(candidate, "scripts", "lib", "agent-pack.mjs"))
+    ) {
+      return candidate;
+    }
+  }
+
+  return candidates[candidates.length - 1];
+}
+
+const PACK_ROOT = resolvePackRootPath();
 const DEFAULT_PACK_URL = "https://github.com/Complexity-LLC/datalox-pack.git";
 const SINGLE_FILE_ADOPTION_PATHS = [
   "DATALOX.md",
@@ -161,7 +179,7 @@ const TREE_ADOPTION_PATHS = [
 const INSTALL_STAMP_RELATIVE_PATH = ".datalox/install.json";
 
 async function loadLegacyPackModule() {
-  return import(new URL("../../../scripts/lib/agent-pack.mjs", import.meta.url).href);
+  return import(pathToFileURL(path.join(PACK_ROOT, "scripts", "lib", "agent-pack.mjs")).href);
 }
 
 function resolveRepoPath(repoPath?: string): string {

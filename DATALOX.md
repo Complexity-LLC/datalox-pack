@@ -56,6 +56,13 @@ Host repo skills and pattern docs override seed-pack files when both define the 
 
 This is the `detect -> use` part of the loop.
 
+Concrete example:
+
+- if the task is to learn a live website from observable evidence, match `skills/capture-web-knowledge/SKILL.md`
+- run `datalox capture-web --repo . --url <url> --artifact design-doc`
+- use `designs/web/<slug>.md` only when a design brief is needed
+- keep `agent-wiki/sources/web/*.md` and `agent-wiki/assets/web/*` as evidence
+
 ## Learning Rule
 
 When the agent discovers a reusable gap:
@@ -76,6 +83,12 @@ If the new knowledge still belongs to an existing task boundary, patch the curre
 This is the `record -> promote` part of the loop.
 
 These writes belong to the host repo, not the seed pack repo.
+
+For curated public examples, publish selected captures outward instead of storing them in the pack repo itself:
+
+- keep local evidence under `agent-wiki/sources/web/` and `agent-wiki/assets/web/`
+- keep optional local design briefs under `designs/web/`
+- publish selected captures into object storage with one manifest per instance and one generated `indexes/latest.json`
 
 After patching, refresh:
 

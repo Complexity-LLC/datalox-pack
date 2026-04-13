@@ -23,4 +23,10 @@ When you learn something reusable:
    - `agent-wiki/lint.md`
    - `agent-wiki/hot.md`
 
+Concrete design-capture workflow:
+
+- if the task is to learn a live website from observable evidence, use `skills/capture-web-knowledge/SKILL.md`
+- run `datalox capture-web --repo . --url <url> --artifact design-doc`
+- use `designs/web/<slug>.md` as the direct brief only when needed; keep the source page and screenshots as evidence
+
 Preserve native Gemini or platform skills. Datalox is additive.

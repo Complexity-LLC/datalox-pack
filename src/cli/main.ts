@@ -11,6 +11,8 @@ import {
   recordTurnResult,
   resolveLoop,
 } from "../core/packCore.js";
+import { publishWebCapture } from "../core/publishWebCapture.js";
+import { captureDesignFromUrl, captureWebArtifact } from "../core/webCapture.js";
 import { runCodexWrapper } from "../adapters/codex/run.js";
 import { runGenericWrapper } from "../adapters/generic/run.js";
 import { parseCliArgs, toStringArray } from "./args.js";
@@ -21,6 +23,9 @@ function usage(): string {
     "  datalox adopt <host-repo-path> [--pack-source <path-or-git-url>] [--json]",
     "  datalox probe-bootstrap [--repo <path>] [--json]",
     "  datalox auto-bootstrap [--repo <path>] [--pack-source <path-or-git-url>] [--json]",
+    "  datalox capture-web [--repo <path>] --url <url> [--artifact <design-doc|source-page>] [--title <title>] [--slug <slug>] [--output <path>] [--json]",
+    "  datalox capture-design [--repo <path>] --url <url> [--title <title>] [--slug <slug>] [--output <path>] [--json]",
+    "  datalox publish-web-capture [--repo <path>] --capture <slug> [--bucket <bucket>] [--prefix <prefix>] [--public-base-url <url>] [--json]",
     "  datalox resolve [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--limit <n>] [--include-content] [--json]",
     "  datalox record [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--tag <tag>] [--event-kind <kind>] [--json]",
     "  datalox patch [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--tag <tag>] [--json]",
@@ -109,6 +114,74 @@ async function main(): Promise<void> {
         packSource: typeof args["pack-source"] === "string" ? args["pack-source"] : undefined,
       });
       writeResult(result, true);
+      return;
+    }
+    case "capture-web": {
+      if (typeof args.url !== "string") {
+        throw new Error("capture-web requires --url <url>");
+      }
+      const artifact = typeof args.artifact === "string" ? args.artifact : "design-doc";
+      const artifactType = artifact === "source-page" ? "source_page" : "design_doc";
+      const result = await captureWebArtifact({
+        repoPath: typeof args.repo === "string" ? args.repo : undefined,
+        url: args.url,
+        title: typeof args.title === "string" ? args.title : undefined,
+        slug: typeof args.slug === "string" ? args.slug : undefined,
+        artifactType,
+        outputPath: typeof args.output === "string" ? args.output : undefined,
+      });
+      if (asJson) {
+        writeResult(result, true);
+        return;
+      }
+      if (result.artifactPath) {
+        process.stdout.write(`Artifact: ${result.artifactPath}\n`);
+      }
+      process.stdout.write(`Source page: ${result.sourcePagePath}\n`);
+      process.stdout.write(`Desktop screenshot: ${result.screenshotPaths.desktop}\n`);
+      process.stdout.write(`Mobile screenshot: ${result.screenshotPaths.mobile}\n`);
+      return;
+    }
+    case "capture-design": {
+      if (typeof args.url !== "string") {
+        throw new Error("capture-design requires --url <url>");
+      }
+      const result = await captureDesignFromUrl({
+        repoPath: typeof args.repo === "string" ? args.repo : undefined,
+        url: args.url,
+        title: typeof args.title === "string" ? args.title : undefined,
+        slug: typeof args.slug === "string" ? args.slug : undefined,
+        outputPath: typeof args.output === "string" ? args.output : undefined,
+      });
+      if (asJson) {
+        writeResult(result, true);
+        return;
+      }
+      if (result.artifactPath) {
+        process.stdout.write(`Artifact: ${result.artifactPath}\n`);
+      }
+      process.stdout.write(`Source page: ${result.sourcePagePath}\n`);
+      process.stdout.write(`Desktop screenshot: ${result.screenshotPaths.desktop}\n`);
+      process.stdout.write(`Mobile screenshot: ${result.screenshotPaths.mobile}\n`);
+      return;
+    }
+    case "publish-web-capture": {
+      if (typeof args.capture !== "string") {
+        throw new Error("publish-web-capture requires --capture <slug>");
+      }
+      const result = await publishWebCapture({
+        repoPath: typeof args.repo === "string" ? args.repo : undefined,
+        capture: args.capture,
+        bucket: typeof args.bucket === "string" ? args.bucket : undefined,
+        prefix: typeof args.prefix === "string" ? args.prefix : undefined,
+        publicBaseUrl: typeof args["public-base-url"] === "string" ? args["public-base-url"] : undefined,
+      });
+      if (asJson) {
+        writeResult(result, true);
+        return;
+      }
+      process.stdout.write(`Manifest: ${result.manifestKey}\n`);
+      process.stdout.write(`Index: ${result.indexKey}\n`);
       return;
     }
     case "resolve": {

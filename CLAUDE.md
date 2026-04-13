@@ -18,6 +18,12 @@ When you learn something reusable:
 2. promote repeated gaps into `agent-wiki/patterns/` or `skills/`
 3. lint the skill-to-wiki graph
 
+Concrete design-capture workflow:
+
+- if the task is to learn a live website from observable evidence, use `skills/capture-web-knowledge/SKILL.md`
+- run `datalox capture-web --repo . --url <url> --artifact design-doc`
+- treat `designs/web/<slug>.md` as the working brief only when needed; keep `agent-wiki/sources/web/*.md` plus screenshots as evidence
+
 Keep these files current:
 
 - `agent-wiki/index.md`

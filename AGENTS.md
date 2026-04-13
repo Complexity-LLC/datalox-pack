@@ -33,6 +33,7 @@ Keep these host-repo artifacts current so humans can inspect the pack:
 - reusable pattern docs belong in the host repo `agent-wiki/patterns/`
 - richer supporting pages can live in `agent-wiki/sources`, `agent-wiki/concepts`, `agent-wiki/comparisons`, and `agent-wiki/questions`
 - keep skills lightweight and let them point to pattern docs
+- if the task is to turn a website into reusable repo knowledge, use `skills/capture-web-knowledge/SKILL.md` and the `capture-web` flow instead of freehand visual summaries
 - lint the skill-to-wiki graph after changing local knowledge
 - do not require a local server
 - if the host supports post-turn hooks, use `node bin/datalox-auto-promote.js` as the automatic promotion entrypoint

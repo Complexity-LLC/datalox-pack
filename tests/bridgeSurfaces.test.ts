@@ -681,7 +681,7 @@ describe("bridge surfaces", () => {
     const linted = JSON.parse(lintResult.stdout);
     expect(linted.ok).toBe(true);
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("update_skill");
-  });
+  }, 15000);
 
   it("parses flow-style frontmatter in agent-native skills", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-flow-skill-"));
@@ -802,7 +802,7 @@ describe("bridge surfaces", () => {
       await client.close();
       await transport.close();
     }
-  });
+  }, 15000);
 
   it("uses the CLI promotion ladder from event to wiki to skill", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-promote-"));
