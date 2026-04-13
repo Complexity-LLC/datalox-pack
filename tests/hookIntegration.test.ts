@@ -71,8 +71,6 @@ describe("automatic host hooks", () => {
         env: {
           ...process.env,
           DATALOX_PACK_ROOT: repoRoot,
-          DATALOX_AUTO_PROMOTE_MIN_WIKI: "2",
-          DATALOX_AUTO_PROMOTE_MIN_SKILL: "3",
         },
         input: payload,
         encoding: "utf8",

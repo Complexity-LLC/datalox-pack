@@ -66,10 +66,10 @@ When the agent discovers a reusable gap:
 
 Promotion rule:
 
-- first occurrence: `record_only`
-- repeated gap with an existing skill match: patch the skill with a new pattern
-- repeated gap with no skill match: create a wiki pattern first
-- repeated gap with no skill match and a higher threshold: create a new skill
+- occurrence `1`: `record_only`
+- occurrence `2` with an existing skill match: `patch_skill_with_pattern`
+- occurrence `2` with no skill match: `create_wiki_pattern`
+- occurrence `3+` with no skill match: `create_skill_from_gap`
 
 If the new knowledge still belongs to an existing task boundary, patch the current skill. Create a new skill only when the work represents a distinct recurring task with its own stable trigger and workflow.
 

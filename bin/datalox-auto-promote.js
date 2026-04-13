@@ -29,6 +29,15 @@ function parseArgs(argv) {
   return parsed;
 }
 
+function parseOptionalPositiveInt(value) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 async function readStdin() {
   if (process.stdin.isTTY) {
     return "";
@@ -245,12 +254,10 @@ async function main() {
         : payload?.hook_event_name
           ? `hook:${payload.hook_event_name}`
           : "hook:auto-promote",
-      minWikiOccurrences: typeof args["min-wiki-occurrences"] === "string"
-        ? Number.parseInt(args["min-wiki-occurrences"], 10)
-        : Number.parseInt(process.env.DATALOX_AUTO_PROMOTE_MIN_WIKI ?? "3", 10),
-      minSkillOccurrences: typeof args["min-skill-occurrences"] === "string"
-        ? Number.parseInt(args["min-skill-occurrences"], 10)
-        : Number.parseInt(process.env.DATALOX_AUTO_PROMOTE_MIN_SKILL ?? "5", 10),
+      minWikiOccurrences: parseOptionalPositiveInt(args["min-wiki-occurrences"])
+        ?? parseOptionalPositiveInt(process.env.DATALOX_AUTO_PROMOTE_MIN_WIKI),
+      minSkillOccurrences: parseOptionalPositiveInt(args["min-skill-occurrences"])
+        ?? parseOptionalPositiveInt(process.env.DATALOX_AUTO_PROMOTE_MIN_SKILL),
     },
     repoPath,
   );
