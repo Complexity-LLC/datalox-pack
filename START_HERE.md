@@ -14,6 +14,7 @@ your agent gets better after one correction, and you can see what it learned.
    - `agent-wiki/log.md`
    - `agent-wiki/lint.md`
    - `agent-wiki/hot.md`
+   - `agent-wiki/events/`
 
 ## What You Should See
 
@@ -21,6 +22,13 @@ your agent gets better after one correction, and you can see what it learned.
 - `log.md`: what it changed
 - `lint.md`: whether the pack is still healthy
 - `hot.md`: the recent context snapshot for the next session
+
+## What The Agent Reads First
+
+1. `.datalox/manifest.json`
+2. `.datalox/config.json`
+3. `DATALOX.md`
+4. `agent-wiki/hot.md` if it exists
 
 ## One-Click Options
 
@@ -30,3 +38,5 @@ your agent gets better after one correction, and you can see what it learned.
   `bash bin/adopt-from-github.sh /path/to/host-repo`
 - Wire skills into common agent tools:
   `bash bin/setup-multi-agent.sh`
+- Automatic post-turn promotion for hosts with hook support:
+  `node bin/datalox-auto-promote.js`

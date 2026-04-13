@@ -6,10 +6,11 @@ An agent should use it on every loop with one minimal cycle:
 
 1. detect
 2. use
-3. patch
-4. lint
+3. record
+4. promote
+5. lint
 
-The pack must also keep three visible control artifacts in the host repo:
+The pack must also keep four visible control artifacts in the host repo:
 
 - `agent-wiki/index.md`
 - `agent-wiki/log.md`
@@ -17,6 +18,7 @@ The pack must also keep three visible control artifacts in the host repo:
 - `agent-wiki/hot.md`
 
 Do not replace the agent's native skills. Datalox is additive.
+When a host supports post-turn hooks, `node bin/datalox-auto-promote.js` is the standard automatic promotion entrypoint.
 
 ## Read Order
 
@@ -24,7 +26,8 @@ Do not replace the agent's native skills. Datalox is additive.
 2. `.datalox/config.local.json` if it exists
 3. `.datalox/config.json`
 4. this file
-5. `AGENTS.md` or a tool-specific instruction file if present
+5. `agent-wiki/hot.md` if it exists
+6. `AGENTS.md` or a tool-specific instruction file if present
 
 Common committed tool-specific entry files in this repo:
 
@@ -55,13 +58,22 @@ This is the `detect -> use` part of the loop.
 
 ## Learning Rule
 
-When the agent discovers a reusable pattern:
+When the agent discovers a reusable gap:
 
-1. write a pattern doc into `agent-wiki/patterns/`
-2. update or create a skill in `skills/`
-3. put the pattern doc path into that skill's `metadata.datalox.pattern_paths`
+1. record the turn result into `agent-wiki/events/`
+2. keep the first occurrence as an event only
+3. promote repeated evidence into a wiki page or skill conservatively
 
-This is the `patch` part of the loop.
+Promotion rule:
+
+- first occurrence: `record_only`
+- repeated gap with an existing skill match: patch the skill with a new pattern
+- repeated gap with no skill match: create a wiki pattern first
+- repeated gap with no skill match and a higher threshold: create a new skill
+
+If the new knowledge still belongs to an existing task boundary, patch the current skill. Create a new skill only when the work represents a distinct recurring task with its own stable trigger and workflow.
+
+This is the `record -> promote` part of the loop.
 
 These writes belong to the host repo, not the seed pack repo.
 
@@ -71,9 +83,11 @@ After patching, refresh:
 - `agent-wiki/log.md` so the change is recorded chronologically
 - `agent-wiki/hot.md` so the next session can restore recent context
 
+`agent-wiki/events/` is the grounded evidence layer behind those promotions.
+
 ## Lint Rule
 
-Run lint over the local pack when changing skills or pattern docs.
+Run lint over the local pack when changing skills or wiki pages.
 
 Lint checks:
 
@@ -104,6 +118,7 @@ Human-readable map of the current effective pack:
 - skills
 - triggers
 - linked pattern docs
+- supporting wiki pages by type
 - source origin (`host` or `seed`)
 - last updated metadata when available
 
@@ -123,6 +138,19 @@ Latest lint snapshot in markdown so a human can see why the pack is healthy or b
 ### `agent-wiki/hot.md`
 
 Recent-context cache for the next session. This should be the first wiki page an agent reads when it wants fast local context instead of scanning the whole knowledge layer.
+
+## Agent Wiki Shape
+
+`agent-wiki/` is a typed supporting knowledge layer:
+
+- `patterns/`: loop-time judgment and action pages
+- `sources/`: provenance and supporting source pages
+- `concepts/`: reusable domain ideas behind patterns
+- `comparisons/`: choice pages for competing workflows or interpretations
+- `questions/`: recurring open questions with current answers
+- `meta/`: maintenance and control pages for the wiki itself
+
+Skills should usually link to `patterns/` first. Patterns can then point into the rest of `agent-wiki/` through `related` and `sources`.
 
 ## Skill Shape
 
@@ -183,6 +211,9 @@ For loop ownership in supported hosts:
 
 - prefer the MCP bridge at `node dist/src/mcp/server.js`
 - use the CLI bridge at `node dist/src/cli/main.js` when MCP is not available
+- use `record_turn_result` / `datalox record` before promotion when you need explicit event grounding
+- use `promote_gap` / `datalox promote` when you want the pack to decide between event-only, wiki promotion, or skill creation
+- for hosts with hook APIs, use `node bin/datalox-auto-promote.js` as the post-turn hook command
 
 Minimal MCP host config:
 

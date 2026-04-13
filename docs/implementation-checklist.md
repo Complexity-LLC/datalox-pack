@@ -27,6 +27,14 @@ Keep the current pack as the durable knowledge layer:
 - `agent-wiki/lint.md`
 - `agent-wiki/hot.md`
 
+The skill loop should stay small:
+
+1. detect a skill
+2. read linked pattern docs
+3. follow `related` and `sources` only when needed
+4. patch knowledge
+5. lint and refresh artifacts
+
 Add a loop bridge that:
 
 1. resolves the current skill before the model acts
@@ -124,6 +132,37 @@ Add a loop bridge that:
 - [x] Add one host-repo adoption test where the pack is external and all writes land in the host repo.
 - [x] Add one explicit no-match test that proves a new skill is created.
 - [x] Keep `npm run check` and `npm test` green.
+
+## Phase 7: Grounded Promotion Ladder
+
+- [x] Add a host-owned event substrate under `agent-wiki/events/` for grounded turn results.
+- [x] Record the current task, matched skill, matched wiki pages, and reusable observation before promoting anything.
+- [x] Expose a core `recordTurnResult` operation and surface it through:
+  - `record_turn_result` in MCP
+  - `datalox record` in CLI
+- [x] Add a core `promoteGap` operation with conservative thresholds:
+  - first occurrence -> `record_only`
+  - repeated gap with an existing skill match -> patch skill with a new pattern
+  - repeated gap with no skill match -> create wiki pattern first, then create skill only after a higher threshold
+- [x] Keep new-skill creation stricter than wiki promotion.
+- [x] Log promotion decisions explicitly so humans can inspect why a gap became a wiki page or skill.
+- [x] Add integration tests for:
+  - record-only behavior
+  - repeated-gap wiki promotion
+  - repeated-gap skill creation
+
+## Phase 8: Host Hook Automation
+
+- [x] Add one generic post-turn hook entrypoint that any host can call:
+  - `node bin/datalox-auto-promote.js`
+- [x] Make the hook source-first so it works from the pack repo or the local GitHub cache without requiring `dist/`.
+- [x] Add a real Claude Code integration:
+  - `.claude/settings.json`
+  - `.claude/hooks/auto-promote.sh`
+- [x] Ensure host adoption copies the hook files into the host repo.
+- [x] Ensure local adoption can resolve the pack runtime through `~/.datalox/cache/datalox-pack`.
+- [x] Keep Codex on MCP for loop ownership until it exposes a real post-turn hook surface.
+- [x] Add a test that feeds a stop-hook payload plus transcript into the hook runner and proves repeated events promote into a wiki page and then a skill.
 
 ## Acceptance Criteria
 

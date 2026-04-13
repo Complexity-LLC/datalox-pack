@@ -6,15 +6,16 @@ On every loop:
 
 1. read `.datalox/manifest.json`
 2. read `.datalox/config.json`
-3. detect the best matching skill from `skills/`
-4. read the linked pattern docs from `agent-wiki/patterns/`
-5. if needed, follow `related` and `sources` into the wider `agent-wiki/`
-6. use the pattern docs' signal, interpretation, and recommended action in the current loop
+3. read `agent-wiki/hot.md` if it exists
+4. detect the best matching skill from `skills/`
+5. read the linked pattern docs from `agent-wiki/patterns/`
+6. if needed, follow `related` and `sources` into the wider `agent-wiki/`
+7. use the pattern docs' signal, interpretation, and recommended action in the current loop
 
 When you learn something reusable:
 
-1. write a pattern doc into the host repo `agent-wiki/patterns/`
-2. update or create the corresponding skill in the host repo `skills/`
+1. record the turn result in `agent-wiki/events/`
+2. promote repeated gaps into `agent-wiki/patterns/` or `skills/`
 3. lint the skill-to-wiki graph
 
 Keep these files current:
@@ -23,5 +24,9 @@ Keep these files current:
 - `agent-wiki/log.md`
 - `agent-wiki/lint.md`
 - `agent-wiki/hot.md`
+
+Automatic host hook:
+
+- if `.claude/settings.json` and `.claude/hooks/auto-promote.sh` are present, they should call `node bin/datalox-auto-promote.js` on `Stop` and `SubagentStop`
 
 Keep Datalox additive to Claude's native skills. Do not require a running Datalox service.

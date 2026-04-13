@@ -3,6 +3,8 @@ set -euo pipefail
 
 PACK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_REPO="${1:-}"
+CACHE_ROOT="${HOME}/.datalox/cache"
+PACK_CACHE="${CACHE_ROOT}/datalox-pack"
 
 if [ -z "$HOST_REPO" ]; then
   echo "Usage: bash bin/adopt-host-repo.sh /path/to/host-repo"
@@ -11,11 +13,19 @@ fi
 
 HOST_REPO="$(cd "$HOST_REPO" && pwd)"
 
+mkdir -p "$CACHE_ROOT"
+if [ ! -e "$PACK_CACHE" ]; then
+  ln -s "$PACK_ROOT" "$PACK_CACHE"
+fi
+
 mkdir -p "$HOST_REPO/.datalox" \
          "$HOST_REPO/agent-wiki" \
+         "$HOST_REPO/agent-wiki/events" \
+         "$HOST_REPO/.claude/hooks" \
          "$HOST_REPO/.github" \
          "$HOST_REPO/.cursor/rules" \
          "$HOST_REPO/.windsurf/rules" \
+         "$HOST_REPO/bin" \
          "$HOST_REPO/skills"
 
 copy_if_missing() {
@@ -52,12 +62,15 @@ copy_if_missing "$PACK_ROOT/CLAUDE.md" "$HOST_REPO/CLAUDE.md"
 copy_if_missing "$PACK_ROOT/WIKI.md" "$HOST_REPO/WIKI.md"
 copy_if_missing "$PACK_ROOT/GEMINI.md" "$HOST_REPO/GEMINI.md"
 copy_if_missing "$PACK_ROOT/START_HERE.md" "$HOST_REPO/START_HERE.md"
+copy_if_missing "$PACK_ROOT/.claude/settings.json" "$HOST_REPO/.claude/settings.json"
+copy_if_missing "$PACK_ROOT/.claude/hooks/auto-promote.sh" "$HOST_REPO/.claude/hooks/auto-promote.sh"
 copy_if_missing "$PACK_ROOT/.github/copilot-instructions.md" "$HOST_REPO/.github/copilot-instructions.md"
 copy_if_missing "$PACK_ROOT/.cursor/rules/datalox-pack.mdc" "$HOST_REPO/.cursor/rules/datalox-pack.mdc"
 copy_if_missing "$PACK_ROOT/.windsurf/rules/datalox-pack.md" "$HOST_REPO/.windsurf/rules/datalox-pack.md"
 copy_if_missing "$PACK_ROOT/.datalox/config.json" "$HOST_REPO/.datalox/config.json"
 copy_if_missing "$PACK_ROOT/.datalox/config.schema.json" "$HOST_REPO/.datalox/config.schema.json"
 copy_if_missing "$PACK_ROOT/.datalox/manifest.json" "$HOST_REPO/.datalox/manifest.json"
+copy_if_missing "$PACK_ROOT/bin/datalox-auto-promote.js" "$HOST_REPO/bin/datalox-auto-promote.js"
 copy_if_missing "$PACK_ROOT/agent-wiki/pattern.schema.md" "$HOST_REPO/agent-wiki/pattern.schema.md"
 copy_if_missing "$PACK_ROOT/agent-wiki/source.schema.md" "$HOST_REPO/agent-wiki/source.schema.md"
 copy_if_missing "$PACK_ROOT/agent-wiki/concept.schema.md" "$HOST_REPO/agent-wiki/concept.schema.md"

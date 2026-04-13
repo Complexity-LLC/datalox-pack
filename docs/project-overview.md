@@ -37,6 +37,6 @@ When the pack is external, those writes belong to the host repo while this repo 
 
 This repo is for proving one thing first:
 
-an agent can detect the right repo-local skill every loop, use linked pattern docs immediately, and keep the graph healthy with lint.
+an agent can detect the right repo-local skill every loop, use linked wiki pages immediately, and keep the graph healthy with lint.
 
 Everything else is secondary until that works reliably.

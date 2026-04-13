@@ -6,6 +6,7 @@ The current version is intentionally narrow:
 
 - detect a skill on every agent loop
 - expose actionable guidance from linked pattern docs
+- ground reusable gaps in `agent-wiki/events/` before promoting them
 - keep generated skills in `skills/`
 - keep reusable knowledge in `agent-wiki/`
 - lint the skill-to-wiki graph for broken links, stale pages, and unsupported contradictions
@@ -33,6 +34,12 @@ To wire skills into common agent tools:
 bash bin/setup-multi-agent.sh
 ```
 
+For hosts with post-turn hook support, the automatic promotion entrypoint is:
+
+```bash
+node bin/datalox-auto-promote.js
+```
+
 ## Loop Bridge
 
 For automatic loop-time adoption in supported hosts, use the MCP server first and the CLI as fallback:
@@ -47,7 +54,9 @@ The companion CLI exposes the same core operations:
 
 ```bash
 node dist/src/cli/main.js resolve --task "review ambiguous live dead gate" --workflow flow_cytometry --json
+node dist/src/cli/main.js record --task "review ambiguous live dead gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception pattern before widening gate" --json
 node dist/src/cli/main.js patch --task "review ambiguous live dead gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception pattern before widening gate" --json
+node dist/src/cli/main.js promote --task "review ambiguous live dead gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception pattern before widening gate" --json
 node dist/src/cli/main.js lint --json
 ```
 
@@ -72,14 +81,16 @@ The pack is built around one minimal loop:
    Find the best matching skill in `skills/` from task text, workflow, and repo context.
 2. `use`
    Read the linked pattern docs and surface `why matched`, `what to do now`, and `watch for`.
-3. `patch`
-   When the agent finds a reusable gap, write a pattern doc and update or create a skill.
-4. `lint`
+3. `record`
+   Write grounded turn results into `agent-wiki/events/` before promoting them.
+4. `promote`
+   Promote repeated gaps into wiki patterns or new/updated skills using conservative thresholds.
+5. `lint`
    Check that the skill-pattern graph is still coherent.
 
 When this pack is used from another repo, it acts as a seed pack. Reads can come from this repo, but generated skills and pattern docs must be written into the host repo.
 
-The human-visible payoff is in three generated files:
+The human-visible payoff is in four generated files:
 
 - `agent-wiki/index.md`: what the agent currently knows
 - `agent-wiki/log.md`: what it changed, including `create_skill`, `update_skill`, `patch_pattern`, and `lint_pack`
@@ -88,12 +99,12 @@ The human-visible payoff is in three generated files:
 
 ## Read First
 
-1. [DATALOX.md](DATALOX.md)
-2. [.datalox/manifest.json](.datalox/manifest.json)
-3. [.datalox/config.json](.datalox/config.json)
-4. [AGENTS.md](AGENTS.md)
-5. [CLAUDE.md](CLAUDE.md) when relevant
-6. [WIKI.md](WIKI.md) and [GEMINI.md](GEMINI.md) when relevant
+1. [.datalox/manifest.json](.datalox/manifest.json)
+2. [.datalox/config.json](.datalox/config.json)
+3. [DATALOX.md](DATALOX.md)
+4. [agent-wiki/hot.md](agent-wiki/hot.md) when present
+5. [AGENTS.md](AGENTS.md)
+6. [CLAUDE.md](CLAUDE.md), [WIKI.md](WIKI.md), or [GEMINI.md](GEMINI.md) when relevant
 
 ## Repo Contract
 
@@ -109,6 +120,7 @@ The human-visible payoff is in three generated files:
 - `agent-wiki/lint.md`: generated lint snapshot in the host repo
 - `agent-wiki/hot.md`: generated recent-context snapshot in the host repo
 - `agent-wiki/page-types.md`: wiki taxonomy for the supporting knowledge layer
+- `agent-wiki/events/`: grounded turn-result records used for conservative promotion
 - `.datalox/skill.schema.md`: authoring contract for future skills
 - `START_HERE.md`: human-friendly first-run guide
 - host repos should write generated skills into their own `skills/`
@@ -124,8 +136,6 @@ The legacy Node scripts are optional helpers for testing the same protocol:
 node scripts/agent-resolve.mjs --task "review ambiguous live dead gate" --workflow flow_cytometry
 
 # patch
-node scripts/agent-lint.mjs
-
 node scripts/agent-learn-from-interaction.mjs \
   --task "review ambiguous live dead gate" \
   --workflow flow_cytometry \
@@ -138,7 +148,7 @@ node scripts/agent-lint.mjs
 ```
 
 After the patch step, the next resolve call should return the updated skill with the new pattern doc already linked in.
-The host repo should also show updated `agent-wiki/index.md` and `agent-wiki/log.md`.
+The host repo should also show updated `agent-wiki/index.md`, `agent-wiki/log.md`, and `agent-wiki/hot.md`.
 
 ## Skill Authoring Rule
 

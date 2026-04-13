@@ -21,6 +21,7 @@ const DEFAULT_SOURCE_DIR = `${DEFAULT_WIKI_DIR}/sources`;
 const DEFAULT_CONCEPT_DIR = `${DEFAULT_WIKI_DIR}/concepts`;
 const DEFAULT_COMPARISON_DIR = `${DEFAULT_WIKI_DIR}/comparisons`;
 const DEFAULT_QUESTION_DIR = `${DEFAULT_WIKI_DIR}/questions`;
+const DEFAULT_EVENTS_DIR = `${DEFAULT_WIKI_DIR}/events`;
 const WIKI_PAGE_TYPES = ["pattern", "meta", "source", "concept", "comparison", "question"];
 
 async function fileExists(filePath) {
@@ -680,6 +681,7 @@ export function resolvePackPaths(config, options = {}) {
     hostRoot,
     seedRoot,
     hostWikiDir: path.resolve(hostRoot, DEFAULT_WIKI_DIR),
+    hostEventsDir: path.resolve(hostRoot, DEFAULT_EVENTS_DIR),
     hostSkillsDir: path.resolve(hostRoot, config.paths.hostSkillsDir ?? "skills"),
     hostPatternsDir: path.resolve(hostRoot, config.paths.hostPatternsDir ?? DEFAULT_PATTERN_DIR),
     hostMetaDir: path.resolve(hostRoot, DEFAULT_META_DIR),
@@ -797,6 +799,18 @@ async function readDirMarkdown(dirPath) {
   const entries = await readdir(dirPath, { withFileTypes: true });
   return entries
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((entry) => path.join(dirPath, entry.name));
+}
+
+async function readDirJson(dirPath) {
+  if (!(await fileExists(dirPath))) {
+    return [];
+  }
+
+  const entries = await readdir(dirPath, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
     .sort((left, right) => left.name.localeCompare(right.name))
     .map((entry) => path.join(dirPath, entry.name));
 }
@@ -945,7 +959,7 @@ async function resolvePatternFile(patternPath, cwd, sourcePath) {
 
 export async function countPackFiles(config, cwd = process.cwd(), sourcePath) {
   const paths = resolvePackPaths(config, { cwd, sourcePath });
-  const [skills, wikiEntries, hostSkills, seedSkills, hostPatterns, seedPatterns] = await Promise.all([
+  const [skills, wikiEntries, hostSkills, seedSkills, hostPatterns, seedPatterns, hostEvents] = await Promise.all([
     listSkillEntries(config, cwd, sourcePath),
     listPatternEntries(config, cwd, sourcePath),
     readSkillMarkdownEntries(paths.hostSkillsDir),
@@ -956,12 +970,14 @@ export async function countPackFiles(config, cwd = process.cwd(), sourcePath) {
     pathKey(paths.hostPatternsDir) === pathKey(paths.seedPatternsDir)
       ? Promise.resolve([])
       : readDirMarkdown(paths.seedPatternsDir),
+    readDirJson(paths.hostEventsDir),
   ]);
 
   return {
     skills: skills.length,
     patterns: wikiEntries.filter((entry) => entry.pageType === "pattern").length,
     wikiPages: wikiEntries.length,
+    events: hostEvents.length,
     hostSkills: hostSkills.length,
     seedSkills: seedSkills.length,
     hostPatterns: hostPatterns.length,
@@ -1332,6 +1348,20 @@ export async function refreshControlArtifacts(
 
 export async function listLocalSkills(config, cwd = process.cwd(), sourcePath) {
   return listSkillEntries(config, cwd, sourcePath);
+}
+
+export async function listRecordedEvents(config, cwd = process.cwd(), sourcePath) {
+  const { hostEventsDir, hostRoot } = resolvePackPaths(config, { cwd, sourcePath });
+  const eventFiles = await readDirJson(hostEventsDir);
+  const entries = await Promise.all(
+    eventFiles.map(async (filePath) => ({
+      filePath,
+      relativePath: normalizePath(path.relative(hostRoot, filePath)),
+      value: await readJson(filePath),
+    })),
+  );
+
+  return entries.sort((left, right) => parseTimestamp(right.value?.timestamp) - parseTimestamp(left.value?.timestamp));
 }
 
 export async function getLocalSkillById(config, skillId, cwd = process.cwd(), sourcePath) {
@@ -2138,6 +2168,295 @@ function derivePatternFields(input) {
     signal,
     interpretation,
     recommendedAction,
+  };
+}
+
+function buildEventFingerprint({
+  workflow,
+  skillId,
+  title,
+  signal,
+  summary,
+  task,
+  step,
+}) {
+  const seed = firstNonEmpty([signal, summary, task, step, title, skillId, workflow, "event"]) ?? "event";
+  return `${workflow ?? "unknown"}::${slugify(seed)}`;
+}
+
+async function writeTurnEventFile(payload, cwd = process.cwd(), sourcePathOverride) {
+  const loaded = await loadAgentConfig(cwd);
+  const config = loaded.config;
+  const sourcePath = sourcePathOverride ?? loaded.sourcePath;
+  const { hostEventsDir, hostRoot } = resolvePackPaths(config, { cwd, sourcePath });
+  const timestamp = payload.timestamp ?? new Date().toISOString();
+  const eventId = payload.id ?? `${timestamp.replace(/[:.]/g, "-")}--${slugify(payload.title ?? payload.fingerprint ?? "event")}`;
+  const nextPayload = {
+    version: 1,
+    ...payload,
+    id: eventId,
+    timestamp,
+  };
+  const filePath = path.join(hostEventsDir, `${eventId}.json`);
+
+  await ensureDir(hostEventsDir);
+  await writeFile(filePath, `${JSON.stringify(nextPayload, null, 2)}\n`, "utf8");
+
+  const relativePath = normalizePath(path.relative(hostRoot, filePath));
+  const artifacts = await updateControlArtifacts(config, cwd, sourcePath, {
+    logEntry: {
+      action: "record_event",
+      detail: `${nextPayload.eventKind ?? "observation"} | ${nextPayload.workflow ?? "unknown"} | ${nextPayload.fingerprint}`,
+      path: relativePath,
+    },
+  });
+
+  return {
+    filePath,
+    relativePath,
+    payload: nextPayload,
+    artifacts,
+  };
+}
+
+export async function recordTurnResult(
+  {
+    task,
+    workflow,
+    step,
+    skillId,
+    summary,
+    observations = [],
+    transcript,
+    tags = [],
+    title,
+    signal,
+    interpretation,
+    recommendedAction,
+    eventKind = "observation",
+  },
+  cwd = process.cwd(),
+) {
+  const { config, sourcePath } = await loadAgentConfig(cwd);
+  const resolution = await resolveLocalKnowledge(
+    {
+      task,
+      workflow,
+      step,
+      skill: skillId,
+      limit: 1,
+      includeContent: false,
+    },
+    cwd,
+  );
+  const topMatch = resolution.matches[0] ?? null;
+  const reusableMatch = topMatch && (!workflow || topMatch.skill.workflow === workflow)
+    ? topMatch
+    : null;
+  const effectiveWorkflow = workflow
+    || reusableMatch?.skill.workflow
+    || config.runtime.defaultWorkflow;
+  const derived = derivePatternFields({
+    workflow: effectiveWorkflow,
+    task,
+    step,
+    summary,
+    observations,
+    transcript,
+    title,
+    signal,
+    interpretation,
+    recommendedAction,
+  });
+  const fingerprint = buildEventFingerprint({
+    workflow: effectiveWorkflow,
+    skillId: skillId ?? topMatch?.skill.id,
+    title: derived.title,
+    signal: derived.signal,
+    summary,
+    task,
+    step,
+  });
+  const existingEvents = await listRecordedEvents(config, cwd, sourcePath);
+  const occurrenceCount = existingEvents.filter((entry) => entry.value?.fingerprint === fingerprint).length + 1;
+  const event = await writeTurnEventFile(
+    {
+      eventKind,
+      workflow: effectiveWorkflow,
+      task: task ?? null,
+      step: step ?? null,
+      summary: summary ?? null,
+      observations,
+      transcript: transcript ?? null,
+      title: derived.title,
+      signal: derived.signal,
+      interpretation: derived.interpretation,
+      recommendedAction: derived.recommendedAction,
+      tags: unique([...tags, effectiveWorkflow]),
+      fingerprint,
+      explicitSkillId: skillId ?? null,
+      matchedSkillId: reusableMatch?.skill.id ?? null,
+      matchedSkillScore: reusableMatch?.score ?? null,
+      matchedPatternPaths: reusableMatch?.patternDocs?.map((doc) => doc.path) ?? [],
+    },
+    cwd,
+    sourcePath,
+  );
+
+  return {
+    event,
+    occurrenceCount,
+    fingerprint,
+    resolution,
+  };
+}
+
+function decidePromotionAction({ occurrenceCount, matchedSkillId, minWikiOccurrences, minSkillOccurrences }) {
+  if (matchedSkillId) {
+    if (occurrenceCount >= minWikiOccurrences) {
+      return {
+        action: "patch_skill_with_pattern",
+        reason: "repeated gap matched an existing skill, so patch the skill and supporting wiki.",
+      };
+    }
+    return {
+      action: "record_only",
+      reason: "single observed gap for an existing skill; keep it in events and hot cache until it repeats.",
+    };
+  }
+
+  if (occurrenceCount >= minSkillOccurrences) {
+    return {
+      action: "create_skill_from_gap",
+      reason: "repeated gap has no matching skill and crossed the new-skill threshold.",
+    };
+  }
+
+  if (occurrenceCount >= minWikiOccurrences) {
+    return {
+      action: "create_wiki_pattern",
+      reason: "gap repeated enough to justify a reusable wiki pattern, but not a new skill yet.",
+    };
+  }
+
+  return {
+    action: "record_only",
+    reason: "first observation stays as an event only.",
+  };
+}
+
+export async function promoteGap(
+  {
+    task,
+    workflow,
+    step,
+    skillId,
+    summary,
+    observations = [],
+    transcript,
+    tags = [],
+    title,
+    signal,
+    interpretation,
+    recommendedAction,
+    eventKind = "observation",
+    minWikiOccurrences = 2,
+    minSkillOccurrences = 3,
+  },
+  cwd = process.cwd(),
+) {
+  const recorded = await recordTurnResult(
+    {
+      task,
+      workflow,
+      step,
+      skillId,
+      summary,
+      observations,
+      transcript,
+      tags,
+      title,
+      signal,
+      interpretation,
+      recommendedAction,
+      eventKind,
+    },
+    cwd,
+  );
+  const topMatch = recorded.resolution.matches[0] ?? null;
+  const reusableMatch = topMatch && (!workflow || topMatch.skill.workflow === workflow)
+    ? topMatch
+    : null;
+  const decision = {
+    ...decidePromotionAction({
+      occurrenceCount: recorded.occurrenceCount,
+      matchedSkillId: skillId ?? reusableMatch?.skill.id ?? null,
+      minWikiOccurrences,
+      minSkillOccurrences,
+    }),
+    occurrenceCount: recorded.occurrenceCount,
+  };
+
+  if (decision.action === "record_only") {
+    return {
+      ...recorded,
+      decision,
+      promotion: null,
+    };
+  }
+
+  const effectiveWorkflow = workflow
+    || reusableMatch?.skill.workflow
+    || recorded.event.payload.workflow;
+
+  if (decision.action === "create_wiki_pattern") {
+    const pattern = await writePatternDoc(
+      {
+        title: recorded.event.payload.title,
+        workflow: effectiveWorkflow,
+        signal: recorded.event.payload.signal,
+        interpretation: recorded.event.payload.interpretation,
+        recommendedAction: recorded.event.payload.recommendedAction,
+        skillId: null,
+        related: unique(recorded.event.payload.matchedPatternPaths ?? []),
+        sources: [],
+        tags: unique([...(recorded.event.payload.tags ?? []), "promoted"]),
+      },
+      cwd,
+    );
+
+    return {
+      ...recorded,
+      decision,
+      promotion: {
+        pattern,
+        skill: null,
+      },
+    };
+  }
+
+  const learned = await learnFromInteraction(
+    {
+      task,
+      workflow: effectiveWorkflow,
+      step,
+      skillId: decision.action === "patch_skill_with_pattern" ? (skillId ?? reusableMatch?.skill.id) : undefined,
+      summary,
+      observations,
+      transcript,
+      tags: unique([...tags, "promoted"]),
+      title,
+      signal,
+      interpretation,
+      recommendedAction,
+    },
+    cwd,
+  );
+
+  return {
+    ...recorded,
+    decision,
+    promotion: learned,
   };
 }
 

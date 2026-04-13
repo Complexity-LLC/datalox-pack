@@ -6,7 +6,7 @@ The current configuration is intentionally small.
 
 The product loop is:
 
-`detect -> use -> patch -> lint`
+`detect -> use -> record -> promote -> lint`
 
 The visible control artifacts are:
 
@@ -14,6 +14,7 @@ The visible control artifacts are:
 - `agent-wiki/log.md`
 - `agent-wiki/lint.md`
 - `agent-wiki/hot.md`
+- `agent-wiki/events/`
 
 The practical multi-agent entry files are:
 
@@ -44,10 +45,11 @@ agent-wiki/
 
 1. read `.datalox/manifest.json`
 2. read `.datalox/config.json`
-3. detect a matching skill from `skills/<name>/SKILL.md`
-4. read the skill's `metadata.datalox.pattern_paths`
-5. if needed, follow `related` and `sources` into the wider `agent-wiki/`
-6. use those pages during the current loop
+3. read `agent-wiki/hot.md` when it exists
+4. detect a matching skill from `skills/<name>/SKILL.md`
+5. read the skill's `metadata.datalox.pattern_paths`
+6. if needed, follow `related` and `sources` into the wider `agent-wiki/`
+7. use those pages during the current loop
 
 If the pack is external, the host repo still owns all generated writes.
 
@@ -55,9 +57,9 @@ If the pack is external, the host repo still owns all generated writes.
 
 When the agent learns something reusable:
 
-1. write a new pattern doc into `agent-wiki/patterns/`
-2. update or create a skill in `skills/`
-3. keep the new pattern doc path in that skill's `metadata.datalox.pattern_paths`
+1. record the turn result into `agent-wiki/events/`
+2. promote repeated gaps into `agent-wiki/patterns/`
+3. update or create a skill in `skills/` only when the gap becomes a recurring workflow boundary
 4. add richer supporting pages under the other `agent-wiki/` folders when a pattern alone is not enough
 
 Generated skills stay in `skills/` on purpose so agent-native skill logic can still see them.
@@ -89,3 +91,8 @@ The shell scripts under `bin/` are the practical bootstrap path:
 - `bin/adopt-host-repo.sh`
 - `bin/adopt-from-github.sh`
 - `bin/setup-multi-agent.sh`
+- `bin/datalox-auto-promote.js`
+
+Hosts with post-turn hook support should point their hook command at:
+
+- `node bin/datalox-auto-promote.js`

@@ -6,15 +6,16 @@ Use it on every loop:
 
 1. read `.datalox/manifest.json`
 2. read `.datalox/config.json`
-3. detect a skill from `skills/<name>/SKILL.md`
-4. read the linked pattern docs in `agent-wiki/patterns/`
-5. if needed, follow `related` and `sources` into the wider `agent-wiki/`
-6. use the pattern docs' signal, interpretation, and recommended action
+3. read `agent-wiki/hot.md` if it exists
+4. detect a skill from `skills/<name>/SKILL.md`
+5. read the linked pattern docs in `agent-wiki/patterns/`
+6. if needed, follow `related` and `sources` into the wider `agent-wiki/`
+7. use the pattern docs' signal, interpretation, and recommended action
 
 When you learn something reusable:
 
-1. write a pattern doc into the host repo `agent-wiki/patterns/`
-2. update or create a host repo skill in `skills/`
+1. record the turn result in `agent-wiki/events/`
+2. promote repeated gaps into the host repo `agent-wiki/patterns/` or `skills/`
 3. lint the pack
 4. refresh:
    - `agent-wiki/index.md`

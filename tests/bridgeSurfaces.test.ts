@@ -737,7 +737,14 @@ describe("bridge surfaces", () => {
 
       const tools = await client.listTools();
       expect(tools.tools.map((tool) => tool.name)).toEqual(
-        expect.arrayContaining(["resolve_loop", "patch_knowledge", "lint_pack", "adopt_pack"]),
+        expect.arrayContaining([
+          "resolve_loop",
+          "record_turn_result",
+          "patch_knowledge",
+          "promote_gap",
+          "lint_pack",
+          "adopt_pack",
+        ]),
       );
 
       const resolveResult = await client.callTool({
@@ -751,8 +758,8 @@ describe("bridge surfaces", () => {
       const resolved = extractStructuredResult(resolveResult) as any;
       expect(resolved.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
 
-      const patchResult = await client.callTool({
-        name: "patch_knowledge",
+      const recordedResult = await client.callTool({
+        name: "record_turn_result",
         arguments: {
           repo_path: tempDir,
           task: "review ambiguous live dead gate",
@@ -762,8 +769,24 @@ describe("bridge surfaces", () => {
           recommended_action: "review exception pattern before widening gate",
         },
       });
-      const patched = extractStructuredResult(patchResult) as any;
-      expect(patched.skill.operation).toBe("update_skill");
+      const recorded = extractStructuredResult(recordedResult) as any;
+      expect(recorded.occurrenceCount).toBe(1);
+      expect(recorded.event.relativePath).toContain("agent-wiki/events/");
+
+      const promoteResult = await client.callTool({
+        name: "promote_gap",
+        arguments: {
+          repo_path: tempDir,
+          task: "review ambiguous live dead gate",
+          workflow: "flow_cytometry",
+          observations: ["dim dead tail overlaps live shoulder"],
+          interpretation: "likely staining artifact",
+          recommended_action: "review exception pattern before widening gate",
+        },
+      });
+      const promoted = extractStructuredResult(promoteResult) as any;
+      expect(promoted.decision.action).toBe("patch_skill_with_pattern");
+      expect(promoted.promotion.skill.operation).toBe("update_skill");
 
       const lintResult = await client.callTool({
         name: "lint_pack",
@@ -773,10 +796,81 @@ describe("bridge surfaces", () => {
       });
       const linted = extractStructuredResult(lintResult) as any;
       expect(linted.ok).toBe(true);
+      expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("record_event");
       expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("lint_pack");
     } finally {
       await client.close();
       await transport.close();
     }
+  });
+
+  it("uses the CLI promotion ladder from event to wiki to skill", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-promote-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+
+    const first = runBuiltCli(tempDir, [
+      "promote",
+      "--task",
+      "stabilize manual pack adoption in non technical repos",
+      "--workflow",
+      "agent_adoption",
+      "--summary",
+      "Users need the pack to be visible and reversible during setup",
+      "--observation",
+      "new repos need a visible onboarding flow and trust controls",
+      "--interpretation",
+      "this is a recurring adoption workflow rather than a one-off note",
+      "--action",
+      "create a skill that guides adoption and points to the pattern doc",
+      "--json",
+    ]);
+    expect(first.status).toBe(0);
+    const firstBody = JSON.parse(first.stdout);
+    expect(firstBody.decision.action).toBe("record_only");
+
+    const second = runBuiltCli(tempDir, [
+      "promote",
+      "--task",
+      "stabilize manual pack adoption in non technical repos",
+      "--workflow",
+      "agent_adoption",
+      "--summary",
+      "Users need the pack to be visible and reversible during setup",
+      "--observation",
+      "new repos need a visible onboarding flow and trust controls",
+      "--interpretation",
+      "this is a recurring adoption workflow rather than a one-off note",
+      "--action",
+      "create a skill that guides adoption and points to the pattern doc",
+      "--json",
+    ]);
+    expect(second.status).toBe(0);
+    const secondBody = JSON.parse(second.stdout);
+    expect(secondBody.decision.action).toBe("create_wiki_pattern");
+    expect(secondBody.promotion.pattern.relativePath).toContain("agent-wiki/patterns/");
+
+    const third = runBuiltCli(tempDir, [
+      "promote",
+      "--task",
+      "stabilize manual pack adoption in non technical repos",
+      "--workflow",
+      "agent_adoption",
+      "--summary",
+      "Users need the pack to be visible and reversible during setup",
+      "--observation",
+      "new repos need a visible onboarding flow and trust controls",
+      "--interpretation",
+      "this is a recurring adoption workflow rather than a one-off note",
+      "--action",
+      "create a skill that guides adoption and points to the pattern doc",
+      "--json",
+    ]);
+    expect(third.status).toBe(0);
+    const thirdBody = JSON.parse(third.stdout);
+    expect(thirdBody.decision.action).toBe("create_skill_from_gap");
+    expect(thirdBody.promotion.skill.operation).toBe("create_skill");
+    expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("record_event");
+    expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("create_skill");
   });
 });

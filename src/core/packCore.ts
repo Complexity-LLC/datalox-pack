@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { access, cp, mkdir, readdir, rm } from "node:fs/promises";
+import { access, cp, mkdir, readdir, rm, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,28 @@ export interface PatchKnowledgeInput {
   signal?: string;
   interpretation?: string;
   recommendedAction?: string;
+}
+
+export interface RecordTurnResultInput {
+  repoPath?: string;
+  task?: string;
+  workflow?: string;
+  step?: string;
+  skillId?: string;
+  summary?: string;
+  observations?: string[];
+  transcript?: string;
+  tags?: string[];
+  title?: string;
+  signal?: string;
+  interpretation?: string;
+  recommendedAction?: string;
+  eventKind?: string;
+}
+
+export interface PromoteGapInput extends RecordTurnResultInput {
+  minWikiOccurrences?: number;
+  minSkillOccurrences?: number;
 }
 
 export interface LintPackInput {
@@ -65,6 +87,8 @@ const SINGLE_FILE_ADOPTION_PATHS = [
   "WIKI.md",
   "GEMINI.md",
   "START_HERE.md",
+  ".claude/settings.json",
+  ".claude/hooks/auto-promote.sh",
   ".github/copilot-instructions.md",
   ".cursor/rules/datalox-pack.mdc",
   ".windsurf/rules/datalox-pack.md",
@@ -72,6 +96,7 @@ const SINGLE_FILE_ADOPTION_PATHS = [
   ".datalox/config.schema.json",
   ".datalox/manifest.json",
   ".datalox/skill.schema.md",
+  "bin/datalox-auto-promote.js",
   "agent-wiki/pattern.schema.md",
   "agent-wiki/source.schema.md",
   "agent-wiki/concept.schema.md",
@@ -181,6 +206,22 @@ async function resolvePackRoot(packSource?: string): Promise<string> {
   return cachePath;
 }
 
+async function ensureLocalPackCache(packRootPath: string): Promise<void> {
+  const cacheRoot = path.join(os.homedir(), ".datalox", "cache");
+  const cachePath = path.join(cacheRoot, "datalox-pack");
+
+  if (path.resolve(packRootPath) === path.resolve(cachePath)) {
+    return;
+  }
+
+  await mkdir(cacheRoot, { recursive: true });
+  if (await fileExists(cachePath)) {
+    return;
+  }
+
+  await symlink(packRootPath, cachePath, "dir");
+}
+
 export async function resolveLoop(input: ResolveLoopInput) {
   const repoPath = resolveRepoPath(input.repoPath);
   const legacy = await loadLegacyPackModule();
@@ -219,6 +260,54 @@ export async function patchKnowledge(input: PatchKnowledgeInput) {
   );
 }
 
+export async function recordTurnResult(input: RecordTurnResultInput) {
+  const repoPath = resolveRepoPath(input.repoPath);
+  const legacy = await loadLegacyPackModule();
+  return legacy.recordTurnResult(
+    {
+      task: input.task,
+      workflow: input.workflow,
+      step: input.step,
+      skillId: input.skillId,
+      summary: input.summary,
+      observations: input.observations ?? [],
+      transcript: input.transcript,
+      tags: input.tags ?? [],
+      title: input.title,
+      signal: input.signal,
+      interpretation: input.interpretation,
+      recommendedAction: input.recommendedAction,
+      eventKind: input.eventKind,
+    },
+    repoPath,
+  );
+}
+
+export async function promoteGap(input: PromoteGapInput) {
+  const repoPath = resolveRepoPath(input.repoPath);
+  const legacy = await loadLegacyPackModule();
+  return legacy.promoteGap(
+    {
+      task: input.task,
+      workflow: input.workflow,
+      step: input.step,
+      skillId: input.skillId,
+      summary: input.summary,
+      observations: input.observations ?? [],
+      transcript: input.transcript,
+      tags: input.tags ?? [],
+      title: input.title,
+      signal: input.signal,
+      interpretation: input.interpretation,
+      recommendedAction: input.recommendedAction,
+      eventKind: input.eventKind,
+      minWikiOccurrences: input.minWikiOccurrences,
+      minSkillOccurrences: input.minSkillOccurrences,
+    },
+    repoPath,
+  );
+}
+
 export async function lintLocalPack(input: LintPackInput = {}) {
   const legacy = await loadLegacyPackModule();
   return legacy.lintPack(resolveRepoPath(input.repoPath));
@@ -235,14 +324,18 @@ export async function refreshControlArtifacts(input: RefreshControlArtifactsInpu
 export async function adoptPack(input: AdoptPackInput): Promise<AdoptPackResult> {
   const hostRepoPath = resolveRepoPath(input.hostRepoPath);
   const packRootPath = await resolvePackRoot(input.packSource);
+  await ensureLocalPackCache(packRootPath);
   const copied: string[] = [];
   const skipped: string[] = [];
 
   await mkdir(path.join(hostRepoPath, ".datalox"), { recursive: true });
+  await mkdir(path.join(hostRepoPath, ".claude", "hooks"), { recursive: true });
   await mkdir(path.join(hostRepoPath, ".github"), { recursive: true });
   await mkdir(path.join(hostRepoPath, ".cursor", "rules"), { recursive: true });
   await mkdir(path.join(hostRepoPath, ".windsurf", "rules"), { recursive: true });
+  await mkdir(path.join(hostRepoPath, "bin"), { recursive: true });
   await mkdir(path.join(hostRepoPath, "skills"), { recursive: true });
+  await mkdir(path.join(hostRepoPath, "agent-wiki", "events"), { recursive: true });
 
   for (const relativePath of SINGLE_FILE_ADOPTION_PATHS) {
     await copyIfMissing(
