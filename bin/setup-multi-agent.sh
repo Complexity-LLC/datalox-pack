@@ -48,6 +48,9 @@ link_if_missing "$SKILLS_DIR" "$REPO_ROOT/.cursor/skills" "Cursor"
 link_if_missing "$SKILLS_DIR" "$REPO_ROOT/.windsurf/skills" "Windsurf"
 
 echo
+"$REPO_ROOT/bin/install-default-host-integrations.sh"
+
+echo
 echo -e "${GREEN}Done.${NC}"
 echo "Committed bootstrap files already cover:"
 echo "  - AGENTS.md"
@@ -59,3 +62,5 @@ echo "  - GEMINI.md"
 echo "  - .github/copilot-instructions.md"
 echo "  - .cursor/rules/datalox-pack.mdc"
 echo "  - .windsurf/rules/datalox-pack.md"
+echo "  - ~/.local/bin/codex shim when Codex is installed"
+echo "  - ~/.claude/hooks/datalox-auto-promote.sh"

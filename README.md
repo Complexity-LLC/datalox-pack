@@ -34,6 +34,8 @@ To wire skills into common agent tools:
 bash bin/setup-multi-agent.sh
 ```
 
+After the host integrations are installed, supported hosts can bootstrap a clean git repo automatically on the first loop. They only do this when the repo is writable and has no partial Datalox-owned paths already present.
+
 For hosts with post-turn hook support, the automatic promotion entrypoint is:
 
 ```bash
@@ -47,6 +49,8 @@ node bin/datalox-wrap.js prompt --repo /path/to/repo --task "review ambiguous li
 node bin/datalox-wrap.js command --repo /path/to/repo --task "review ambiguous live dead gate" --prompt "Review the current gate" -- your-agent-cli __DATALOX_PROMPT__
 node bin/datalox-codex.js --repo /path/to/repo --task "update pack docs" --prompt "Update the docs to mention wrappers."
 ```
+
+If a repo already contains partial `DATALOX.md`, `.datalox/`, or `agent-wiki/` files without an install stamp, wrappers refuse auto-bootstrap and pass through unchanged. That is deliberate.
 
 ## Loop Bridge
 

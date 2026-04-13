@@ -14,6 +14,14 @@ describe("automatic host hooks", () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
+  async function initGitRepo(repoPath: string): Promise<void> {
+    const result = spawnSync("git", ["init"], {
+      cwd: repoPath,
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(0);
+  }
+
   it("promotes repeated Claude stop-hook events into wiki pages and then a new skill", async () => {
     const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-hook-host-"));
     tempDirs.push(hostDir);
@@ -99,5 +107,58 @@ describe("automatic host hooks", () => {
     expect(logFile).toContain("create_skill");
     expect(indexFile).toContain("agent_adoption.stabilize-manual-pack-adoption-in-non-technical-repos");
     expect(generatedSkill).toContain("## Workflow");
+  }, 20000);
+
+  it("auto-bootstraps a clean git repo from the host hook path before promoting", async () => {
+    const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-hook-auto-"));
+    tempDirs.push(hostDir);
+    await initGitRepo(hostDir);
+
+    const transcriptDir = path.join(hostDir, ".claude", "projects", "demo");
+    await mkdir(transcriptDir, { recursive: true });
+    const transcriptPath = path.join(transcriptDir, "session.jsonl");
+    await writeFile(
+      transcriptPath,
+      [
+        JSON.stringify({
+          type: "user",
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "stabilize onboarding in non technical repos" }],
+          },
+        }),
+        JSON.stringify({
+          type: "assistant",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "A reusable onboarding workflow is missing." }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const payload = JSON.stringify({
+      hook_event_name: "Stop",
+      cwd: hostDir,
+      workflow: "agent_adoption",
+      transcript_path: transcriptPath,
+    });
+
+    const first = spawnSync("node", [path.join(repoRoot, "bin", "datalox-auto-promote.js"), "--repo", hostDir], {
+      cwd: hostDir,
+      env: {
+        ...process.env,
+        DATALOX_PACK_ROOT: repoRoot,
+      },
+      input: payload,
+      encoding: "utf8",
+    });
+
+    expect(first.status).toBe(0);
+    expect(first.stderr).toContain("record_only");
+    expect(await readFile(path.join(hostDir, ".datalox", "install.json"), "utf8")).toContain("\"installMode\": \"auto\"");
+    expect(await readFile(path.join(hostDir, "DATALOX.md"), "utf8")).toContain("Datalox");
+    expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
   }, 20000);
 });

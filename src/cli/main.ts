@@ -2,9 +2,11 @@ import process from "node:process";
 
 import {
   adoptPack,
+  autoBootstrapIfSafe,
   getDefaultPackUrl,
   lintLocalPack,
   patchKnowledge,
+  probeBootstrapCandidate,
   promoteGap,
   recordTurnResult,
   resolveLoop,
@@ -17,6 +19,8 @@ function usage(): string {
   return [
     "Usage:",
     "  datalox adopt <host-repo-path> [--pack-source <path-or-git-url>] [--json]",
+    "  datalox probe-bootstrap [--repo <path>] [--json]",
+    "  datalox auto-bootstrap [--repo <path>] [--pack-source <path-or-git-url>] [--json]",
     "  datalox resolve [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--limit <n>] [--include-content] [--json]",
     "  datalox record [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--tag <tag>] [--event-kind <kind>] [--json]",
     "  datalox patch [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--tag <tag>] [--json]",
@@ -92,6 +96,19 @@ async function main(): Promise<void> {
       process.stdout.write(`Pack source: ${result.packRootPath}\n`);
       process.stdout.write(`Copied: ${result.copied.length}\n`);
       process.stdout.write(`Skipped: ${result.skipped.length}\n`);
+      return;
+    }
+    case "probe-bootstrap": {
+      const result = await probeBootstrapCandidate(typeof args.repo === "string" ? args.repo : undefined);
+      writeResult(result, true);
+      return;
+    }
+    case "auto-bootstrap": {
+      const result = await autoBootstrapIfSafe({
+        repoPath: typeof args.repo === "string" ? args.repo : undefined,
+        packSource: typeof args["pack-source"] === "string" ? args["pack-source"] : undefined,
+      });
+      writeResult(result, true);
       return;
     }
     case "resolve": {

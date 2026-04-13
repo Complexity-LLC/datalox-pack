@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { access, cp, mkdir, readdir, rm, symlink } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { access, cp, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,6 +70,7 @@ export interface RefreshControlArtifactsInput {
 export interface AdoptPackInput {
   hostRepoPath: string;
   packSource?: string;
+  installMode?: "manual" | "auto" | "repair";
 }
 
 interface AdoptPackResult {
@@ -76,6 +78,47 @@ interface AdoptPackResult {
   packRootPath: string;
   copied: string[];
   skipped: string[];
+  installStampPath: string;
+  installMode: "manual" | "auto" | "repair";
+}
+
+interface InstallStamp {
+  version: 1;
+  installedAt: string;
+  installMode: "manual" | "auto" | "repair";
+  packRootPath: string;
+}
+
+export interface BootstrapProbeResult {
+  repoPath: string;
+  status: "ready" | "bootstrappable" | "repairable" | "blocked";
+  canAutoBootstrap: boolean;
+  reasons: string[];
+  installStampPath: string;
+  installStamp: InstallStamp | null;
+  detected: {
+    isGitRepo: boolean;
+    isWritable: boolean;
+    hasDataloxMd: boolean;
+    hasManifest: boolean;
+    hasConfig: boolean;
+    hasAgentWiki: boolean;
+    hasInstallStamp: boolean;
+    ownedRootSignals: string[];
+  };
+}
+
+export interface AutoBootstrapInput {
+  repoPath?: string;
+  packSource?: string;
+}
+
+export interface AutoBootstrapResult {
+  repoPath: string;
+  probeBefore: BootstrapProbeResult;
+  action: "none" | "adopted" | "repaired";
+  adoption: AdoptPackResult | null;
+  probeAfter: BootstrapProbeResult;
 }
 
 const PACK_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -115,6 +158,7 @@ const TREE_ADOPTION_PATHS = [
   "agent-wiki/comparisons",
   "agent-wiki/questions",
 ];
+const INSTALL_STAMP_RELATIVE_PATH = ".datalox/install.json";
 
 async function loadLegacyPackModule() {
   return import(new URL("../../../scripts/lib/agent-pack.mjs", import.meta.url).href);
@@ -135,6 +179,53 @@ async function fileExists(filePath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function isGitRepo(repoPath: string): boolean {
+  const result = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+    cwd: repoPath,
+    encoding: "utf8",
+  });
+  return result.status === 0;
+}
+
+async function isWritableDirectory(repoPath: string): Promise<boolean> {
+  try {
+    await access(repoPath, fsConstants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readInstallStamp(installStampPath: string): Promise<InstallStamp | null> {
+  try {
+    const raw = await readFile(installStampPath, "utf8");
+    const parsed = JSON.parse(raw) as InstallStamp;
+    if (parsed && parsed.version === 1 && typeof parsed.installedAt === "string") {
+      return parsed;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function writeInstallStamp(
+  hostRepoPath: string,
+  packRootPath: string,
+  installMode: "manual" | "auto" | "repair",
+): Promise<string> {
+  const installStampPath = path.join(hostRepoPath, INSTALL_STAMP_RELATIVE_PATH);
+  await mkdir(path.dirname(installStampPath), { recursive: true });
+  const payload: InstallStamp = {
+    version: 1,
+    installedAt: new Date().toISOString(),
+    installMode,
+    packRootPath,
+  };
+  await writeFile(installStampPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  return installStampPath;
 }
 
 async function copyIfMissing(
@@ -222,6 +313,155 @@ async function ensureLocalPackCache(packRootPath: string): Promise<void> {
   }
 
   await symlink(packRootPath, cachePath, "dir");
+}
+
+export async function probeBootstrapCandidate(repoPath?: string): Promise<BootstrapProbeResult> {
+  const resolvedRepoPath = resolveRepoPath(repoPath);
+  const installStampPath = path.join(resolvedRepoPath, INSTALL_STAMP_RELATIVE_PATH);
+  const hasDataloxMd = await fileExists(path.join(resolvedRepoPath, "DATALOX.md"));
+  const hasManifest = await fileExists(path.join(resolvedRepoPath, ".datalox", "manifest.json"));
+  const hasConfig = await fileExists(path.join(resolvedRepoPath, ".datalox", "config.json"));
+  const hasAgentWiki = await fileExists(path.join(resolvedRepoPath, "agent-wiki"));
+  const hasInstallStamp = await fileExists(installStampPath);
+  const installStamp = hasInstallStamp ? await readInstallStamp(installStampPath) : null;
+  const detectedRoots = [
+    hasDataloxMd ? "DATALOX.md" : null,
+    hasManifest || hasConfig || hasInstallStamp ? ".datalox/" : null,
+    hasAgentWiki ? "agent-wiki/" : null,
+  ].filter((value): value is string => Boolean(value));
+  const completeCore = hasDataloxMd && hasManifest && hasConfig && hasAgentWiki;
+  const gitRepo = isGitRepo(resolvedRepoPath);
+  const writable = await isWritableDirectory(resolvedRepoPath);
+
+  if (!writable) {
+    return {
+      repoPath: resolvedRepoPath,
+      status: "blocked",
+      canAutoBootstrap: false,
+      reasons: ["repo is not writable"],
+      installStampPath,
+      installStamp,
+      detected: {
+        isGitRepo: gitRepo,
+        isWritable: writable,
+        hasDataloxMd,
+        hasManifest,
+        hasConfig,
+        hasAgentWiki,
+        hasInstallStamp,
+        ownedRootSignals: detectedRoots,
+      },
+    };
+  }
+
+  if (installStamp && completeCore) {
+    return {
+      repoPath: resolvedRepoPath,
+      status: "ready",
+      canAutoBootstrap: false,
+      reasons: ["repo already has a stamped Datalox installation"],
+      installStampPath,
+      installStamp,
+      detected: {
+        isGitRepo: gitRepo,
+        isWritable: writable,
+        hasDataloxMd,
+        hasManifest,
+        hasConfig,
+        hasAgentWiki,
+        hasInstallStamp,
+        ownedRootSignals: detectedRoots,
+      },
+    };
+  }
+
+  if ((installStamp && !completeCore) || (!installStamp && completeCore)) {
+    return {
+      repoPath: resolvedRepoPath,
+      status: "repairable",
+      canAutoBootstrap: true,
+      reasons: [
+        installStamp
+          ? "stamped Datalox install is missing critical files and can be repaired safely"
+          : "repo has a complete legacy Datalox layout but no install stamp; stamping and refill are safe",
+      ],
+      installStampPath,
+      installStamp,
+      detected: {
+        isGitRepo: gitRepo,
+        isWritable: writable,
+        hasDataloxMd,
+        hasManifest,
+        hasConfig,
+        hasAgentWiki,
+        hasInstallStamp,
+        ownedRootSignals: detectedRoots,
+      },
+    };
+  }
+
+  if (!gitRepo) {
+    return {
+      repoPath: resolvedRepoPath,
+      status: "blocked",
+      canAutoBootstrap: false,
+      reasons: ["automatic bootstrap only runs inside a git worktree"],
+      installStampPath,
+      installStamp,
+      detected: {
+        isGitRepo: gitRepo,
+        isWritable: writable,
+        hasDataloxMd,
+        hasManifest,
+        hasConfig,
+        hasAgentWiki,
+        hasInstallStamp,
+        ownedRootSignals: detectedRoots,
+      },
+    };
+  }
+
+  if (detectedRoots.length === 0) {
+    return {
+      repoPath: resolvedRepoPath,
+      status: "bootstrappable",
+      canAutoBootstrap: true,
+      reasons: ["repo has no Datalox-owned files yet and can be bootstrapped safely"],
+      installStampPath,
+      installStamp,
+      detected: {
+        isGitRepo: gitRepo,
+        isWritable: writable,
+        hasDataloxMd,
+        hasManifest,
+        hasConfig,
+        hasAgentWiki,
+        hasInstallStamp,
+        ownedRootSignals: detectedRoots,
+      },
+    };
+  }
+
+  return {
+    repoPath: resolvedRepoPath,
+    status: "blocked",
+    canAutoBootstrap: false,
+    reasons: [
+      `repo already contains partial Datalox-owned paths (${detectedRoots.join(", ")}) without a safe repair marker`,
+    ],
+    installStampPath,
+    installStamp,
+    detected: {
+      isGitRepo: gitRepo,
+      isWritable: writable,
+      hasDataloxMd,
+      hasManifest,
+      hasConfig,
+      hasAgentWiki,
+      hasInstallStamp,
+      ownedRootSignals: detectedRoots,
+    },
+  };
 }
 
 export async function resolveLoop(input: ResolveLoopInput) {
@@ -326,6 +566,7 @@ export async function refreshControlArtifacts(input: RefreshControlArtifactsInpu
 export async function adoptPack(input: AdoptPackInput): Promise<AdoptPackResult> {
   const hostRepoPath = resolveRepoPath(input.hostRepoPath);
   const packRootPath = await resolvePackRoot(input.packSource);
+  const installMode = input.installMode ?? "manual";
   await ensureLocalPackCache(packRootPath);
   const copied: string[] = [];
   const skipped: string[] = [];
@@ -357,11 +598,46 @@ export async function adoptPack(input: AdoptPackInput): Promise<AdoptPackResult>
     );
   }
 
+  const installStampPath = await writeInstallStamp(hostRepoPath, packRootPath, installMode);
+  copied.push(installStampPath);
+
   return {
     hostRepoPath,
     packRootPath,
     copied: copied.map((item) => path.relative(hostRepoPath, item) || "."),
     skipped: skipped.map((item) => path.relative(hostRepoPath, item) || "."),
+    installStampPath: path.relative(hostRepoPath, installStampPath) || ".",
+    installMode,
+  };
+}
+
+export async function autoBootstrapIfSafe(input: AutoBootstrapInput = {}): Promise<AutoBootstrapResult> {
+  const repoPath = resolveRepoPath(input.repoPath);
+  const probeBefore = await probeBootstrapCandidate(repoPath);
+  if (!probeBefore.canAutoBootstrap) {
+    return {
+      repoPath,
+      probeBefore,
+      action: "none",
+      adoption: null,
+      probeAfter: probeBefore,
+    };
+  }
+
+  const installMode = probeBefore.status === "repairable" ? "repair" : "auto";
+  const adoption = await adoptPack({
+    hostRepoPath: repoPath,
+    packSource: input.packSource,
+    installMode,
+  });
+  const probeAfter = await probeBootstrapCandidate(repoPath);
+
+  return {
+    repoPath,
+    probeBefore,
+    action: installMode === "repair" ? "repaired" : "adopted",
+    adoption,
+    probeAfter,
   };
 }
 

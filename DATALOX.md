@@ -203,6 +203,14 @@ For host repo adoption:
 - local pack: `bash bin/adopt-host-repo.sh /path/to/host-repo`
 - GitHub-hosted pack: `bash bin/adopt-from-github.sh /path/to/host-repo`
 
+Supported host adapters may also auto-bootstrap a clean git repo on first use. They must only do that when:
+
+- the repo is writable
+- no partial Datalox-owned paths already exist
+- the bootstrap can stay inside Datalox-owned paths only
+
+If partial `DATALOX.md`, `.datalox/`, or `agent-wiki/` paths already exist without an install stamp, adapters must refuse auto-bootstrap and pass through unchanged.
+
 For multi-agent skill discovery:
 
 - `bash bin/setup-multi-agent.sh`

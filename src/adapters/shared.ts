@@ -2,9 +2,11 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 
 import {
+  autoBootstrapIfSafe,
   promoteGap,
   recordTurnResult,
   resolveLoop,
+  type AutoBootstrapResult,
   type PromoteGapInput,
   type RecordTurnResultInput,
   type ResolveLoopInput,
@@ -16,9 +18,11 @@ export interface LoopEnvelopeInput extends ResolveLoopInput {
 
 export interface LoopEnvelope {
   repoPath: string;
+  active: boolean;
   originalPrompt: string;
   wrappedPrompt: string;
-  resolution: Awaited<ReturnType<typeof resolveLoop>>;
+  resolution: Awaited<ReturnType<typeof resolveLoop>> | null;
+  bootstrap: AutoBootstrapResult;
   guidance: {
     workflow: string;
     selectionBasis: string;
@@ -79,6 +83,10 @@ interface ParsedMarkers {
   tags: string[];
 }
 
+export function stripDataloxMarkers(text: string): string {
+  return extractMarkers(text).cleanedText;
+}
+
 function toPrompt(input: LoopEnvelopeInput): string {
   if (typeof input.prompt === "string" && input.prompt.trim().length > 0) {
     return input.prompt;
@@ -90,8 +98,21 @@ function toPrompt(input: LoopEnvelopeInput): string {
 }
 
 function summarizeResolution(
-  resolution: Awaited<ReturnType<typeof resolveLoop>>,
+  resolution: Awaited<ReturnType<typeof resolveLoop>> | null,
+  workflowHint?: string,
 ): LoopEnvelope["guidance"] {
+  if (!resolution) {
+    return {
+      workflow: workflowHint ?? "unknown",
+      selectionBasis: "bootstrap_unavailable",
+      matchedSkillId: null,
+      whyMatched: [],
+      whatToDoNow: [],
+      watchFor: [],
+      nextReads: [],
+      supportingPatterns: [],
+    };
+  }
   const topMatch = resolution.matches[0];
   return {
     workflow: resolution.workflow,
@@ -123,6 +144,9 @@ function renderBulletSection(title: string, lines: string[]): string[] {
 }
 
 export function renderWrappedPrompt(envelope: LoopEnvelope): string {
+  if (!envelope.active) {
+    return envelope.originalPrompt;
+  }
   const guidanceLines = [
     "# Datalox Loop Guidance",
     `Selection basis: ${envelope.guidance.selectionBasis}`,
@@ -137,6 +161,17 @@ export function renderWrappedPrompt(envelope: LoopEnvelope): string {
       envelope.guidance.supportingPatterns.map((pattern) => `${pattern.title} | ${pattern.path}`),
     ),
     ...renderBulletSection("Next reads", envelope.guidance.nextReads),
+    "# Datalox Reusable-Gap Protocol",
+    "Only if you discover a reusable gap, recurring workflow, or repeated failure worth remembering, append plain text marker lines at the very end of your response:",
+    "- DATALOX_SUMMARY: one-line summary of the reusable gap",
+    "- DATALOX_TITLE: short title for the future page or skill",
+    "- DATALOX_SIGNAL: concrete signal or failure symptom",
+    "- DATALOX_INTERPRETATION: why this gap is reusable",
+    "- DATALOX_ACTION: what the next agent should do",
+    "- DATALOX_OBSERVATION: optional repeated observations (repeatable)",
+    "- DATALOX_TAG: optional tags (repeatable)",
+    "If there is no reusable gap, do not emit any DATALOX_* lines.",
+    "",
     "# Original Prompt",
     envelope.originalPrompt,
   ];
@@ -146,21 +181,26 @@ export function renderWrappedPrompt(envelope: LoopEnvelope): string {
 
 export async function buildLoopEnvelope(input: LoopEnvelopeInput): Promise<LoopEnvelope> {
   const repoPath = path.resolve(input.repoPath ?? process.cwd());
-  const resolution = await resolveLoop({
-    repoPath,
-    task: input.task,
-    workflow: input.workflow,
-    step: input.step,
-    skill: input.skill,
-    limit: input.limit,
-    includeContent: input.includeContent,
-  });
+  const bootstrap = await autoBootstrapIfSafe({ repoPath });
+  const resolution = bootstrap.probeAfter.status === "ready"
+    ? await resolveLoop({
+      repoPath,
+      task: input.task,
+      workflow: input.workflow,
+      step: input.step,
+      skill: input.skill,
+      limit: input.limit,
+      includeContent: input.includeContent,
+    })
+    : null;
   const originalPrompt = toPrompt(input);
-  const guidance = summarizeResolution(resolution);
+  const guidance = summarizeResolution(resolution, input.workflow);
   const baseEnvelope = {
     repoPath,
+    active: resolution !== null,
     originalPrompt,
     resolution,
+    bootstrap,
     guidance,
     wrappedPrompt: "",
   };
@@ -377,7 +417,7 @@ export async function finalizeWrappedRun(
   input: WrapperPostRunInput & { hostKind: string },
 ): Promise<WrapperPostRunResult> {
   const postRunMode = input.postRunMode ?? "auto";
-  if (postRunMode === "off" || !child) {
+  if (postRunMode === "off" || !child || !envelope.active) {
     return {
       mode: "off",
       trigger: "disabled",

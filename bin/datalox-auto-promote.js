@@ -182,6 +182,24 @@ function resolveRepoPath(args, payload) {
   return path.resolve(candidate);
 }
 
+function runAutoBootstrap(packRoot, repoPath) {
+  const entrypoint = path.join(packRoot, "dist", "src", "cli", "main.js");
+  if (!existsSync(entrypoint)) {
+    return null;
+  }
+
+  const result = spawnSync(process.execPath, [entrypoint, "auto-bootstrap", "--repo", repoPath, "--json"], {
+    cwd: repoPath,
+    encoding: "utf8",
+  });
+
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || result.stdout.trim() || "auto-bootstrap failed");
+  }
+
+  return parseJson(result.stdout);
+}
+
 function buildObservations(changedPaths, payload) {
   const observations = [];
   if (changedPaths.length > 0) {
@@ -205,12 +223,15 @@ async function main() {
   }
 
   const repoPath = resolveRepoPath(args, payload);
+  const packRoot = resolvePackRoot(args);
   const configPath = path.join(repoPath, ".datalox", "config.json");
   if (!existsSync(configPath)) {
-    return;
+    runAutoBootstrap(packRoot, repoPath);
+    if (!existsSync(configPath)) {
+      return;
+    }
   }
 
-  const packRoot = resolvePackRoot(args);
   const transcriptPath = typeof args["transcript-path"] === "string"
     ? args["transcript-path"]
     : payload?.transcript_path ?? payload?.transcriptPath;

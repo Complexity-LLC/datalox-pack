@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,6 +24,14 @@ describe("wrapper surfaces", () => {
     });
     expect(adopt.status).toBe(0);
     return hostDir;
+  }
+
+  async function initGitRepo(repoPath: string): Promise<void> {
+    const result = spawnSync("git", ["init"], {
+      cwd: repoPath,
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(0);
   }
 
   it("builds a wrapped prompt for fallback CLI hosts", async () => {
@@ -94,7 +102,7 @@ describe("wrapper surfaces", () => {
     expect(result.stderr).toContain("[datalox-wrap] record");
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
     expect((await readdir(path.join(hostDir, "agent-wiki", "events"))).length).toBe(1);
-  });
+  }, 10000);
 
   it("runs the Codex wrapper with a fake codex binary and preserves the resolved prompt envelope", async () => {
     const hostDir = await adoptHostRepo();
@@ -134,6 +142,177 @@ describe("wrapper surfaces", () => {
     expect(result.stderr).toContain("[datalox-codex] record");
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
   });
+
+  it("infers the prompt from raw codex exec args when no explicit Datalox prompt is given", async () => {
+    const hostDir = await adoptHostRepo();
+    const fakeCodexPath = path.join(hostDir, "fake-codex.sh");
+    await writeFile(
+      fakeCodexPath,
+      "#!/usr/bin/env bash\nnode -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL}))' \"$@\"\n",
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--codex-bin",
+        fakeCodexPath,
+        "--",
+        "exec",
+        "--skip-git-repo-check",
+        "Update the pack docs to mention wrappers.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.skill).toBe("repo-engineering.evolve-portable-pack");
+    expect(parsed.args[0]).toBe("exec");
+    expect(parsed.args[2]).toContain("# Datalox Loop Guidance");
+    expect(parsed.args[2]).toContain("Update the pack docs to mention wrappers.");
+  }, 10000);
+
+  it("sanitizes Codex output files when the child uses -o", async () => {
+    const hostDir = await adoptHostRepo();
+    const fakeCodexPath = path.join(hostDir, "fake-codex-output.sh");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env bash
+node - <<'EOF' "$@"
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+let outputPath;
+for (let index = 0; index < args.length; index += 1) {
+  const arg = args[index];
+  if (arg === "-o" || arg === "--output-last-message") {
+    outputPath = args[index + 1];
+    break;
+  }
+  if (arg.startsWith("--output-last-message=")) {
+    outputPath = arg.slice("--output-last-message=".length);
+    break;
+  }
+}
+const payload = [
+  "DATALOX_TITLE: Wrapper output sanitation",
+  "DATALOX_SIGNAL: marker lines leaked into the codex output file",
+  "DATALOX_INTERPRETATION: the wrapper should scrub Datalox markers from user-facing output artifacts",
+  "DATALOX_ACTION: strip the marker lines before leaving the output file on disk",
+  "Visible answer only",
+].join("\\n");
+if (outputPath) {
+  fs.writeFileSync(outputPath, payload, "utf8");
+}
+process.stdout.write(payload);
+EOF
+`,
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const outputFile = path.join(hostDir, "codex-last-message.txt");
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--codex-bin",
+        fakeCodexPath,
+        "--",
+        "exec",
+        "-o",
+        outputFile,
+        "Inspect the onboarding path.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("Visible answer only");
+    expect(await readFile(outputFile, "utf8")).toBe("Visible answer only");
+  }, 10000);
+
+  it("auto-bootstraps a clean git repo on first wrapped Codex run", async () => {
+    const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-wrapper-auto-"));
+    tempDirs.push(hostDir);
+    await initGitRepo(hostDir);
+    const fakeCodexPath = path.join(hostDir, "fake-codex-bootstrap.sh");
+    await writeFile(
+      fakeCodexPath,
+      "#!/usr/bin/env bash\nnode -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL, repo: process.env.DATALOX_REPO_PATH}))' \"$@\"\n",
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--codex-bin",
+        fakeCodexPath,
+        "--",
+        "exec",
+        "Explain the repo onboarding path.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.repo).toBe(hostDir);
+    expect(parsed.args[1]).toContain("# Datalox Loop Guidance");
+    expect(await readFile(path.join(hostDir, ".datalox", "install.json"), "utf8")).toContain("\"installMode\": \"auto\"");
+    expect(await readFile(path.join(hostDir, "DATALOX.md"), "utf8")).toContain("Datalox");
+  }, 10000);
+
+  it("refuses auto-bootstrap when partial Datalox-owned paths already exist", async () => {
+    const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-wrapper-blocked-"));
+    tempDirs.push(hostDir);
+    await initGitRepo(hostDir);
+    await mkdir(path.join(hostDir, "agent-wiki"), { recursive: true });
+    await writeFile(path.join(hostDir, "agent-wiki", "hot.md"), "# partial\n", "utf8");
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "wrap",
+        "prompt",
+        "--repo",
+        hostDir,
+        "--prompt",
+        "Just answer normally.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("Just answer normally.");
+    expect(spawnSync("test", ["-f", path.join(hostDir, ".datalox", "install.json")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-f", path.join(hostDir, "DATALOX.md")]).status).not.toBe(0);
+  }, 10000);
 
   it("owns the full loop for repeated no-match failures and creates a new skill", async () => {
     const hostDir = await adoptHostRepo();
@@ -196,5 +375,5 @@ describe("wrapper surfaces", () => {
     expect(await readFile(path.join(hostDir, "bin", "datalox-codex.js"), "utf8")).toContain("\"codex\"");
     expect(await readFile(path.join(hostDir, "bin", "datalox-wrap.js"), "utf8")).toContain("\"wrap\"");
     expect(await readFile(path.join(hostDir, "skills", "host-cli-wrapper", "SKILL.md"), "utf8")).toContain("Host CLI Wrapper");
-  });
+  }, 10000);
 });

@@ -88,6 +88,15 @@ copy_tree_if_missing "$PACK_ROOT/agent-wiki/concepts" "$HOST_REPO/agent-wiki/con
 copy_tree_if_missing "$PACK_ROOT/agent-wiki/comparisons" "$HOST_REPO/agent-wiki/comparisons"
 copy_tree_if_missing "$PACK_ROOT/agent-wiki/questions" "$HOST_REPO/agent-wiki/questions"
 
+cat > "$HOST_REPO/.datalox/install.json" <<EOF
+{
+  "version": 1,
+  "installedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "installMode": "manual",
+  "packRootPath": "$PACK_ROOT"
+}
+EOF
+
 echo
 echo "Datalox adopted into host repo:"
 echo "  $HOST_REPO"
