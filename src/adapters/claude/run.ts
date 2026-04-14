@@ -1,0 +1,132 @@
+import {
+  buildLoopEnvelope,
+  finalizeWrappedRun,
+  runWrappedCommand,
+  sanitizeWrappedCommandResult,
+  type LoopEnvelopeInput,
+  type WrapperPostRunInput,
+} from "../shared.js";
+
+export interface ClaudeWrapperInput extends LoopEnvelopeInput, WrapperPostRunInput {
+  claudeBin?: string;
+  claudeArgs?: string[];
+}
+
+const CLAUDE_OPTIONS_WITH_VALUES = new Set([
+  "-r",
+  "--resume",
+  "--model",
+  "--permission-mode",
+  "--allowedTools",
+  "--disallowedTools",
+  "--mcp-config",
+  "--append-system-prompt",
+  "--system-prompt",
+  "--output-format",
+  "--input-format",
+  "--cwd",
+]);
+
+const CLAUDE_NO_VALUE_FLAGS = new Set([
+  "-p",
+  "--print",
+  "-c",
+  "--continue",
+]);
+
+const CLAUDE_PASSTHROUGH_COMMANDS = new Set([
+  "mcp",
+  "update",
+  "config",
+]);
+
+function findClaudePromptIndex(args: string[]): number {
+  if (args.length === 0) {
+    return -1;
+  }
+
+  const first = args[0];
+  if (CLAUDE_PASSTHROUGH_COMMANDS.has(first)) {
+    return -1;
+  }
+
+  let promptIndex = -1;
+  let skipNext = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (skipNext) {
+      skipNext = false;
+      continue;
+    }
+    if (arg === "--") {
+      break;
+    }
+    if (arg.startsWith("--") && arg.includes("=")) {
+      continue;
+    }
+    if (CLAUDE_OPTIONS_WITH_VALUES.has(arg)) {
+      skipNext = true;
+      continue;
+    }
+    if (CLAUDE_NO_VALUE_FLAGS.has(arg)) {
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      continue;
+    }
+    promptIndex = index;
+  }
+
+  return promptIndex;
+}
+
+function inferPromptFromClaudeArgs(args: string[]): string | undefined {
+  const promptIndex = findClaudePromptIndex(args);
+  return promptIndex === -1 ? undefined : args[promptIndex];
+}
+
+export async function runClaudeWrapper(input: ClaudeWrapperInput) {
+  const claudeBin = input.claudeBin ?? process.env.DATALOX_CLAUDE_BIN ?? "claude";
+  const claudeArgs = input.claudeArgs && input.claudeArgs.length > 0
+    ? [...input.claudeArgs]
+    : [];
+  const inferredPrompt = input.prompt ?? inferPromptFromClaudeArgs(claudeArgs) ?? input.task;
+  const envelope = await buildLoopEnvelope({
+    ...input,
+    prompt: inferredPrompt,
+  });
+
+  const promptIndex = findClaudePromptIndex(claudeArgs);
+  let finalArgs: string[];
+  if (claudeArgs.some((arg) => arg.includes("__DATALOX_PROMPT__"))) {
+    finalArgs = claudeArgs;
+  } else if (promptIndex !== -1) {
+    finalArgs = [...claudeArgs];
+    finalArgs[promptIndex] = envelope.wrappedPrompt;
+  } else {
+    finalArgs = [...claudeArgs];
+  }
+
+  const executed = runWrappedCommand(claudeBin, finalArgs, envelope, {
+    cwd: envelope.repoPath,
+  });
+  const sanitized = sanitizeWrappedCommandResult(executed);
+
+  return {
+    envelope,
+    child: sanitized.child,
+    postRun: await finalizeWrappedRun(envelope, executed, {
+      hostKind: "claude",
+      task: input.task,
+      workflow: input.workflow,
+      step: input.step,
+      skillId: input.skillId,
+      summary: input.summary,
+      tags: input.tags,
+      eventKind: input.eventKind,
+      postRunMode: input.postRunMode,
+      minWikiOccurrences: input.minWikiOccurrences,
+      minSkillOccurrences: input.minSkillOccurrences,
+    }),
+  };
+}

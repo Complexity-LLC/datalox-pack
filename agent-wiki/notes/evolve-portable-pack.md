@@ -1,5 +1,5 @@
 ---
-type: pattern
+type: note
 title: Evolve portable pack
 workflow: repo_engineering
 skill: repo-engineering.evolve-portable-pack
@@ -10,7 +10,7 @@ tags:
 confidence: high
 status: active
 related:
-  - agent-wiki/patterns/repo-engineering-multi-agent-bootstrap-surfaces.md
+  - agent-wiki/notes/repo-engineering-multi-agent-bootstrap-surfaces.md
   - agent-wiki/concepts/loop-bridge.md
   - agent-wiki/questions/when-should-a-new-skill-be-created.md
 sources:
@@ -57,6 +57,6 @@ If a new layer is required to keep host integration reliable, add it only when i
 
 ## Related
 
-- agent-wiki/patterns/repo-engineering-multi-agent-bootstrap-surfaces.md
+- agent-wiki/notes/repo-engineering-multi-agent-bootstrap-surfaces.md
 - agent-wiki/concepts/loop-bridge.md
 - agent-wiki/questions/when-should-a-new-skill-be-created.md

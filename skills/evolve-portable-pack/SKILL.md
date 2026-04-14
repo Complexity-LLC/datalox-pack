@@ -6,9 +6,9 @@ metadata:
     id: repo-engineering.evolve-portable-pack
     workflow: repo_engineering
     trigger: Use when changing the portable pack or agent guidance in this repo.
-    pattern_paths:
-      - agent-wiki/meta/evolve-portable-pack.md
-      - agent-wiki/patterns/repo-engineering-multi-agent-bootstrap-surfaces.md
+    note_paths:
+      - agent-wiki/notes/evolve-portable-pack.md
+      - agent-wiki/notes/repo-engineering-multi-agent-bootstrap-surfaces.md
     tags:
       - repo_engineering
       - portable_pack
@@ -40,7 +40,7 @@ Use this skill when changing the portable pack itself, its instruction surfaces,
 ## When to Use
 
 - Editing `DATALOX.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`, or `docs/agent-configuration.md`
-- Changing how skills, pattern docs, or control artifacts are written
+- Changing how skills, notes, or control artifacts are written
 - Changing bootstrap, adoption, or multi-agent discovery behavior
 - Changing scripts under `scripts/` that implement detect, use, patch, or lint
 
@@ -53,16 +53,16 @@ Use this skill when changing the portable pack itself, its instruction surfaces,
 ## Workflow
 
 1. Confirm the change is really about the portable pack and not the backend service.
-2. Read the linked pattern docs before editing behavior or instructions.
+2. Read the linked notes before editing behavior or instructions.
 3. Preserve the minimal loop: detect -> use -> patch -> lint.
 4. Keep Datalox additive to the agent's native skills. Do not replace or shadow built-in skill behavior.
-5. Keep writes in the host repo. Seed knowledge can be read from the pack, but generated skills and pattern docs belong in the host repo.
+5. Keep writes in the host repo. Seed knowledge can be read from the pack, but generated skills and notes belong in the host repo.
 6. When changing adoption or control behavior, update the visible artifacts and instruction surfaces together.
 
 ## Checks Before Editing
 
 - Keep skill bodies operational, not metadata-heavy.
-- Prefer plain markdown skills and pattern docs over extra configuration layers.
+- Prefer plain markdown skills and notes over extra configuration layers.
 - Make the benefit visible in `agent-wiki/index.md`, `agent-wiki/log.md`, and `agent-wiki/lint.md`.
 - Avoid pack-only abstractions that another agent cannot discover from the repo.
 
@@ -70,10 +70,10 @@ Use this skill when changing the portable pack itself, its instruction surfaces,
 
 - Explain why this skill matched.
 - State the concrete pack behavior you are changing.
-- State which instruction files, skill files, or pattern docs were updated.
+- State which instruction files, skill files, or notes were updated.
 - State whether detect, use, patch, and lint still form a coherent loop.
 
-## Pattern Docs
+## Notes
 
-- agent-wiki/meta/evolve-portable-pack.md
-- agent-wiki/patterns/repo-engineering-multi-agent-bootstrap-surfaces.md
+- agent-wiki/notes/evolve-portable-pack.md
+- agent-wiki/notes/repo-engineering-multi-agent-bootstrap-surfaces.md

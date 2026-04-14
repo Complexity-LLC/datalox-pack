@@ -11,8 +11,10 @@ import {
   recordTurnResult,
   resolveLoop,
 } from "../core/packCore.js";
+import { capturePdfArtifact } from "../core/pdfCapture.js";
 import { publishWebCapture } from "../core/publishWebCapture.js";
 import { captureDesignFromUrl, captureWebArtifact } from "../core/webCapture.js";
+import { runClaudeWrapper } from "../adapters/claude/run.js";
 import { runCodexWrapper } from "../adapters/codex/run.js";
 import { runGenericWrapper } from "../adapters/generic/run.js";
 import { parseCliArgs, toStringArray } from "./args.js";
@@ -23,16 +25,18 @@ function usage(): string {
     "  datalox adopt <host-repo-path> [--pack-source <path-or-git-url>] [--json]",
     "  datalox probe-bootstrap [--repo <path>] [--json]",
     "  datalox auto-bootstrap [--repo <path>] [--pack-source <path-or-git-url>] [--json]",
-    "  datalox capture-web [--repo <path>] --url <url> [--artifact <design-doc|source-page>] [--title <title>] [--slug <slug>] [--output <path>] [--json]",
+    "  datalox capture-web [--repo <path>] --url <url> [--artifact <design-doc|design-tokens|css-variables|tailwind-theme|note|source-page>] [--title <title>] [--slug <slug>] [--output <path>] [--json]",
     "  datalox capture-design [--repo <path>] --url <url> [--title <title>] [--slug <slug>] [--output <path>] [--json]",
+    "  datalox capture-pdf [--repo <path>] --path <pdf-path> [--title <title>] [--slug <slug>] [--source-url <url>] [--json]",
     "  datalox publish-web-capture [--repo <path>] --capture <slug> [--bucket <bucket>] [--prefix <prefix>] [--public-base-url <url>] [--json]",
     "  datalox resolve [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--limit <n>] [--include-content] [--json]",
-    "  datalox record [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--tag <tag>] [--event-kind <kind>] [--json]",
+    "  datalox record [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--changed-file <path>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--outcome <text>] [--tag <tag>] [--event-kind <kind>] [--json]",
     "  datalox patch [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--tag <tag>] [--json]",
-    "  datalox promote [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--tag <tag>] [--event-kind <kind>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--json]",
+    "  datalox promote [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--changed-file <path>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--outcome <text>] [--tag <tag>] [--event-kind <kind>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--json]",
     "  datalox lint [--repo <path>] [--json]",
     "  datalox wrap prompt [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--json]",
     "  datalox wrap command [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--json] -- <command> [args with __DATALOX_PROMPT__ placeholders]",
+    "  datalox claude [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--claude-bin <path>] [--json] [-- <claude args>]",
     "  datalox codex [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--codex-bin <path>] [--json] [-- <codex exec args>]",
   ].join("\n");
 }
@@ -51,6 +55,23 @@ function parsePositiveInt(value: string | string[] | boolean | undefined): numbe
   }
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseWebArtifactType(value: string | undefined): "design_doc" | "design_tokens" | "css_variables" | "tailwind_theme" | "note" | "source_page" {
+  switch (value) {
+    case "source-page":
+      return "source_page";
+    case "design-tokens":
+      return "design_tokens";
+    case "css-variables":
+      return "css_variables";
+    case "tailwind-theme":
+      return "tailwind_theme";
+    case "note":
+      return "note";
+    default:
+      return "design_doc";
+  }
 }
 
 function writePostRunSummary(prefix: string, postRun: unknown): void {
@@ -93,14 +114,7 @@ async function main(): Promise<void> {
         hostRepoPath,
         packSource: typeof args["pack-source"] === "string" ? args["pack-source"] : undefined,
       });
-      if (asJson) {
-        writeResult(result, true);
-        return;
-      }
-      process.stdout.write(`Host repo: ${result.hostRepoPath}\n`);
-      process.stdout.write(`Pack source: ${result.packRootPath}\n`);
-      process.stdout.write(`Copied: ${result.copied.length}\n`);
-      process.stdout.write(`Skipped: ${result.skipped.length}\n`);
+      writeResult(result, true);
       return;
     }
     case "probe-bootstrap": {
@@ -120,8 +134,7 @@ async function main(): Promise<void> {
       if (typeof args.url !== "string") {
         throw new Error("capture-web requires --url <url>");
       }
-      const artifact = typeof args.artifact === "string" ? args.artifact : "design-doc";
-      const artifactType = artifact === "source-page" ? "source_page" : "design_doc";
+      const artifactType = parseWebArtifactType(typeof args.artifact === "string" ? args.artifact : "design-doc");
       const result = await captureWebArtifact({
         repoPath: typeof args.repo === "string" ? args.repo : undefined,
         url: args.url,
@@ -130,16 +143,21 @@ async function main(): Promise<void> {
         artifactType,
         outputPath: typeof args.output === "string" ? args.output : undefined,
       });
-      if (asJson) {
-        writeResult(result, true);
-        return;
+      writeResult(result, true);
+      return;
+    }
+    case "capture-pdf": {
+      if (typeof args.path !== "string") {
+        throw new Error("capture-pdf requires --path <pdf-path>");
       }
-      if (result.artifactPath) {
-        process.stdout.write(`Artifact: ${result.artifactPath}\n`);
-      }
-      process.stdout.write(`Source page: ${result.sourcePagePath}\n`);
-      process.stdout.write(`Desktop screenshot: ${result.screenshotPaths.desktop}\n`);
-      process.stdout.write(`Mobile screenshot: ${result.screenshotPaths.mobile}\n`);
+      const result = await capturePdfArtifact({
+        repoPath: typeof args.repo === "string" ? args.repo : undefined,
+        path: args.path,
+        title: typeof args.title === "string" ? args.title : undefined,
+        slug: typeof args.slug === "string" ? args.slug : undefined,
+        sourceUrl: typeof args["source-url"] === "string" ? args["source-url"] : undefined,
+      });
+      writeResult(result, true);
       return;
     }
     case "capture-design": {
@@ -153,16 +171,7 @@ async function main(): Promise<void> {
         slug: typeof args.slug === "string" ? args.slug : undefined,
         outputPath: typeof args.output === "string" ? args.output : undefined,
       });
-      if (asJson) {
-        writeResult(result, true);
-        return;
-      }
-      if (result.artifactPath) {
-        process.stdout.write(`Artifact: ${result.artifactPath}\n`);
-      }
-      process.stdout.write(`Source page: ${result.sourcePagePath}\n`);
-      process.stdout.write(`Desktop screenshot: ${result.screenshotPaths.desktop}\n`);
-      process.stdout.write(`Mobile screenshot: ${result.screenshotPaths.mobile}\n`);
+      writeResult(result, true);
       return;
     }
     case "publish-web-capture": {
@@ -176,12 +185,7 @@ async function main(): Promise<void> {
         prefix: typeof args.prefix === "string" ? args.prefix : undefined,
         publicBaseUrl: typeof args["public-base-url"] === "string" ? args["public-base-url"] : undefined,
       });
-      if (asJson) {
-        writeResult(result, true);
-        return;
-      }
-      process.stdout.write(`Manifest: ${result.manifestKey}\n`);
-      process.stdout.write(`Index: ${result.indexKey}\n`);
+      writeResult(result, true);
       return;
     }
     case "resolve": {
@@ -195,22 +199,7 @@ async function main(): Promise<void> {
         limit: Number.isFinite(limit) ? limit : undefined,
         includeContent: args["include-content"] === true,
       });
-      if (asJson) {
-        writeResult(result, true);
-        return;
-      }
-      process.stdout.write(`Selection basis: ${result.selectionBasis}\n`);
-      process.stdout.write(`Workflow: ${result.workflow}\n`);
-      for (const match of result.matches) {
-        process.stdout.write(`Skill: ${match.skill.id}\n`);
-        process.stdout.write(`Why matched: ${match.loopGuidance.whyMatched.join("; ")}\n`);
-        if (match.loopGuidance.whatToDoNow.length > 0) {
-          process.stdout.write(`What to do now:\n`);
-          for (const line of match.loopGuidance.whatToDoNow) {
-            process.stdout.write(`- ${line}\n`);
-          }
-        }
-      }
+      writeResult(result, true);
       return;
     }
     case "record": {
@@ -222,21 +211,17 @@ async function main(): Promise<void> {
         skillId: typeof args.skill === "string" ? args.skill : undefined,
         summary: typeof args.summary === "string" ? args.summary : undefined,
         observations: toStringArray(args.observation),
+        changedFiles: toStringArray(args["changed-file"]),
         transcript: typeof args.transcript === "string" ? args.transcript : undefined,
         tags: toStringArray(args.tag),
         title: typeof args.title === "string" ? args.title : undefined,
         signal: typeof args.signal === "string" ? args.signal : undefined,
         interpretation: typeof args.interpretation === "string" ? args.interpretation : undefined,
         recommendedAction: typeof args.action === "string" ? args.action : undefined,
+        outcome: typeof args.outcome === "string" ? args.outcome : undefined,
         eventKind: typeof args["event-kind"] === "string" ? args["event-kind"] : undefined,
       });
-      if (asJson) {
-        writeResult(result, true);
-        return;
-      }
-      process.stdout.write(`Event: ${result.event.relativePath}\n`);
-      process.stdout.write(`Occurrences: ${result.occurrenceCount}\n`);
-      process.stdout.write(`Matched skill: ${result.resolution.matches[0]?.skill.id ?? "none"}\n`);
+      writeResult(result, true);
       return;
     }
     case "patch": {
@@ -255,13 +240,7 @@ async function main(): Promise<void> {
         interpretation: typeof args.interpretation === "string" ? args.interpretation : undefined,
         recommendedAction: typeof args.action === "string" ? args.action : undefined,
       });
-      if (asJson) {
-        writeResult(result, true);
-        return;
-      }
-      process.stdout.write(`Pattern doc: ${result.pattern.filePath}\n`);
-      process.stdout.write(`Skill ${result.skill.operation}: ${result.skill.filePath}\n`);
-      process.stdout.write(`Top resolved skill: ${result.resolution.matches[0]?.skill.id ?? "none"}\n`);
+      writeResult(result, true);
       return;
     }
     case "promote": {
@@ -279,41 +258,26 @@ async function main(): Promise<void> {
         skillId: typeof args.skill === "string" ? args.skill : undefined,
         summary: typeof args.summary === "string" ? args.summary : undefined,
         observations: toStringArray(args.observation),
+        changedFiles: toStringArray(args["changed-file"]),
         transcript: typeof args.transcript === "string" ? args.transcript : undefined,
         tags: toStringArray(args.tag),
         title: typeof args.title === "string" ? args.title : undefined,
         signal: typeof args.signal === "string" ? args.signal : undefined,
         interpretation: typeof args.interpretation === "string" ? args.interpretation : undefined,
         recommendedAction: typeof args.action === "string" ? args.action : undefined,
+        outcome: typeof args.outcome === "string" ? args.outcome : undefined,
         eventKind: typeof args["event-kind"] === "string" ? args["event-kind"] : undefined,
         minWikiOccurrences: Number.isFinite(minWikiOccurrences) ? minWikiOccurrences : undefined,
         minSkillOccurrences: Number.isFinite(minSkillOccurrences) ? minSkillOccurrences : undefined,
       });
-      if (asJson) {
-        writeResult(result, true);
-        return;
-      }
-      process.stdout.write(`Decision: ${result.decision.action}\n`);
-      process.stdout.write(`Reason: ${result.decision.reason}\n`);
-      process.stdout.write(`Occurrences: ${result.decision.occurrenceCount}\n`);
-      if (result.promotion?.skill?.filePath) {
-        process.stdout.write(`Skill: ${result.promotion.skill.filePath}\n`);
-      }
-      if (result.promotion?.pattern?.filePath) {
-        process.stdout.write(`Pattern: ${result.promotion.pattern.filePath}\n`);
-      }
+      writeResult(result, true);
       return;
     }
     case "lint": {
       const result = await lintLocalPack({
         repoPath: typeof args.repo === "string" ? args.repo : undefined,
       });
-      if (asJson) {
-        writeResult(result, true);
-        return;
-      }
-      process.stdout.write(`OK: ${result.ok}\n`);
-      process.stdout.write(`Issue count: ${result.issueCount}\n`);
+      writeResult(result, true);
       return;
     }
     case "wrap": {
@@ -402,6 +366,39 @@ async function main(): Promise<void> {
         process.stderr.write(result.child.stderr);
       }
       writePostRunSummary("datalox-codex", result.postRun);
+      process.exit(result.child.exitCode);
+    }
+    case "claude": {
+      const claudeArgs = positional !== undefined ? [positional, ...rest] : rest;
+      const result = await runClaudeWrapper({
+        repoPath: typeof args.repo === "string" ? args.repo : undefined,
+        task: typeof args.task === "string" ? args.task : undefined,
+        workflow: typeof args.workflow === "string" ? args.workflow : undefined,
+        step: typeof args.step === "string" ? args.step : undefined,
+        skill: typeof args.skill === "string" ? args.skill : undefined,
+        prompt: typeof args.prompt === "string" ? args.prompt : undefined,
+        summary: typeof args.summary === "string" ? args.summary : undefined,
+        tags: toStringArray(args.tag),
+        eventKind: typeof args["event-kind"] === "string" ? args["event-kind"] : undefined,
+        postRunMode: typeof args["post-run-mode"] === "string"
+          ? args["post-run-mode"] as "off" | "record" | "auto" | "promote"
+          : undefined,
+        minWikiOccurrences: parsePositiveInt(args["min-wiki-occurrences"]),
+        minSkillOccurrences: parsePositiveInt(args["min-skill-occurrences"]),
+        claudeBin: typeof args["claude-bin"] === "string" ? args["claude-bin"] : undefined,
+        claudeArgs,
+      });
+      if (asJson) {
+        writeResult(result, true);
+        process.exit(result.child.exitCode);
+      }
+      if (result.child.stdout) {
+        process.stdout.write(result.child.stdout);
+      }
+      if (result.child.stderr) {
+        process.stderr.write(result.child.stderr);
+      }
+      writePostRunSummary("datalox-claude", result.postRun);
       process.exit(result.child.exitCode);
     }
     case "help":

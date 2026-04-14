@@ -15,14 +15,15 @@ const AGENT_PROFILES = ["local_first", "runtime_first"];
 const AGENT_INTERFACES = ["skill_loop", "runtime_compile"];
 const SOURCE_KINDS = ["local_repo"];
 const DEFAULT_WIKI_DIR = "agent-wiki";
-const DEFAULT_PATTERN_DIR = `${DEFAULT_WIKI_DIR}/patterns`;
+const DEFAULT_NOTE_DIR = `${DEFAULT_WIKI_DIR}/notes`;
 const DEFAULT_META_DIR = `${DEFAULT_WIKI_DIR}/meta`;
+const LEGACY_PATTERN_DIR = `${DEFAULT_WIKI_DIR}/patterns`;
 const DEFAULT_SOURCE_DIR = `${DEFAULT_WIKI_DIR}/sources`;
 const DEFAULT_CONCEPT_DIR = `${DEFAULT_WIKI_DIR}/concepts`;
 const DEFAULT_COMPARISON_DIR = `${DEFAULT_WIKI_DIR}/comparisons`;
 const DEFAULT_QUESTION_DIR = `${DEFAULT_WIKI_DIR}/questions`;
 const DEFAULT_EVENTS_DIR = `${DEFAULT_WIKI_DIR}/events`;
-const WIKI_PAGE_TYPES = ["pattern", "meta", "source", "concept", "comparison", "question"];
+const WIKI_PAGE_TYPES = ["note", "meta", "source", "concept", "comparison", "question"];
 
 async function fileExists(filePath) {
   try {
@@ -151,11 +152,23 @@ function validateAgentConfig(raw) {
     },
     paths: {
       seedSkillsDir: expectString(paths.seedSkillsDir, "paths.seedSkillsDir"),
-      seedPatternsDir: expectString(paths.seedPatternsDir, "paths.seedPatternsDir"),
+      seedNotesDir: paths.seedNotesDir === undefined
+        ? expectString(paths.seedPatternsDir, "paths.seedPatternsDir")
+        : expectString(paths.seedNotesDir, "paths.seedNotesDir"),
+      seedPatternsDir: paths.seedPatternsDir === undefined
+        ? null
+        : expectString(paths.seedPatternsDir, "paths.seedPatternsDir"),
       hostSkillsDir: paths.hostSkillsDir === null
         ? null
         : expectString(paths.hostSkillsDir, "paths.hostSkillsDir"),
-      hostPatternsDir: paths.hostPatternsDir === null
+      hostNotesDir: paths.hostNotesDir === undefined
+        ? (paths.hostPatternsDir === null
+          ? null
+          : expectString(paths.hostPatternsDir, "paths.hostPatternsDir"))
+        : (paths.hostNotesDir === null
+          ? null
+          : expectString(paths.hostNotesDir, "paths.hostNotesDir")),
+      hostPatternsDir: paths.hostPatternsDir === null || paths.hostPatternsDir === undefined
         ? null
         : expectString(paths.hostPatternsDir, "paths.hostPatternsDir"),
     },
@@ -519,6 +532,16 @@ function parseSkillDoc(filePath, content) {
   const datalox = isRecord(metadata.datalox) ? metadata.datalox : {};
   const name = frontmatter.name ?? inferSkillNameFromPath(filePath);
   const displayName = datalox.displayName ?? frontmatter.displayName ?? heading ?? name;
+  const notePaths = toArray(
+    datalox.notePaths
+    ?? datalox.note_paths
+    ?? frontmatter.notePaths
+    ?? frontmatter.note_paths
+    ?? datalox.patternPaths
+    ?? datalox.pattern_paths
+    ?? frontmatter.patternPaths
+    ?? frontmatter.pattern_paths,
+  );
 
   return {
     id: datalox.id ?? frontmatter.id ?? name,
@@ -527,7 +550,7 @@ function parseSkillDoc(filePath, content) {
     workflow: datalox.workflow ?? frontmatter.workflow ?? null,
     trigger: datalox.trigger ?? frontmatter.trigger ?? "",
     description: frontmatter.description ?? "",
-    patternPaths: toArray(datalox.patternPaths ?? frontmatter.patternPaths),
+    notePaths,
     repoHints: isRecord(datalox.repoHints)
       ? datalox.repoHints
       : isRecord(frontmatter.repoHints)
@@ -592,7 +615,7 @@ function renderSkillMarkdown(payload) {
         displayName: payload.displayName,
         workflow: payload.workflow,
         trigger: payload.trigger,
-        patternPaths: payload.patternPaths ?? [],
+        notePaths: payload.notePaths ?? [],
         tags: payload.tags ?? [],
         status: payload.status,
         maturity: payload.maturity,
@@ -608,11 +631,11 @@ function renderSkillMarkdown(payload) {
     .filter((line) => line !== null && line !== undefined)
     .join("\n");
 
-  const patternSection = (payload.patternPaths ?? []).length > 0
+  const noteSection = (payload.notePaths ?? []).length > 0
     ? [
-        "## Pattern Docs",
+        "## Notes",
         "",
-        ...(payload.patternPaths ?? []).map((patternPath) => `- ${patternPath}`),
+        ...(payload.notePaths ?? []).map((notePath) => `- ${notePath}`),
         "",
       ].join("\n")
     : null;
@@ -642,19 +665,19 @@ function renderSkillMarkdown(payload) {
     "## Workflow",
     "",
     "1. Confirm the current task really matches this skill.",
-    "2. Read the linked pattern docs before acting.",
-    "3. Apply the pattern docs' signal, interpretation, and recommended action to the current loop.",
-    "4. If the case exposes a reusable gap, add or update a pattern doc and patch this skill.",
+    "2. Read the linked notes before acting.",
+    "3. Apply the notes' signal, interpretation, action, and examples to the current loop.",
+    "4. If the case exposes a reusable gap, add or update a note and patch this skill.",
     "5. Run lint and refresh the visible control artifacts after patching knowledge.",
     "",
     "## Expected Output",
     "",
     "- State why this skill matched.",
-    "- State what to do now based on the linked pattern docs.",
+    "- State what to do now based on the linked notes.",
     "- State what to watch for if the case is ambiguous or risky.",
     "",
     checkFirstSection,
-    patternSection,
+    noteSection,
   ]
     .filter((line) => line !== null && line !== undefined)
     .join("\n");
@@ -699,16 +722,18 @@ export function resolvePackPaths(config, options = {}) {
     hostWikiDir: path.resolve(hostRoot, DEFAULT_WIKI_DIR),
     hostEventsDir: path.resolve(hostRoot, DEFAULT_EVENTS_DIR),
     hostSkillsDir: path.resolve(hostRoot, config.paths.hostSkillsDir ?? "skills"),
-    hostPatternsDir: path.resolve(hostRoot, config.paths.hostPatternsDir ?? DEFAULT_PATTERN_DIR),
+    hostNotesDir: path.resolve(hostRoot, config.paths.hostNotesDir ?? config.paths.hostPatternsDir ?? DEFAULT_NOTE_DIR),
     hostMetaDir: path.resolve(hostRoot, DEFAULT_META_DIR),
+    hostPatternsDir: path.resolve(hostRoot, config.paths.hostPatternsDir ?? LEGACY_PATTERN_DIR),
     hostSourcesDir: path.resolve(hostRoot, DEFAULT_SOURCE_DIR),
     hostConceptsDir: path.resolve(hostRoot, DEFAULT_CONCEPT_DIR),
     hostComparisonsDir: path.resolve(hostRoot, DEFAULT_COMPARISON_DIR),
     hostQuestionsDir: path.resolve(hostRoot, DEFAULT_QUESTION_DIR),
     seedWikiDir: path.resolve(seedRoot, DEFAULT_WIKI_DIR),
     seedSkillsDir: path.resolve(seedRoot, config.paths.seedSkillsDir),
-    seedPatternsDir: path.resolve(seedRoot, config.paths.seedPatternsDir),
+    seedNotesDir: path.resolve(seedRoot, config.paths.seedNotesDir ?? config.paths.seedPatternsDir ?? DEFAULT_NOTE_DIR),
     seedMetaDir: path.resolve(seedRoot, DEFAULT_META_DIR),
+    seedPatternsDir: path.resolve(seedRoot, config.paths.seedPatternsDir ?? LEGACY_PATTERN_DIR),
     seedSourcesDir: path.resolve(seedRoot, DEFAULT_SOURCE_DIR),
     seedConceptsDir: path.resolve(seedRoot, DEFAULT_CONCEPT_DIR),
     seedComparisonsDir: path.resolve(seedRoot, DEFAULT_COMPARISON_DIR),
@@ -813,10 +838,18 @@ async function readDirMarkdown(dirPath) {
   }
 
   const entries = await readdir(dirPath, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-    .sort((left, right) => left.name.localeCompare(right.name))
-    .map((entry) => path.join(dirPath, entry.name));
+  const files = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const filePath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await readDirMarkdown(filePath)));
+      continue;
+    }
+    if (entry.isFile() && entry.name.endsWith(".md")) {
+      files.push(filePath);
+    }
+  }
+  return files;
 }
 
 async function readDirJson(dirPath) {
@@ -866,12 +899,17 @@ async function listSkillEntries(config, cwd = process.cwd(), sourcePath) {
   );
 }
 
-async function listPatternEntries(config, cwd = process.cwd(), sourcePath) {
+async function listWikiEntries(config, cwd = process.cwd(), sourcePath) {
   const paths = resolvePackPaths(config, { cwd, sourcePath });
   const merged = new Map();
   const dirSpecs = [
     {
-      pageType: "pattern",
+      pageType: "note",
+      seedDir: paths.seedNotesDir,
+      hostDir: paths.hostNotesDir,
+    },
+    {
+      pageType: "note",
       seedDir: paths.seedPatternsDir,
       hostDir: paths.hostPatternsDir,
     },
@@ -935,6 +973,8 @@ async function listPatternEntries(config, cwd = process.cwd(), sourcePath) {
   return Array.from(merged.values()).sort((left, right) => left.relativePath.localeCompare(right.relativePath));
 }
 
+const listPatternEntries = listWikiEntries;
+
 async function resolvePatternFile(patternPath, cwd, sourcePath) {
   if (path.isAbsolute(patternPath)) {
     if (await fileExists(patternPath)) {
@@ -975,29 +1015,32 @@ async function resolvePatternFile(patternPath, cwd, sourcePath) {
 
 export async function countPackFiles(config, cwd = process.cwd(), sourcePath) {
   const paths = resolvePackPaths(config, { cwd, sourcePath });
-  const [skills, wikiEntries, hostSkills, seedSkills, hostPatterns, seedPatterns, hostEvents] = await Promise.all([
+  const [skills, wikiEntries, hostSkills, seedSkills, hostNotes, seedNotes, hostEvents] = await Promise.all([
     listSkillEntries(config, cwd, sourcePath),
-    listPatternEntries(config, cwd, sourcePath),
+    listWikiEntries(config, cwd, sourcePath),
     readSkillMarkdownEntries(paths.hostSkillsDir),
     pathKey(paths.hostSkillsDir) === pathKey(paths.seedSkillsDir)
       ? Promise.resolve([])
       : readSkillMarkdownEntries(paths.seedSkillsDir),
-    readDirMarkdown(paths.hostPatternsDir),
-    pathKey(paths.hostPatternsDir) === pathKey(paths.seedPatternsDir)
+    readDirMarkdown(paths.hostNotesDir),
+    pathKey(paths.hostNotesDir) === pathKey(paths.seedNotesDir)
       ? Promise.resolve([])
-      : readDirMarkdown(paths.seedPatternsDir),
+      : readDirMarkdown(paths.seedNotesDir),
     readDirJson(paths.hostEventsDir),
   ]);
 
   return {
     skills: skills.length,
-    patterns: wikiEntries.filter((entry) => entry.pageType === "pattern").length,
+    notes: wikiEntries.filter((entry) => entry.pageType === "note").length,
+    patterns: wikiEntries.filter((entry) => entry.pageType === "note").length,
     wikiPages: wikiEntries.length,
     events: hostEvents.length,
     hostSkills: hostSkills.length,
     seedSkills: seedSkills.length,
-    hostPatterns: hostPatterns.length,
-    seedPatterns: seedPatterns.length,
+    hostNotes: hostNotes.length,
+    seedNotes: seedNotes.length,
+    hostPatterns: hostNotes.length,
+    seedPatterns: seedNotes.length,
   };
 }
 
@@ -1032,14 +1075,14 @@ function sortByUpdatedAt(entries, docs) {
 
 function renderIndexMarkdown({ config, skills, wikiEntries, wikiDocs }) {
   const generatedAt = new Date().toISOString();
-  const patternUsage = new Map();
+  const noteUsage = new Map();
 
   for (const skillEntry of skills) {
-    for (const patternPath of toArray(skillEntry.value.patternPaths)) {
-      if (!patternUsage.has(patternPath)) {
-        patternUsage.set(patternPath, []);
+    for (const notePath of toArray(skillEntry.value.notePaths)) {
+      if (!noteUsage.has(notePath)) {
+        noteUsage.set(notePath, []);
       }
-      patternUsage.get(patternPath).push(skillEntry.value.id);
+      noteUsage.get(notePath).push(skillEntry.value.id);
     }
   }
 
@@ -1077,12 +1120,12 @@ function renderIndexMarkdown({ config, skills, wikiEntries, wikiDocs }) {
     if (skill.author) {
       lines.push(`- Author: ${skill.author}`);
     }
-    if (toArray(skill.patternPaths).length === 0) {
-      lines.push("- Pattern Docs: none");
+    if (toArray(skill.notePaths).length === 0) {
+      lines.push("- Notes: none");
     } else {
-      lines.push("- Pattern Docs:");
-      for (const patternPath of toArray(skill.patternPaths).sort(comparePaths)) {
-        lines.push(`  - ${patternPath}`);
+      lines.push("- Notes:");
+      for (const notePath of toArray(skill.notePaths).sort(comparePaths)) {
+        lines.push(`  - ${notePath}`);
       }
     }
     lines.push("");
@@ -1093,7 +1136,7 @@ function renderIndexMarkdown({ config, skills, wikiEntries, wikiDocs }) {
 
   const pageGroups = new Map();
   for (const entry of wikiEntries) {
-    const group = wikiDocs.get(entry.relativePath)?.pageType ?? entry.pageType ?? "pattern";
+    const group = wikiDocs.get(entry.relativePath)?.pageType ?? entry.pageType ?? "note";
     if (!pageGroups.has(group)) {
       pageGroups.set(group, []);
     }
@@ -1131,8 +1174,8 @@ function renderIndexMarkdown({ config, skills, wikiEntries, wikiDocs }) {
       if (doc?.author) {
         lines.push(`- Author: ${doc.author}`);
       }
-      if (pageType === "pattern" || pageType === "meta") {
-        const linkedSkills = unique(patternUsage.get(pageEntry.relativePath) ?? []).sort(comparePaths);
+      if (pageType === "note" || pageType === "meta") {
+        const linkedSkills = unique(noteUsage.get(pageEntry.relativePath) ?? []).sort(comparePaths);
         if (linkedSkills.length > 0) {
           lines.push("- Linked Skills:");
           for (const skillId of linkedSkills) {
@@ -1141,9 +1184,9 @@ function renderIndexMarkdown({ config, skills, wikiEntries, wikiDocs }) {
         } else {
           lines.push("- Linked Skills: none");
         }
-        if (doc?.recommendedAction) {
-          lines.push(`- Recommended Action: ${truncateLine(doc.recommendedAction)}`);
-        }
+      if (doc?.action) {
+        lines.push(`- Action: ${truncateLine(doc.action)}`);
+      }
       }
       if (doc?.related?.length > 0) {
         lines.push("- Related:");
@@ -1259,14 +1302,14 @@ async function writeHotSnapshot(config, cwd, sourcePath) {
   const { hostWikiDir } = resolvePackPaths(config, { cwd, sourcePath });
   const [skills, wikiEntries, logContent] = await Promise.all([
     listLocalSkills(config, cwd, sourcePath),
-    listPatternEntries(config, cwd, sourcePath),
+    listWikiEntries(config, cwd, sourcePath),
     readTextIfPresent(path.join(hostWikiDir, "log.md")),
   ]);
   const wikiDocs = new Map();
 
   for (const entry of wikiEntries) {
     const content = await readFile(entry.filePath, "utf8");
-    wikiDocs.set(entry.relativePath, parsePatternDoc(entry.relativePath, content, false));
+    wikiDocs.set(entry.relativePath, parseNoteDoc(entry.relativePath, content, false));
   }
 
   const recentLogLines = (logContent ?? "")
@@ -1319,13 +1362,13 @@ export async function refreshIndex(config, cwd = process.cwd(), sourcePath) {
   const { hostWikiDir } = resolvePackPaths(config, { cwd, sourcePath });
   const [skills, wikiEntries] = await Promise.all([
     listLocalSkills(config, cwd, sourcePath),
-    listPatternEntries(config, cwd, sourcePath),
+    listWikiEntries(config, cwd, sourcePath),
   ]);
   const wikiDocs = new Map();
 
   for (const entry of wikiEntries) {
     const content = await readFile(entry.filePath, "utf8");
-    wikiDocs.set(entry.relativePath, parsePatternDoc(entry.relativePath, content, false));
+    wikiDocs.set(entry.relativePath, parseNoteDoc(entry.relativePath, content, false));
   }
 
   const indexPath = path.join(hostWikiDir, "index.md");
@@ -1567,12 +1610,14 @@ function inferWikiPageType(relativePath, frontmatterType) {
   if (typeof frontmatterType === "string" && WIKI_PAGE_TYPES.includes(frontmatterType)) {
     return frontmatterType;
   }
+  if (relativePath.includes("/notes/")) return "note";
   if (relativePath.includes("/meta/")) return "meta";
   if (relativePath.includes("/sources/")) return "source";
   if (relativePath.includes("/concepts/")) return "concept";
   if (relativePath.includes("/comparisons/")) return "comparison";
   if (relativePath.includes("/questions/")) return "question";
-  return "pattern";
+  if (relativePath.includes("/patterns/")) return "note";
+  return "note";
 }
 
 function normalizeSectionList(lines = []) {
@@ -1683,9 +1728,9 @@ function parseWikiDoc(relativePath, content, includeContent) {
   };
 }
 
-function parsePatternDoc(relativePath, content, includeContent) {
+function parseNoteDoc(relativePath, content, includeContent) {
   const page = parseWikiDoc(relativePath, content, includeContent);
-  const { frontmatter, metadata, sections } = page;
+  const { sections } = page;
   const signal = (sections.signal ?? []).join(" ").trim();
   const whenToUse = (
     sections["when to use"]
@@ -1693,8 +1738,9 @@ function parsePatternDoc(relativePath, content, includeContent) {
     ?? []
   ).join(" ").trim();
   const interpretation = (sections.interpretation ?? []).join(" ").trim();
-  const recommendedAction = (
-    sections["recommended action"]
+  const action = (
+    sections.action
+    ?? sections["recommended action"]
     ?? sections.action
     ?? []
   ).join(" ").trim();
@@ -1711,7 +1757,7 @@ function parsePatternDoc(relativePath, content, includeContent) {
   ).join(" ").trim();
   const exceptions = (sections.exceptions ?? []).join(" ").trim();
   const evidence = page.evidenceLines.join(" ").trim();
-  const summary = page.summary ?? recommendedAction ?? interpretation ?? signal;
+  const summary = page.summary ?? action ?? interpretation ?? signal;
 
   return {
     path: relativePath,
@@ -1733,7 +1779,7 @@ function parsePatternDoc(relativePath, content, includeContent) {
     whenToUse,
     signal,
     interpretation,
-    recommendedAction,
+    action,
     doNot,
     exceptions,
     examples,
@@ -1742,17 +1788,17 @@ function parsePatternDoc(relativePath, content, includeContent) {
   };
 }
 
-async function loadPatternDoc(cwd, sourcePath, patternPath, includeContent) {
-  const resolvedPattern = await resolvePatternFile(patternPath, cwd, sourcePath);
-  if (!resolvedPattern) {
-    throw new Error(`Pattern doc not found: ${patternPath}`);
+async function loadNoteDoc(cwd, sourcePath, notePath, includeContent) {
+  const resolvedNote = await resolvePatternFile(notePath, cwd, sourcePath);
+  if (!resolvedNote) {
+    throw new Error(`Note not found: ${notePath}`);
   }
 
-  const content = await readFile(resolvedPattern.filePath, "utf8");
+  const content = await readFile(resolvedNote.filePath, "utf8");
   return {
-    ...parsePatternDoc(resolvedPattern.relativePath, content, includeContent),
-    filePath: resolvedPattern.filePath,
-    origin: resolvedPattern.origin,
+    ...parseNoteDoc(resolvedNote.relativePath, content, includeContent),
+    filePath: resolvedNote.filePath,
+    origin: resolvedNote.origin,
   };
 }
 
@@ -1788,23 +1834,25 @@ function explainSkillMatch(skill, query, repoContext) {
   return reasons;
 }
 
-function buildLoopGuidance(patternDocs, whyMatched) {
+function buildLoopGuidance(noteDocs, whyMatched) {
+  const supportingNotes = noteDocs.map((doc) => ({
+    path: doc.path,
+    title: doc.title,
+    interpretation: doc.interpretation || null,
+    action: doc.action || null,
+    related: doc.related ?? [],
+    sources: doc.sources ?? [],
+  }));
   return {
     whyMatched,
-    whatToDoNow: unique(patternDocs.map((doc) => doc.recommendedAction).filter(Boolean)),
-    watchFor: unique(patternDocs.map((doc) => doc.signal).filter(Boolean)),
-    interpretations: unique(patternDocs.map((doc) => doc.interpretation).filter(Boolean)),
+    whatToDoNow: unique(noteDocs.map((doc) => doc.action).filter(Boolean)),
+    watchFor: unique(noteDocs.map((doc) => doc.signal).filter(Boolean)),
+    interpretations: unique(noteDocs.map((doc) => doc.interpretation).filter(Boolean)),
     nextReads: unique(
-      patternDocs.flatMap((doc) => [...(doc.related ?? []), ...(doc.sources ?? [])]),
+      noteDocs.flatMap((doc) => [...(doc.related ?? []), ...(doc.sources ?? [])]),
     ),
-    supportingPatterns: patternDocs.map((doc) => ({
-      path: doc.path,
-      title: doc.title,
-      interpretation: doc.interpretation || null,
-      recommendedAction: doc.recommendedAction || null,
-      related: doc.related ?? [],
-      sources: doc.sources ?? [],
-    })),
+    supportingNotes,
+    supportingPatterns: supportingNotes,
   };
 }
 
@@ -1858,9 +1906,9 @@ export async function resolveLocalKnowledge(
 
   const matches = await Promise.all(
     ranked.map(async (item) => {
-      const patternDocs = await Promise.all(
-        toArray(item.skill.patternPaths).map((patternPath) =>
-          loadPatternDoc(cwd, sourcePath, patternPath, includeContent)
+      const noteDocs = await Promise.all(
+        toArray(item.skill.notePaths).map((notePath) =>
+          loadNoteDoc(cwd, sourcePath, notePath, includeContent)
         ),
       );
       const whyMatched = explainSkillMatch(
@@ -1879,8 +1927,9 @@ export async function resolveLocalKnowledge(
         skillPath: item.filePath,
         skillOrigin: item.origin,
         skill: item.skill,
-        patternDocs,
-        loopGuidance: buildLoopGuidance(patternDocs, whyMatched),
+        noteDocs,
+        patternDocs: noteDocs,
+        loopGuidance: buildLoopGuidance(noteDocs, whyMatched),
       };
     }),
   );
@@ -1914,7 +1963,7 @@ function resolveAuthor() {
   return process.env[AUTHOR_ENV] || process.env.USER || "unknown";
 }
 
-export async function writePatternDoc(
+export async function writeNoteDoc(
   {
     id,
     title,
@@ -1930,7 +1979,7 @@ export async function writePatternDoc(
   cwd = process.cwd(),
 ) {
   const { config, sourcePath } = await loadAgentConfig(cwd);
-  const { hostPatternsDir, hostRoot } = resolvePackPaths(config, { cwd, sourcePath });
+  const { hostNotesDir, hostRoot } = resolvePackPaths(config, { cwd, sourcePath });
   const stableId = id ?? `${workflow}-${slugify(title)}`;
   const author = resolveAuthor();
   const updatedAt = new Date().toISOString();
@@ -1938,10 +1987,14 @@ export async function writePatternDoc(
   const defaultWhenToUse = signal.trim().endsWith(".")
     ? signal.trim()
     : `${signal.trim()}.`;
+  const action = recommendedAction;
+  const filePath = path.join(hostNotesDir, `${slugify(stableId)}.md`);
+  const operation = (await fileExists(filePath)) ? "update_note" : "create_note";
   const content = [
     "---",
-    "type: pattern",
+    "type: note",
     `title: ${titleText}`,
+    `kind: trace`,
     `workflow: ${workflow}`,
     skillId ? `skill: ${skillId}` : null,
     tags.length > 0 ? "tags:" : "tags: []",
@@ -1960,8 +2013,7 @@ export async function writePatternDoc(
     "",
     "## When to Use",
     "",
-    `Use this pattern when ${defaultWhenToUse.charAt(0).toLowerCase()}${defaultWhenToUse.slice(1)}`,
-    "",
+    `Use this note when ${defaultWhenToUse.charAt(0).toLowerCase()}${defaultWhenToUse.slice(1)}`,
     "",
     "## Signal",
     "",
@@ -1971,13 +2023,13 @@ export async function writePatternDoc(
     "",
     interpretation,
     "",
-    "## Recommended Action",
+    "## Action",
     "",
-    recommendedAction,
+    action,
     "",
     "## Examples",
     "",
-    "- Add a concrete observed case here when this pattern repeats.",
+    "- Add a concrete observed case here when this note gets reused.",
     "",
     "## Evidence",
     "",
@@ -1989,17 +2041,18 @@ export async function writePatternDoc(
     "",
     ...(related.length > 0
       ? related.map((item) => `- ${item}`)
-      : ["- Add a wiki page path such as agent-wiki/concepts/example.md."]),
+      : ["- Add a wiki page path such as agent-wiki/notes/example.md."]),
     "",
   ]
     .filter(Boolean)
     .join("\n");
 
-  const filePath = await writeStableTextFile(hostPatternsDir, stableId, content);
+  await ensureDir(hostNotesDir);
+  await writeFile(filePath, content, "utf8");
   const relativePath = normalizePath(path.relative(hostRoot, filePath));
   const artifacts = await updateControlArtifacts(config, cwd, sourcePath, {
     logEntry: {
-      action: "patch_pattern",
+      action: operation,
       detail: `${title} for ${workflow}`,
       path: relativePath,
     },
@@ -2015,7 +2068,8 @@ export async function writePatternDoc(
       workflow,
       signal,
       interpretation,
-      recommendedAction,
+      action,
+      recommendedAction: action,
       skillId: skillId ?? null,
       related,
       sources,
@@ -2027,6 +2081,8 @@ export async function writePatternDoc(
   };
 }
 
+export const writePatternDoc = writeNoteDoc;
+
 export async function writeSkill(
   {
     id,
@@ -2036,7 +2092,7 @@ export async function writeSkill(
     workflow,
     trigger,
     description,
-    patternPaths = [],
+    notePaths = [],
     repoHints,
     tags = [],
     status,
@@ -2077,7 +2133,7 @@ export async function writeSkill(
     workflow,
     trigger,
     description,
-    patternPaths: unique([...(existing?.patternPaths ?? []), ...patternPaths]),
+    notePaths: unique([...(existing?.notePaths ?? []), ...notePaths]),
     repoHints: repoHints ?? existing?.repoHints,
     tags: unique([...(existing?.tags ?? []), ...tags]),
     status: status ?? existing?.status ?? "generated",
@@ -2090,6 +2146,7 @@ export async function writeSkill(
     author: resolveAuthor(),
     updatedAt: new Date().toISOString(),
   };
+  payload.patternPaths = payload.notePaths;
 
   await ensureDir(path.dirname(resolvedFilePath));
   const content = renderSkillMarkdown(payload);
@@ -2098,8 +2155,8 @@ export async function writeSkill(
     logEntry: {
       action: operation,
       detail: operation === "create_skill"
-        ? `${payload.id} created with ${payload.patternPaths.length} pattern doc(s)`
-        : `${payload.id} updated with ${payload.patternPaths.length} pattern doc(s)`,
+        ? `${payload.id} created with ${payload.notePaths.length} note(s)`
+        : `${payload.id} updated with ${payload.notePaths.length} note(s)`,
       path: normalizePath(path.relative(resolvePackPaths(config, { cwd, sourcePath }).hostRoot, writtenFilePath)),
     },
   });
@@ -2112,10 +2169,10 @@ export async function writeSkill(
   };
 }
 
-export async function attachPatternToSkill(
+export async function attachNoteToSkill(
   {
     skillId,
-    patternPath,
+    notePath,
   },
   cwd = process.cwd(),
 ) {
@@ -2130,7 +2187,23 @@ export async function attachPatternToSkill(
     {
       ...sourceSkill.value,
       filePath: sourceSkill.origin === "host" ? sourceSkill.filePath : undefined,
-      patternPaths: [...(sourceSkill.value.patternPaths ?? []), patternPath],
+      notePaths: [...(sourceSkill.value.notePaths ?? []), notePath],
+    },
+    cwd,
+  );
+}
+
+export async function attachPatternToSkill(
+  {
+    skillId,
+    patternPath,
+  },
+  cwd = process.cwd(),
+) {
+  return attachNoteToSkill(
+    {
+      skillId,
+      notePath: patternPath,
     },
     cwd,
   );
@@ -2187,13 +2260,13 @@ function derivePatternFields(input) {
 
   const interpretation = firstNonEmpty([
     input.interpretation,
-    `This interaction exposed a reusable pattern for ${input.workflow}.`,
-  ]) ?? `Pattern for ${input.workflow}`;
+    `This interaction exposed a reusable note for ${input.workflow}.`,
+  ]) ?? `Note for ${input.workflow}`;
 
   const recommendedAction = firstNonEmpty([
     input.recommendedAction,
-    "Reuse this pattern before changing the current workflow.",
-  ]) ?? "Reuse this pattern before continuing.";
+    "Reuse this note before changing the current workflow.",
+  ]) ?? "Reuse this note before continuing.";
 
   return {
     title: shortenSentence(title, 120),
@@ -2259,12 +2332,14 @@ export async function recordTurnResult(
     skillId,
     summary,
     observations = [],
+    changedFiles = [],
     transcript,
     tags = [],
     title,
     signal,
     interpretation,
     recommendedAction,
+    outcome,
     eventKind = "observation",
   },
   cwd = process.cwd(),
@@ -2319,17 +2394,20 @@ export async function recordTurnResult(
       step: step ?? null,
       summary: summary ?? null,
       observations,
+      changedFiles,
       transcript: transcript ?? null,
       title: derived.title,
       signal: derived.signal,
       interpretation: derived.interpretation,
       recommendedAction: derived.recommendedAction,
+      outcome: outcome ?? null,
       tags: unique([...tags, effectiveWorkflow]),
       fingerprint,
       explicitSkillId: skillId ?? null,
       matchedSkillId: reusableMatch?.skill.id ?? null,
       matchedSkillScore: reusableMatch?.score ?? null,
-      matchedPatternPaths: reusableMatch?.patternDocs?.map((doc) => doc.path) ?? [],
+      matchedNotePaths: reusableMatch?.noteDocs?.map((doc) => doc.path) ?? [],
+      matchedPatternPaths: reusableMatch?.noteDocs?.map((doc) => doc.path) ?? [],
     },
     cwd,
     sourcePath,
@@ -2347,8 +2425,8 @@ function decidePromotionAction({ occurrenceCount, matchedSkillId, minWikiOccurre
   if (matchedSkillId) {
     if (occurrenceCount >= minWikiOccurrences) {
       return {
-        action: "patch_skill_with_pattern",
-        reason: "repeated gap matched an existing skill, so patch the skill and supporting wiki.",
+        action: "patch_skill_with_note",
+        reason: "repeated gap matched an existing skill, so patch the skill and its linked note.",
       };
     }
     return {
@@ -2357,12 +2435,17 @@ function decidePromotionAction({ occurrenceCount, matchedSkillId, minWikiOccurre
     };
   }
 
-  if (occurrenceCount >= minWikiOccurrences) {
+  if (occurrenceCount >= minSkillOccurrences) {
     return {
       action: "create_skill_from_gap",
-      reason: occurrenceCount >= minSkillOccurrences
-        ? "repeated gap has no matching skill and crossed the new-skill threshold."
-        : "repeated gap has no matching skill, so create a live draft skill immediately.",
+      reason: "repeated gap has no matching skill and crossed the new-skill threshold.",
+    };
+  }
+
+  if (occurrenceCount >= minWikiOccurrences) {
+    return {
+      action: "create_note_from_gap",
+      reason: "repeated gap has no matching skill yet, so promote it into a reusable note first.",
     };
   }
 
@@ -2380,12 +2463,14 @@ export async function promoteGap(
     skillId,
     summary,
     observations = [],
+    changedFiles = [],
     transcript,
     tags = [],
     title,
     signal,
     interpretation,
     recommendedAction,
+    outcome,
     eventKind = "observation",
     minWikiOccurrences = 2,
     minSkillOccurrences = 3,
@@ -2400,12 +2485,14 @@ export async function promoteGap(
       skillId,
       summary,
       observations,
+      changedFiles,
       transcript,
       tags,
       title,
       signal,
       interpretation,
       recommendedAction,
+      outcome,
       eventKind,
     },
     cwd,
@@ -2436,8 +2523,8 @@ export async function promoteGap(
     || reusableMatch?.skill.workflow
     || recorded.event.payload.workflow;
 
-  if (decision.action === "create_wiki_pattern") {
-    const pattern = await writePatternDoc(
+  if (decision.action === "create_note_from_gap") {
+    const note = await writeNoteDoc(
       {
         title: recorded.event.payload.title,
         workflow: effectiveWorkflow,
@@ -2445,7 +2532,7 @@ export async function promoteGap(
         interpretation: recorded.event.payload.interpretation,
         recommendedAction: recorded.event.payload.recommendedAction,
         skillId: null,
-        related: unique(recorded.event.payload.matchedPatternPaths ?? []),
+        related: unique(recorded.event.payload.matchedNotePaths ?? []),
         sources: [],
         tags: unique([...(recorded.event.payload.tags ?? []), "promoted"]),
       },
@@ -2456,8 +2543,9 @@ export async function promoteGap(
       ...recorded,
       decision,
       promotion: {
-        pattern,
+        note,
         skill: null,
+        pattern: note,
       },
     };
   }
@@ -2467,7 +2555,7 @@ export async function promoteGap(
       task,
       workflow: effectiveWorkflow,
       step,
-      skillId: decision.action === "patch_skill_with_pattern" ? (skillId ?? reusableMatch?.skill.id) : undefined,
+      skillId: decision.action === "patch_skill_with_note" ? (skillId ?? reusableMatch?.skill.id) : undefined,
       summary,
       observations,
       transcript,
@@ -2553,17 +2641,17 @@ export async function learnFromInteraction(
 
   let inheritedRelated = [];
   let inheritedSources = [];
-  if (sourceSkill?.value?.patternPaths?.length) {
-    const existingPatternDocs = await Promise.all(
-      sourceSkill.value.patternPaths.map((patternPath) =>
-        loadPatternDoc(cwd, sourcePath, patternPath, false)
+  if (sourceSkill?.value?.notePaths?.length) {
+    const existingNoteDocs = await Promise.all(
+      sourceSkill.value.notePaths.map((notePath) =>
+        loadNoteDoc(cwd, sourcePath, notePath, false)
       ),
     );
-    inheritedRelated = unique(sourceSkill.value.patternPaths);
-    inheritedSources = unique(existingPatternDocs.flatMap((doc) => doc.sources ?? []));
+    inheritedRelated = unique(sourceSkill.value.notePaths);
+    inheritedSources = unique(existingNoteDocs.flatMap((doc) => doc.sources ?? []));
   }
 
-  const pattern = await writePatternDoc(
+  const note = await writeNoteDoc(
     {
       title: derived.title,
       workflow: effectiveWorkflow,
@@ -2591,7 +2679,7 @@ export async function learnFromInteraction(
       {
         ...sourceSkill.value,
         filePath: sourceSkill.origin === "host" ? sourceSkill.filePath : undefined,
-        patternPaths: [...(sourceSkill.value.patternPaths ?? []), pattern.relativePath],
+        notePaths: [...(sourceSkill.value.notePaths ?? []), note.relativePath],
         maturity: nextMaturity,
         evidenceCount: nextEvidenceCount,
         lastUsedAt: new Date().toISOString(),
@@ -2610,7 +2698,7 @@ export async function learnFromInteraction(
         workflow: effectiveWorkflow,
         trigger: firstNonEmpty([task, step, `Use when ${derived.signal}`]),
         description: firstNonEmpty([summary, derived.interpretation]),
-        patternPaths: [pattern.relativePath],
+        notePaths: [note.relativePath],
         tags: unique([...tags, effectiveWorkflow, "generated"]),
         status: "generated",
         maturity: nextMaturity,
@@ -2632,9 +2720,10 @@ export async function learnFromInteraction(
   );
 
   return {
-    pattern,
+    note,
     skill,
     resolution,
+    pattern: note,
   };
 }
 
@@ -2642,11 +2731,11 @@ export async function lintPack(cwd = process.cwd()) {
   const { config, sourcePath } = await loadAgentConfig(cwd);
   const [skills, wikiFiles] = await Promise.all([
     listLocalSkills(config, cwd, sourcePath),
-    listPatternEntries(config, cwd, sourcePath),
+    listWikiEntries(config, cwd, sourcePath),
   ]);
 
   const issues = [];
-  const referencedPatternPaths = new Set();
+  const referencedNotePaths = new Set();
   const referencedWikiPaths = new Set();
   const nameKeys = new Map();
   const triggerKeys = new Map();
@@ -2658,7 +2747,7 @@ export async function lintPack(cwd = process.cwd()) {
     if (!parsedDocs.has(entry.relativePath)) {
       parsedDocs.set(
         entry.relativePath,
-        parsePatternDoc(entry.relativePath, await readFile(entry.filePath, "utf8"), false),
+        parseNoteDoc(entry.relativePath, await readFile(entry.filePath, "utf8"), false),
       );
     }
     return parsedDocs.get(entry.relativePath);
@@ -2668,13 +2757,13 @@ export async function lintPack(cwd = process.cwd()) {
     const nameKey = `${skill.workflow}::${skill.name}`;
     const triggerKey = `${skill.workflow}::${skill.trigger}`;
 
-    if (!Array.isArray(skill.patternPaths) || skill.patternPaths.length === 0) {
+    if (!Array.isArray(skill.notePaths) || skill.notePaths.length === 0) {
       issues.push({
         level: "error",
-        code: "skill_missing_patterns",
+        code: "skill_missing_notes",
         skillId: skill.id,
         path: normalizePath(path.relative(cwd, filePath)),
-        message: "Skill must declare at least one pattern path.",
+        message: "Skill must declare at least one note path.",
       });
     }
 
@@ -2708,13 +2797,13 @@ export async function lintPack(cwd = process.cwd()) {
       });
     }
 
-    if (!hasMarkdownSection(skill.body, "Pattern Docs")) {
+    if (!hasMarkdownSection(skill.body, "Notes") && !hasMarkdownSection(skill.body, "Pattern Docs")) {
       issues.push({
         level: "warning",
-        code: "skill_missing_pattern_docs_section",
+        code: "skill_missing_notes_section",
         skillId: skill.id,
         path: normalizePath(path.relative(cwd, filePath)),
-        message: "Skill body should contain a 'Pattern Docs' section. See .datalox/skill.schema.md.",
+        message: "Skill body should contain a 'Notes' section. See .datalox/skill.schema.md.",
       });
     }
 
@@ -2742,84 +2831,84 @@ export async function lintPack(cwd = process.cwd()) {
       triggerKeys.set(triggerKey, filePath);
     }
 
-    for (const patternPath of toArray(skill.patternPaths)) {
-      referencedPatternPaths.add(normalizePath(patternPath));
-      referencedWikiPaths.add(normalizePath(patternPath));
-      const resolvedPattern = await resolvePatternFile(patternPath, cwd, sourcePath);
-      if (!resolvedPattern) {
+    for (const notePath of toArray(skill.notePaths)) {
+      referencedNotePaths.add(normalizePath(notePath));
+      referencedWikiPaths.add(normalizePath(notePath));
+      const resolvedNote = await resolvePatternFile(notePath, cwd, sourcePath);
+      if (!resolvedNote) {
         issues.push({
           level: "error",
-          code: "missing_pattern_doc",
+          code: "missing_note",
           skillId: skill.id,
           path: normalizePath(path.relative(cwd, filePath)),
-          message: `Pattern doc not found: ${patternPath}`,
+          message: `Note not found: ${notePath}`,
         });
         continue;
       }
 
-      const parsed = await parseDocForEntry(resolvedPattern);
+      const parsed = await parseDocForEntry(resolvedNote);
 
       if (!parsed.signal) {
         issues.push({
           level: "error",
-          code: "pattern_missing_signal",
+          code: "note_missing_signal",
           skillId: skill.id,
-          path: normalizePath(patternPath),
-          message: "Pattern doc is missing a Signal section. See agent-wiki/pattern.schema.md.",
+          path: normalizePath(notePath),
+          message: "Note is missing a Signal section. See agent-wiki/note.schema.md.",
         });
       }
       if (!parsed.interpretation) {
         issues.push({
           level: "error",
-          code: "pattern_missing_interpretation",
+          code: "note_missing_interpretation",
           skillId: skill.id,
-          path: normalizePath(patternPath),
-          message: "Pattern doc is missing an Interpretation section. See agent-wiki/pattern.schema.md.",
+          path: normalizePath(notePath),
+          message: "Note is missing an Interpretation section. See agent-wiki/note.schema.md.",
         });
       }
-      if (!parsed.recommendedAction) {
+      if (!parsed.action) {
         issues.push({
           level: "error",
-          code: "pattern_missing_action",
+          code: "note_missing_action",
           skillId: skill.id,
-          path: normalizePath(patternPath),
-          message: "Pattern doc is missing a Recommended Action section. See agent-wiki/pattern.schema.md.",
+          path: normalizePath(notePath),
+          message: "Note is missing an Action section. See agent-wiki/note.schema.md.",
         });
       }
       if (!parsed.whenToUse) {
         issues.push({
           level: "warning",
-          code: "pattern_missing_when_to_use",
+          code: "note_missing_when_to_use",
           skillId: skill.id,
-          path: normalizePath(patternPath),
-          message: "Pattern doc should contain a When to Use section. See agent-wiki/pattern.schema.md.",
+          path: normalizePath(notePath),
+          message: "Note should contain a When to Use section. See agent-wiki/note.schema.md.",
         });
       }
       if (!parsed.examples?.length) {
         issues.push({
           level: "warning",
-          code: "pattern_missing_examples",
+          code: "note_missing_examples",
           skillId: skill.id,
-          path: normalizePath(patternPath),
-          message: "Pattern doc should contain at least one example or concrete case note.",
+          path: normalizePath(notePath),
+          message: "Note should contain at least one example or concrete case note.",
         });
       }
       if (!parsed.evidenceLines?.length && !parsed.sources?.length) {
         issues.push({
           level: "warning",
-          code: "pattern_missing_evidence",
+          code: "note_missing_evidence",
           skillId: skill.id,
-          path: normalizePath(patternPath),
-          message: "Pattern doc should include Evidence or at least one source reference.",
+          path: normalizePath(notePath),
+          message: "Note should include Evidence or at least one source reference.",
         });
       }
       if (!parsed.related?.length) {
         issues.push({
           level: "warning",
-          code: "pattern_missing_related",
+          code: "note_missing_related",
           skillId: skill.id,
-          path: normalizePath(patternPath),
-          message: "Pattern doc should link at least one related wiki page.",
+          path: normalizePath(notePath),
+          message: "Note should link at least one related wiki page.",
         });
       }
     }
@@ -2846,15 +2935,15 @@ export async function lintPack(cwd = process.cwd()) {
       .filter((value) => !isExternalRef(value));
 
     if (
-      (wikiEntry.pageType === "pattern" || parsed.pageType === "pattern")
-      && !referencedPatternPaths.has(relativePath)
+      (wikiEntry.pageType === "note" || parsed.pageType === "note")
+      && !referencedNotePaths.has(relativePath)
       && !referencedWikiPaths.has(relativePath)
     ) {
       issues.push({
         level: "warning",
-        code: "orphan_pattern_doc",
+        code: "orphan_note",
         path: relativePath,
-        message: "Pattern doc is not referenced by any skill or other wiki page.",
+        message: "Note is not referenced by any skill or other wiki page.",
       });
     }
 
@@ -2897,25 +2986,13 @@ export async function lintPack(cwd = process.cwd()) {
     }
   }
 
-  for (const wikiEntry of wikiFiles) {
-    const doc = parsedDocs.get(wikiEntry.relativePath);
-    if (doc?.pageType !== "pattern" && doc?.pageType !== "meta" && !referencedWikiPaths.has(wikiEntry.relativePath)) {
-      issues.push({
-        level: "warning",
-        code: "orphan_wiki_page",
-        path: wikiEntry.relativePath,
-        message: "Wiki page is not referenced by any pattern, source, or related link.",
-      });
-    }
-  }
-
   const result = {
     ok: issues.every((issue) => issue.level !== "error"),
     issueCount: issues.length,
     issues,
     counts: {
       skills: skills.length,
-      patternDocs: wikiFiles.filter((entry) => entry.pageType === "pattern").length,
+      notes: wikiFiles.filter((entry) => entry.pageType === "note").length,
       wikiPages: wikiFiles.length,
     },
   };

@@ -17,9 +17,9 @@
   ],
   "entrypoints": {
     "seedSkillsDir": "skills",
-    "seedPatternsDir": "agent-wiki/patterns",
+    "seedNotesDir": "agent-wiki/notes",
     "hostSkillsDir": null,
-    "hostPatternsDir": null
+    "hostNotesDir": null
   },
   "controlArtifacts": {
     "indexPath": "agent-wiki/index.md",
@@ -49,14 +49,9 @@
   "agentRules": {
     "preserveNativeSkills": true,
     "generatedSkillsDir": "skills",
-    "patternDocsDir": "agent-wiki/patterns",
+    "notesDir": "agent-wiki/notes",
     "knowledgeDirs": [
-      "agent-wiki/patterns",
-      "agent-wiki/sources",
-      "agent-wiki/concepts",
-      "agent-wiki/comparisons",
-      "agent-wiki/questions",
-      "agent-wiki/meta"
+      "agent-wiki/notes"
     ],
     "hostRepoOwnsWrites": true
   },
@@ -65,6 +60,7 @@
     "multiAgentSetup": "bash bin/setup-multi-agent.sh",
     "friendlyEntryPoint": "START_HERE.md",
     "wrapperFallback": {
+      "claude": "node bin/datalox-claude.js --repo <repo> -- --print \"<prompt>\"",
       "codex": "node bin/datalox-codex.js --repo <repo> --task \"<task>\" --prompt \"<prompt>\"",
       "genericCli": "node bin/datalox-wrap.js command --repo <repo> --task \"<task>\" --prompt \"<prompt>\" -- <host-command> __DATALOX_PROMPT__"
     }

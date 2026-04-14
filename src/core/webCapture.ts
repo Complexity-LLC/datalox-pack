@@ -4,39 +4,22 @@ import path from "node:path";
 import { chromium, type Browser } from "playwright";
 
 import { autoBootstrapIfSafe, probeBootstrapCandidate, refreshControlArtifacts } from "./packCore.js";
+import {
+  extractWebSource,
+  type PageSnapshot,
+  type SourceBundle,
+} from "./sourceBundle.js";
 
-export type WebArtifactType = "design_doc" | "source_page";
+export type WebArtifactType = "design_doc" | "note" | "design_tokens" | "tailwind_theme" | "css_variables";
+export type WebArtifactInputType = WebArtifactType | "source_page";
 
 export interface CaptureWebInput {
   repoPath?: string;
   url: string;
   title?: string;
   slug?: string;
-  artifactType?: WebArtifactType;
+  artifactType?: WebArtifactInputType;
   outputPath?: string;
-}
-
-interface PageSnapshot {
-  title: string;
-  url: string;
-  metaDescription: string | null;
-  lang: string | null;
-  navItems: string[];
-  headings: string[];
-  buttons: string[];
-  sections: Array<{ tag: string; label: string; text: string }>;
-  fonts: string[];
-  fontSizes: string[];
-  fontWeights: string[];
-  colors: string[];
-  backgrounds: string[];
-  borderRadii: string[];
-  shadows: string[];
-  transitions: string[];
-  cssVariables: Array<{ name: string; value: string }>;
-  forms: number;
-  inputs: number;
-  links: number;
 }
 
 export interface CaptureWebResult {
@@ -44,6 +27,7 @@ export interface CaptureWebResult {
   url: string;
   artifactType: WebArtifactType;
   artifactPath: string | null;
+  notePath: string;
   sourcePagePath: string;
   metadataPath: string;
   screenshotPaths: {
@@ -66,6 +50,8 @@ export interface WebCaptureMetadata {
   capturedAt: string;
   artifactType: WebArtifactType;
   artifactPath: string | null;
+  artifactContentType: string | null;
+  notePath: string;
   sourcePagePath: string;
   screenshotPaths: {
     desktop: string;
@@ -138,6 +124,248 @@ function deriveSlug(url: string, explicitSlug?: string, explicitTitle?: string):
   } catch {
     return slugify(url);
   }
+}
+
+function toIndexedRecord(prefix: string, values: string[]): Record<string, string> {
+  return Object.fromEntries(
+    values.map((value, index) => [`${prefix}-${String(index + 1).padStart(2, "0")}`, value]),
+  );
+}
+
+function normalizeCssVariableName(name: string): string {
+  return name
+    .replace(/^--+/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+}
+
+function normalizeFontFamily(value: string): string {
+  const first = value.split(",")[0]?.trim() ?? value.trim();
+  return first.replace(/^['"]+|['"]+$/g, "");
+}
+
+function sortCssDimensionValues(values: string[]): string[] {
+  return [...values].sort((left, right) => {
+    const leftNumber = Number.parseFloat(left);
+    const rightNumber = Number.parseFloat(right);
+    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+      return leftNumber - rightNumber;
+    }
+    return left.localeCompare(right);
+  });
+}
+
+interface DesignTokensArtifact {
+  source: {
+    kind: "web";
+    title: string;
+    url: string;
+    notePath: string;
+    capturedAt: string;
+  };
+  color: {
+    text: Record<string, string>;
+    background: Record<string, string>;
+    variable: Record<string, string>;
+  };
+  font: {
+    family: Record<string, string>;
+    size: Record<string, string>;
+    weight: Record<string, string>;
+  };
+  radius: Record<string, string>;
+  shadow: Record<string, string>;
+  motion: Record<string, string>;
+}
+
+function buildDesignTokens(input: {
+  bundle: SourceBundle;
+  notePath: string;
+  capturedAt: string;
+}): DesignTokensArtifact {
+  const style = input.bundle.style;
+  if (!style) {
+    throw new Error("Web source bundle was missing style evidence.");
+  }
+  const colorVariables = style.cssVariables.filter((item) => /(color|bg|background|brand|accent|surface)/i.test(item.name));
+  const fontVariables = style.cssVariables.filter((item) => /font/i.test(item.name));
+  const radiusVariables = style.cssVariables.filter((item) => /radius/i.test(item.name));
+  const shadowVariables = style.cssVariables.filter((item) => /shadow/i.test(item.name));
+
+  return {
+    source: {
+      kind: "web",
+      title: input.bundle.source.title,
+      url: input.bundle.source.url ?? "",
+      notePath: input.notePath,
+      capturedAt: input.capturedAt,
+    },
+    color: {
+      text: toIndexedRecord("text", style.colors),
+      background: toIndexedRecord("background", style.backgrounds),
+      variable: Object.fromEntries(
+        colorVariables.map((item) => [normalizeCssVariableName(item.name), item.value]),
+      ),
+    },
+    font: {
+      family: toIndexedRecord(
+        "family",
+        dedupe([
+          ...style.fonts.map(normalizeFontFamily),
+          ...fontVariables.map((item) => normalizeFontFamily(item.value)),
+        ]),
+      ),
+      size: toIndexedRecord("size", style.fontSizes),
+      weight: toIndexedRecord("weight", style.fontWeights),
+    },
+    radius: {
+      ...toIndexedRecord("radius", sortCssDimensionValues(style.borderRadii)),
+      ...Object.fromEntries(
+        radiusVariables.map((item) => [normalizeCssVariableName(item.name), item.value]),
+      ),
+    },
+    shadow: {
+      ...toIndexedRecord("shadow", style.shadows),
+      ...Object.fromEntries(
+        shadowVariables.map((item) => [normalizeCssVariableName(item.name), item.value]),
+      ),
+    },
+    motion: toIndexedRecord("transition", style.transitions),
+  };
+}
+
+function indentJson(value: unknown, spaces: number): string {
+  return JSON.stringify(value, null, 2)
+    .split("\n")
+    .map((line) => `${" ".repeat(spaces)}${line}`)
+    .join("\n");
+}
+
+function renderDesignTokens(input: {
+  bundle: SourceBundle;
+  notePath: string;
+  capturedAt: string;
+}): string {
+  return `${JSON.stringify(buildDesignTokens(input), null, 2)}\n`;
+}
+
+function renderTailwindTheme(input: {
+  bundle: SourceBundle;
+  notePath: string;
+  capturedAt: string;
+}): string {
+  const tokens = buildDesignTokens(input);
+  const theme = {
+    colors: {
+      ...tokens.color.text,
+      ...tokens.color.background,
+      ...tokens.color.variable,
+    },
+    fontFamily: Object.fromEntries(
+      Object.entries(tokens.font.family).map(([key, value]) => [key, [value]]),
+    ),
+    fontSize: tokens.font.size,
+    fontWeight: tokens.font.weight,
+    borderRadius: tokens.radius,
+    boxShadow: tokens.shadow,
+    transitionProperty: tokens.motion,
+  };
+
+  return [
+    `export const source = ${JSON.stringify(tokens.source, null, 2)} as const;`,
+    "",
+    "export const theme = {",
+    `  colors: ${indentJson(theme.colors, 2).trimStart()},`,
+    `  fontFamily: ${indentJson(theme.fontFamily, 2).trimStart()},`,
+    `  fontSize: ${indentJson(theme.fontSize, 2).trimStart()},`,
+    `  fontWeight: ${indentJson(theme.fontWeight, 2).trimStart()},`,
+    `  borderRadius: ${indentJson(theme.borderRadius, 2).trimStart()},`,
+    `  boxShadow: ${indentJson(theme.boxShadow, 2).trimStart()},`,
+    `  transitionProperty: ${indentJson(theme.transitionProperty, 2).trimStart()},`,
+    "} as const;",
+    "",
+    "export default theme;",
+    "",
+  ].join("\n");
+}
+
+function quoteCssString(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed;
+  }
+  return `"${trimmed.replace(/"/g, "\\\"")}"`;
+}
+
+function formatCssVariableValue(key: string, value: string): string {
+  if (/^--datalox-font-family-/.test(key)) {
+    if (value.includes(",")) {
+      return value;
+    }
+    if (/\s/.test(value)) {
+      return quoteCssString(value);
+    }
+  }
+  return value;
+}
+
+function renderCssVariables(input: {
+  bundle: SourceBundle;
+  notePath: string;
+  capturedAt: string;
+}): string {
+  const style = input.bundle.style;
+  if (!style) {
+    throw new Error("Web source bundle was missing style evidence.");
+  }
+
+  const tokens = buildDesignTokens(input);
+  const lines: string[] = [
+    "/*",
+    ` * Source: ${tokens.source.title}`,
+    ` * URL: ${tokens.source.url}`,
+    ` * Note: ${tokens.source.notePath}`,
+    ` * Captured at: ${tokens.source.capturedAt}`,
+    " */",
+    ":root {",
+  ];
+
+  if (style.cssVariables.length > 0) {
+    lines.push("  /* Captured source variables */");
+    for (const item of style.cssVariables) {
+      lines.push(`  ${item.name}: ${item.value};`);
+    }
+    lines.push("");
+  }
+
+  lines.push("  /* Datalox normalized variables */");
+
+  const tokenGroups = [
+    ["--datalox-color-text-", tokens.color.text],
+    ["--datalox-color-background-", tokens.color.background],
+    ["--datalox-color-variable-", tokens.color.variable],
+    ["--datalox-font-family-", tokens.font.family],
+    ["--datalox-font-size-", tokens.font.size],
+    ["--datalox-font-weight-", tokens.font.weight],
+    ["--datalox-radius-", tokens.radius],
+    ["--datalox-shadow-", tokens.shadow],
+    ["--datalox-transition-", tokens.motion],
+  ] as const;
+
+  for (const [prefix, values] of tokenGroups) {
+    for (const [key, value] of Object.entries(values)) {
+      const variableName = `${prefix}${key.replace(/^(text|background|family|size|weight|radius|shadow|transition)-/, "")}`;
+      lines.push(`  ${variableName}: ${formatCssVariableValue(variableName, value)};`);
+    }
+  }
+
+  lines.push("}", "");
+  return lines.join("\n");
 }
 
 async function ensurePackReady(repoPath: string): Promise<void> {
@@ -318,116 +546,133 @@ async function captureSnapshot(pageUrl: string, viewport: { width: number; heigh
   }
 }
 
-function renderSourcePage(input: {
-  pageTitle: string;
-  pageUrl: string;
+function renderWebNote(input: {
+  bundle: SourceBundle;
   sourceSlug: string;
-  sourcePath: string;
+  notePath: string;
+  artifactPath: string | null;
   screenshotDesktopPath: string;
   screenshotMobilePath: string;
   desktop: PageSnapshot;
   mobile: PageSnapshot;
 }): string {
   const updatedAt = new Date().toISOString();
+  const style = input.bundle.style;
+  if (!style) {
+    throw new Error("Web source bundle was missing style evidence.");
+  }
   return [
     "---",
-    "type: source",
-    `title: ${input.pageTitle}`,
-    "workflow: design_capture",
+    "type: note",
+    "kind: web",
+    `title: ${input.bundle.source.title}`,
+    "workflow: web_capture",
     "status: active",
-    "related: []",
+    input.artifactPath ? "related:" : "related: []",
+    ...(input.artifactPath ? [`  - ${input.artifactPath}`] : []),
     "sources: []",
     `updated: ${updatedAt}`,
     "---",
     "",
-    `# ${input.pageTitle}`,
+    `# ${input.bundle.source.title}`,
     "",
-    "## Overview",
+    "## When to Use",
     "",
-    `- Source URL: ${input.pageUrl}`,
-    `- Source slug: ${input.sourceSlug}`,
-    `- Meta description: ${input.desktop.metaDescription ?? "none"}`,
-    `- Desktop screenshot: ${input.screenshotDesktopPath}`,
-    `- Mobile screenshot: ${input.screenshotMobilePath}`,
+    "Use this note when a live website needs to become reusable repo-local design knowledge instead of another one-off screenshot or chat summary.",
     "",
-    "## Key Claims",
+    "## Signal",
+    "",
+    `Captured live web evidence from ${input.bundle.source.url} with reusable typography, layout, and component signals.`,
+    "",
+    "## Interpretation",
+    "",
+    "This note captures the page structure and visual evidence so another agent can reason from repo-local artifacts instead of reopening the site and starting over.",
+    "",
+    "## Action",
+    "",
+    "Read this note with the screenshots before generating or editing a design brief, tokens, or implementation plan.",
+    "",
+    "## Examples",
     "",
     ...formatList(
       [
-        `The page uses fonts: ${input.desktop.fonts.join(", ") || "none detected"}.`,
         `Desktop navigation labels: ${input.desktop.navItems.join(", ") || "none detected"}.`,
-        `Observed heading structure: ${input.desktop.headings.join(" | ") || "none detected"}.`,
+        `Observed heading structure: ${input.bundle.structure.headings.join(" | ") || "none detected"}.`,
+        `Visible mobile buttons: ${input.mobile.buttons.join(", ") || "none detected"}.`,
       ],
-      "No extracted claims.",
+      "No extracted examples.",
     ),
     "",
     "## Evidence",
     "",
-    ...formatKeyValueList(input.desktop.cssVariables, "No CSS variables detected."),
+    `- Source URL: ${input.bundle.source.url}`,
+    `- Note path: ${input.notePath}`,
+    `- Source slug: ${input.sourceSlug}`,
+    `- Captured at: ${input.bundle.source.capturedAt}`,
+    `- Meta description: ${input.desktop.metaDescription ?? "none"}`,
+    `- Desktop screenshot: ${input.screenshotDesktopPath}`,
+    `- Mobile screenshot: ${input.screenshotMobilePath}`,
+    ...formatKeyValueList(style.cssVariables, "No CSS variables detected."),
     "",
-    "## Desktop Sections",
+    "## Related",
+    "",
+    ...(input.artifactPath ? [`- ${input.artifactPath}`] : ["- Add a derived design artifact when one exists."]),
+    "",
+    "## Structure",
     "",
     ...formatList(
-      input.desktop.sections.map((section) => `${section.tag}: ${section.label || section.text}`),
+      input.bundle.structure.sections.map((section) => `${section.title}: ${section.text}`),
       "No visible sections detected.",
-    ),
-    "",
-    "## Mobile Notes",
-    "",
-    ...formatList(
-      [
-        `Visible mobile headings: ${input.mobile.headings.join(" | ") || "none detected"}.`,
-        `Visible mobile buttons: ${input.mobile.buttons.join(", ") || "none detected"}.`,
-        `Visible mobile sections: ${String(input.mobile.sections.length)}.`,
-      ],
-      "No mobile notes detected.",
     ),
     "",
   ].join("\n");
 }
 
 function renderDesignDoc(input: {
-  pageTitle: string;
-  pageUrl: string;
+  bundle: SourceBundle;
   sourcePath: string;
   screenshotDesktopPath: string;
   screenshotMobilePath: string;
   desktop: PageSnapshot;
   mobile: PageSnapshot;
 }): string {
+  const style = input.bundle.style;
+  if (!style) {
+    throw new Error("Web source bundle was missing style evidence.");
+  }
   return [
-    `# ${input.pageTitle} Design`,
+    `# ${input.bundle.source.title} Design`,
     "",
-    `- Source URL: ${input.pageUrl}`,
+    `- Source URL: ${input.bundle.source.url}`,
     `- Source page: ${input.sourcePath}`,
     `- Desktop screenshot: ${input.screenshotDesktopPath}`,
     `- Mobile screenshot: ${input.screenshotMobilePath}`,
     "",
     "## Typography",
     "",
-    ...formatList(input.desktop.fonts, "No fonts detected."),
+    ...formatList(style.fonts, "No fonts detected."),
     "",
     "### Font Sizes",
     "",
-    ...formatList(input.desktop.fontSizes, "No font sizes detected."),
+    ...formatList(style.fontSizes, "No font sizes detected."),
     "",
     "### Font Weights",
     "",
-    ...formatList(input.desktop.fontWeights, "No font weights detected."),
+    ...formatList(style.fontWeights, "No font weights detected."),
     "",
     "## Color System",
     "",
     "### CSS Variables",
     "",
-    ...formatKeyValueList(input.desktop.cssVariables, "No CSS variables detected."),
+    ...formatKeyValueList(style.cssVariables, "No CSS variables detected."),
     "",
     "### Text Colors",
     "",
-    ...formatList(input.desktop.colors, "No colors detected."),
+    ...formatList(style.colors, "No colors detected."),
     "",
     "### Surface Colors",
     "",
-    ...formatList(input.desktop.backgrounds, "No backgrounds detected."),
+    ...formatList(style.backgrounds, "No backgrounds detected."),
     "",
     "## Layout Structure",
     "",
@@ -437,12 +682,12 @@ function renderDesignDoc(input: {
     "",
     "### Headings",
     "",
-    ...formatList(input.desktop.headings, "No headings detected."),
+    ...formatList(input.bundle.structure.headings, "No headings detected."),
     "",
     "### Sections",
     "",
     ...formatList(
-      input.desktop.sections.map((section) => `${section.tag}: ${section.label || section.text}`),
+      input.bundle.structure.sections.map((section) => `${section.title}: ${section.text}`),
       "No sections detected.",
     ),
     "",
@@ -460,15 +705,15 @@ function renderDesignDoc(input: {
     "",
     "### Border Radius",
     "",
-    ...formatList(input.desktop.borderRadii, "No rounded surfaces detected."),
+    ...formatList(style.borderRadii, "No rounded surfaces detected."),
     "",
     "### Shadows",
     "",
-    ...formatList(input.desktop.shadows, "No shadows detected."),
+    ...formatList(style.shadows, "No shadows detected."),
     "",
     "## Motion",
     "",
-    ...formatList(input.desktop.transitions, "No transitions detected."),
+    ...formatList(style.transitions, "No transitions detected."),
     "",
     "## Responsive Notes",
     "",
@@ -484,24 +729,63 @@ function renderDesignDoc(input: {
   ].join("\n");
 }
 
+function resolveArtifactPath(input: {
+  repoPath: string;
+  sourceSlug: string;
+  artifactType: WebArtifactType;
+  outputPath?: string;
+}): string | null {
+  switch (input.artifactType) {
+    case "design_doc":
+      return path.resolve(input.repoPath, input.outputPath ?? path.join("designs", "web", `${input.sourceSlug}.md`));
+    case "design_tokens":
+      return path.resolve(input.repoPath, input.outputPath ?? path.join("designs", "web", `${input.sourceSlug}.tokens.json`));
+    case "css_variables":
+      return path.resolve(input.repoPath, input.outputPath ?? path.join("designs", "web", `${input.sourceSlug}.vars.css`));
+    case "tailwind_theme":
+      return path.resolve(input.repoPath, input.outputPath ?? path.join("designs", "web", `${input.sourceSlug}.tailwind.ts`));
+    case "note":
+      return null;
+  }
+}
+
+function getArtifactContentType(artifactType: WebArtifactType): string | null {
+  switch (artifactType) {
+    case "design_doc":
+    case "note":
+      return "text/markdown; charset=utf-8";
+    case "design_tokens":
+      return "application/json";
+    case "css_variables":
+      return "text/css; charset=utf-8";
+    case "tailwind_theme":
+      return "application/typescript; charset=utf-8";
+  }
+}
+
 export async function captureWebArtifact(input: CaptureWebInput): Promise<CaptureWebResult> {
   const repoPath = resolveRepoPath(input.repoPath);
   await ensurePackReady(repoPath);
 
   const sourceSlug = deriveSlug(input.url, input.slug, input.title);
-  const artifactType = input.artifactType ?? "design_doc";
+  const requestedArtifactType = input.artifactType ?? "design_doc";
+  const artifactType: WebArtifactType = requestedArtifactType === "source_page" ? "note" : requestedArtifactType;
   const assetsDir = path.join(repoPath, "agent-wiki", "assets", "web", sourceSlug);
-  const sourcesDir = path.join(repoPath, "agent-wiki", "sources", "web");
+  const notesDir = path.join(repoPath, "agent-wiki", "notes", "web");
   const desktopScreenshotPath = path.join(assetsDir, "desktop.png");
   const mobileScreenshotPath = path.join(assetsDir, "mobile.png");
-  const sourcePagePath = path.join(sourcesDir, `${sourceSlug}.md`);
-  const metadataPath = path.join(sourcesDir, `${sourceSlug}.capture.json`);
-  const artifactPath = artifactType === "design_doc"
-    ? path.resolve(repoPath, input.outputPath ?? path.join("designs", "web", `${sourceSlug}.md`))
-    : null;
+  const notePath = path.join(notesDir, `${sourceSlug}.md`);
+  const metadataPath = path.join(notesDir, `${sourceSlug}.capture.json`);
+  const artifactPath = resolveArtifactPath({
+    repoPath,
+    sourceSlug,
+    artifactType,
+    outputPath: input.outputPath,
+  });
+  const artifactContentType = getArtifactContentType(artifactType);
 
   await mkdir(assetsDir, { recursive: true });
-  await mkdir(sourcesDir, { recursive: true });
+  await mkdir(notesDir, { recursive: true });
   if (artifactPath) {
     await mkdir(path.dirname(artifactPath), { recursive: true });
   }
@@ -516,18 +800,27 @@ export async function captureWebArtifact(input: CaptureWebInput): Promise<Captur
 
   const relativeDesktopScreenshotPath = path.relative(repoPath, desktopScreenshotPath) || desktopScreenshotPath;
   const relativeMobileScreenshotPath = path.relative(repoPath, mobileScreenshotPath) || mobileScreenshotPath;
-  const relativeSourcePagePath = path.relative(repoPath, sourcePagePath) || sourcePagePath;
+  const relativeNotePath = path.relative(repoPath, notePath) || notePath;
   const relativeMetadataPath = path.relative(repoPath, metadataPath) || metadataPath;
   const relativeArtifactPath = artifactPath ? path.relative(repoPath, artifactPath) || artifactPath : null;
   const capturedAt = new Date().toISOString();
+  const sourceBundle = extractWebSource({
+    id: sourceSlug,
+    title: pageTitle,
+    capturedAt,
+    url: input.url,
+    desktop,
+    mobile,
+    screenshots: [relativeDesktopScreenshotPath, relativeMobileScreenshotPath],
+  });
 
   await writeFile(
-    sourcePagePath,
-    renderSourcePage({
-      pageTitle,
-      pageUrl: input.url,
+    notePath,
+    renderWebNote({
+      bundle: sourceBundle,
       sourceSlug,
-      sourcePath: relativeSourcePagePath,
+      notePath: relativeNotePath,
+      artifactPath: relativeArtifactPath,
       screenshotDesktopPath: relativeDesktopScreenshotPath,
       screenshotMobilePath: relativeMobileScreenshotPath,
       desktop,
@@ -536,17 +829,45 @@ export async function captureWebArtifact(input: CaptureWebInput): Promise<Captur
     "utf8",
   );
   if (artifactPath && relativeArtifactPath) {
+    const artifactContent = (() => {
+      switch (artifactType) {
+        case "design_doc":
+          return renderDesignDoc({
+            bundle: sourceBundle,
+            sourcePath: relativeNotePath,
+            screenshotDesktopPath: relativeDesktopScreenshotPath,
+            screenshotMobilePath: relativeMobileScreenshotPath,
+            desktop,
+            mobile,
+          });
+        case "design_tokens":
+          return renderDesignTokens({
+            bundle: sourceBundle,
+            notePath: relativeNotePath,
+            capturedAt,
+          });
+        case "css_variables":
+          return renderCssVariables({
+            bundle: sourceBundle,
+            notePath: relativeNotePath,
+            capturedAt,
+          });
+        case "tailwind_theme":
+          return renderTailwindTheme({
+            bundle: sourceBundle,
+            notePath: relativeNotePath,
+            capturedAt,
+          });
+        case "note":
+          return null;
+      }
+    })();
+    if (!artifactContent) {
+      throw new Error(`Unsupported artifact renderer for ${artifactType}`);
+    }
     await writeFile(
       artifactPath,
-      renderDesignDoc({
-        pageTitle,
-        pageUrl: input.url,
-        sourcePath: relativeSourcePagePath,
-        screenshotDesktopPath: relativeDesktopScreenshotPath,
-        screenshotMobilePath: relativeMobileScreenshotPath,
-        desktop,
-        mobile,
-      }),
+      artifactContent,
       "utf8",
     );
   }
@@ -567,7 +888,9 @@ export async function captureWebArtifact(input: CaptureWebInput): Promise<Captur
     capturedAt,
     artifactType,
     artifactPath: relativeArtifactPath,
-    sourcePagePath: relativeSourcePagePath,
+    artifactContentType,
+    notePath: relativeNotePath,
+    sourcePagePath: relativeNotePath,
     screenshotPaths: {
       desktop: relativeDesktopScreenshotPath,
       mobile: relativeMobileScreenshotPath,
@@ -595,8 +918,8 @@ export async function captureWebArtifact(input: CaptureWebInput): Promise<Captur
     repoPath,
     logEntry: {
       action: "capture_web_artifact",
-      detail: `${input.url} -> ${relativeArtifactPath ?? relativeSourcePagePath}`,
-      path: relativeSourcePagePath,
+      detail: `${input.url} -> ${relativeArtifactPath ?? relativeNotePath}`,
+      path: relativeNotePath,
     },
   });
 
@@ -605,7 +928,8 @@ export async function captureWebArtifact(input: CaptureWebInput): Promise<Captur
     url: input.url,
     artifactType,
     artifactPath: relativeArtifactPath,
-    sourcePagePath: relativeSourcePagePath,
+    notePath: relativeNotePath,
+    sourcePagePath: relativeNotePath,
     metadataPath: relativeMetadataPath,
     screenshotPaths: {
       desktop: relativeDesktopScreenshotPath,

@@ -39,9 +39,9 @@ const baseConfig = {
   },
   paths: {
     seedSkillsDir: "skills",
-    seedPatternsDir: "agent-wiki/patterns",
+    seedNotesDir: "agent-wiki/notes",
     hostSkillsDir: "skills",
-    hostPatternsDir: "agent-wiki/patterns",
+    hostNotesDir: "agent-wiki/notes",
   },
   runtime: {
     enabled: false,
@@ -61,6 +61,7 @@ const baseConfig = {
 async function createPack(tempDir: string) {
   await mkdir(path.join(tempDir, "skills"), { recursive: true });
   await mkdir(path.join(tempDir, ".datalox"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/notes"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/patterns"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/meta"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/sources"), { recursive: true });
@@ -99,8 +100,8 @@ metadata:
     id: flow-cytometry.review-ambiguous-viability-gate
     workflow: flow_cytometry
     trigger: Use when live/dead separation is ambiguous during viability gate review.
-    pattern_paths:
-      - agent-wiki/patterns/viability-gate-review.md
+    note_paths:
+      - agent-wiki/notes/viability-gate-review.md
     tags:
       - flow_cytometry
       - viability
@@ -124,9 +125,9 @@ Use when live/dead separation is ambiguous during viability gate review.
 - State why this skill matched.
 - State the recommended gate action.
 
-## Pattern Docs
+## Notes
 
-- agent-wiki/patterns/viability-gate-review.md
+- agent-wiki/notes/viability-gate-review.md
 `,
   );
   await writeFile(
@@ -139,8 +140,8 @@ metadata:
     id: repo-engineering.evolve-portable-pack
     workflow: repo_engineering
     trigger: Use when changing the portable pack or agent guidance.
-    pattern_paths:
-      - agent-wiki/patterns/evolve-portable-pack.md
+    note_paths:
+      - agent-wiki/notes/evolve-portable-pack.md
     tags:
       - repo_engineering
       - portable_pack
@@ -173,13 +174,13 @@ Use when changing the portable pack or agent guidance.
 - State why this skill matched.
 - State the pack change being made.
 
-## Pattern Docs
+## Notes
 
-- agent-wiki/patterns/evolve-portable-pack.md
+- agent-wiki/notes/evolve-portable-pack.md
 `,
   );
   await writeFile(
-    path.join(tempDir, "agent-wiki/patterns/viability-gate-review.md"),
+    path.join(tempDir, "agent-wiki/notes/viability-gate-review.md"),
     `---
 type: pattern
 title: Review ambiguous viability gate
@@ -187,7 +188,7 @@ workflow: flow_cytometry
 skill: flow-cytometry.review-ambiguous-viability-gate
 status: active
 related:
-  - agent-wiki/patterns/dead-tail-exception.md
+  - agent-wiki/notes/dead-tail-exception.md
   - agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
 sources:
   - agent-wiki/sources/flow-cytometry-demo-notes.md
@@ -223,12 +224,12 @@ Review the linked exception pattern before changing the gate.
 
 ## Related
 
-- agent-wiki/patterns/dead-tail-exception.md
+- agent-wiki/notes/dead-tail-exception.md
 - agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
 `,
   );
   await writeFile(
-    path.join(tempDir, "agent-wiki/patterns/evolve-portable-pack.md"),
+    path.join(tempDir, "agent-wiki/notes/evolve-portable-pack.md"),
     `---
 type: pattern
 title: Evolve portable pack
@@ -274,14 +275,14 @@ Keep the loop as skill detection plus pattern docs.
 `,
   );
   await writeFile(
-    path.join(tempDir, "agent-wiki/patterns/dead-tail-exception.md"),
+    path.join(tempDir, "agent-wiki/notes/dead-tail-exception.md"),
     `---
 type: pattern
 title: Dead tail exception
 workflow: flow_cytometry
 status: active
 related:
-  - agent-wiki/patterns/viability-gate-review.md
+  - agent-wiki/notes/viability-gate-review.md
 sources:
   - agent-wiki/sources/flow-cytometry-demo-notes.md
 updated: 2026-04-12T16:00:00.000Z
@@ -316,7 +317,7 @@ Review the exception path before widening the gate.
 
 ## Related
 
-- agent-wiki/patterns/viability-gate-review.md
+- agent-wiki/notes/viability-gate-review.md
 `,
   );
   await writeFile(
@@ -327,7 +328,7 @@ title: Flow cytometry demo notes
 workflow: flow_cytometry
 status: active
 related:
-  - agent-wiki/patterns/viability-gate-review.md
+  - agent-wiki/notes/viability-gate-review.md
 sources: []
 updated: 2026-04-12T16:00:00.000Z
 review_after: 2026-07-12
@@ -360,7 +361,7 @@ title: Loop bridge
 workflow: repo_engineering
 status: active
 related:
-  - agent-wiki/patterns/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-portable-pack.md
 sources:
   - agent-wiki/sources/portable-pack-design-notes.md
 updated: 2026-04-12T16:00:00.000Z
@@ -430,7 +431,7 @@ title: When should QC escalate after viability review?
 workflow: flow_cytometry
 status: active
 related:
-  - agent-wiki/patterns/viability-gate-review.md
+  - agent-wiki/notes/viability-gate-review.md
 sources:
   - agent-wiki/sources/flow-cytometry-demo-notes.md
 updated: 2026-04-12T16:00:00.000Z
@@ -453,7 +454,7 @@ Escalate when the gate change would materially affect downstream QC acceptance.
 
 ## Related
 
-- agent-wiki/patterns/viability-gate-review.md
+- agent-wiki/notes/viability-gate-review.md
 `,
   );
   await writeFile(
@@ -498,7 +499,7 @@ title: Portable pack design notes
 workflow: repo_engineering
 status: active
 related:
-  - agent-wiki/patterns/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-portable-pack.md
 sources: []
 updated: 2026-04-12T16:00:00.000Z
 review_after: 2026-07-12
@@ -589,7 +590,7 @@ describe("agent scripts", () => {
     expect(body.counts.seedSkills).toBe(0);
   });
 
-  it("resolves a local skill and its pattern docs", async () => {
+  it("resolves a local skill and its notes", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));
     tempDirs.push(tempDir);
     await createPack(tempDir);
@@ -605,7 +606,7 @@ describe("agent scripts", () => {
 
     const body = JSON.parse(result.stdout);
     expect(body.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
-    expect(body.matches[0].patternDocs[0].path).toBe("agent-wiki/patterns/viability-gate-review.md");
+    expect(body.matches[0].patternDocs[0].path).toBe("agent-wiki/notes/viability-gate-review.md");
     expect(body.matches[0].loopGuidance.whyMatched).toContain("workflow match: flow_cytometry");
     expect(body.matches[0].loopGuidance.whatToDoNow[0]).toContain("Review the linked exception pattern");
     expect(body.matches[0].loopGuidance.watchFor[0]).toContain("Live and dead populations");
@@ -625,7 +626,7 @@ describe("agent scripts", () => {
     expect(body.workflow).toBe("repo_engineering");
   });
 
-  it("writes a generated skill into skills and points it at pattern docs", async () => {
+  it("writes a generated skill into skills and points it at notes", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));
     tempDirs.push(tempDir);
     await createPack(tempDir);
@@ -656,17 +657,17 @@ describe("agent scripts", () => {
     const logFile = await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8");
     const hotFile = await readFile(path.join(tempDir, "agent-wiki/hot.md"), "utf8");
 
-    expect(patternBody.pattern.relativePath).toContain("agent-wiki/patterns/");
+    expect(patternBody.pattern.relativePath).toContain("agent-wiki/notes/");
     expect(skillFile).toContain(patternBody.pattern.relativePath);
     expect(skillFile).toContain("## Workflow");
     expect(indexFile).toContain("## Skills");
     expect(indexFile).toContain(patternBody.pattern.relativePath);
-    expect(logFile).toContain("patch_pattern");
+    expect(logFile).toContain("create_note");
     expect(logFile).toContain("update_skill");
     expect(hotFile).toContain("Agent Wiki Hot Cache");
   });
 
-  it("learns from interaction by writing a pattern doc and updating a skill in skills", async () => {
+  it("learns from interaction by writing a note and updating a skill in skills", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));
     tempDirs.push(tempDir);
     await createPack(tempDir);
@@ -689,7 +690,7 @@ describe("agent scripts", () => {
     expect(learnResult.status).toBe(0);
 
     const body = JSON.parse(learnResult.stdout);
-    expect(body.pattern.relativePath).toContain("agent-wiki/patterns/");
+    expect(body.pattern.relativePath).toContain("agent-wiki/notes/");
     expect(body.skill.payload.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
     expect(body.skill.operation).toBe("update_skill");
     const indexFile = await readFile(path.join(tempDir, "agent-wiki/index.md"), "utf8");
@@ -746,7 +747,7 @@ describe("agent scripts", () => {
     expect(patch.status).toBe(0);
 
     const patched = JSON.parse(patch.stdout);
-    expect(patched.pattern.relativePath).toContain("agent-wiki/patterns/");
+    expect(patched.pattern.relativePath).toContain("agent-wiki/notes/");
     expect(patched.skill.payload.patternPaths).toContain(patched.pattern.relativePath);
     expect(patched.skill.operation).toBe("update_skill");
 
@@ -777,9 +778,9 @@ metadata:
     id: flow-cytometry.broken-skill
     workflow: flow_cytometry
     trigger: Use when the pack is broken.
-    pattern_paths:
-      - agent-wiki/patterns/missing-pattern.md
-      - agent-wiki/patterns/bad-pattern.md
+    note_paths:
+      - agent-wiki/notes/missing-pattern.md
+      - agent-wiki/notes/bad-pattern.md
     status: generated
     tags:
       - flow_cytometry
@@ -794,11 +795,11 @@ Use when the pack is broken.
     );
 
     await writeFile(
-      path.join(tempDir, "agent-wiki/patterns/bad-pattern.md"),
+      path.join(tempDir, "agent-wiki/notes/bad-pattern.md"),
       "# Bad pattern\n\n## Signal\n\nOnly signal exists.\n",
     );
     await writeFile(
-      path.join(tempDir, "agent-wiki/patterns/orphan-pattern.md"),
+      path.join(tempDir, "agent-wiki/notes/orphan-pattern.md"),
       "# Orphan pattern\n\n## Signal\n\nUnused pattern.\n\n## Interpretation\n\nNo skill uses it.\n\n## Recommended Action\n\nAttach it or delete it.\n",
     );
 
@@ -807,12 +808,12 @@ Use when the pack is broken.
 
     const body = JSON.parse(lintResult.stdout);
     expect(body.ok).toBe(false);
-    expect(body.issues.some((issue: { code: string }) => issue.code === "missing_pattern_doc")).toBe(true);
-    expect(body.issues.some((issue: { code: string }) => issue.code === "pattern_missing_interpretation")).toBe(true);
-    expect(body.issues.some((issue: { code: string }) => issue.code === "pattern_missing_action")).toBe(true);
-    expect(body.issues.some((issue: { code: string }) => issue.code === "orphan_pattern_doc")).toBe(true);
+    expect(body.issues.some((issue: { code: string }) => issue.code === "missing_note")).toBe(true);
+    expect(body.issues.some((issue: { code: string }) => issue.code === "note_missing_interpretation")).toBe(true);
+    expect(body.issues.some((issue: { code: string }) => issue.code === "note_missing_action")).toBe(true);
+    expect(body.issues.some((issue: { code: string }) => issue.code === "orphan_note")).toBe(true);
     expect(body.issues.some((issue: { code: string }) => issue.code === "skill_missing_workflow_section")).toBe(true);
-    expect(await readFile(path.join(tempDir, "agent-wiki/lint.md"), "utf8")).toContain("missing_pattern_doc");
+    expect(await readFile(path.join(tempDir, "agent-wiki/lint.md"), "utf8")).toContain("missing_note");
   });
 
   it("reads seed knowledge from an external pack and writes generated knowledge into the host repo", async () => {
@@ -930,7 +931,7 @@ Use when the pack is broken.
     expect(body.skill.operation).toBe("create_skill");
     expect(body.skill.payload.id).toBe("agent_adoption.stabilize-manual-pack-adoption-in-non-technical-repos");
     expect(generatedSkill).toContain("## Workflow");
-    expect(generatedSkill).toContain("agent-wiki/patterns/");
+    expect(generatedSkill).toContain("agent-wiki/notes/");
     expect(logFile).toContain("create_skill");
     expect(indexFile).toContain("agent_adoption.stabilize-manual-pack-adoption-in-non-technical-repos");
   });

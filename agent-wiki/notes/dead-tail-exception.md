@@ -1,5 +1,5 @@
 ---
-type: pattern
+type: note
 title: Dead tail exception
 workflow: flow_cytometry
 skill: flow-cytometry.review-ambiguous-viability-gate
@@ -10,7 +10,7 @@ tags:
 confidence: medium
 status: active
 related:
-  - agent-wiki/patterns/viability-gate-review.md
+  - agent-wiki/notes/viability-gate-review.md
   - agent-wiki/concepts/ambiguous-viability-gate-review.md
   - agent-wiki/comparisons/manual-threshold-shift-vs-exception-review.md
 sources:
@@ -57,6 +57,6 @@ If repeat runs or orthogonal evidence show the same shift without the artifact s
 
 ## Related
 
-- agent-wiki/patterns/viability-gate-review.md
+- agent-wiki/notes/viability-gate-review.md
 - agent-wiki/concepts/ambiguous-viability-gate-review.md
 - agent-wiki/comparisons/manual-threshold-shift-vs-exception-review.md

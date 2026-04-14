@@ -31,9 +31,9 @@
   },
   "paths": {
     "seedSkillsDir": "skills",
-    "seedPatternsDir": "agent-wiki/patterns",
+    "seedNotesDir": "agent-wiki/notes",
     "hostSkillsDir": null,
-    "hostPatternsDir": null
+    "hostNotesDir": null
   },
   "runtime": {
     "enabled": false,

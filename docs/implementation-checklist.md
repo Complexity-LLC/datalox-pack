@@ -1,206 +1,147 @@
-# MCP And CLI Implementation Checklist
+# Datalox Refactor Checklist
 
-This is the concrete implementation plan for making Datalox active on every agent loop.
+Status: complete for this pass.
 
-## Recommendation
+This refactor reduces `datalox-pack` to a smaller, agent-first knowledge model:
 
-Build:
+- concrete source kinds: `trace`, `web`, `pdf`
+- durable outputs: `note`, `skill`
+- durable repo surfaces:
+  - `skills/`
+  - `agent-wiki/notes/`
+  - `agent-wiki/events/`
+  - `agent-wiki/index.md`
+  - `agent-wiki/log.md`
+  - `agent-wiki/lint.md`
+  - `agent-wiki/hot.md`
 
-- one shared core
-- MCP first
-- CLI as required companion
+## Core Rule
 
-Do not try to solve "universal automatic adoption" with repo files alone. The pack remains the source of truth, but a loop bridge must own pre-turn and post-turn behavior.
+- [x] Reusable local learning becomes a `note`.
+- [x] Reusable workflow learning becomes a `skill`.
+- [x] `note` holds both rule and concrete evidence/examples.
+- [x] New automatic writes go to `agent-wiki/notes/` and `skills/`.
 
-## Product Boundary
+## Phase 1: Freeze The Contract
 
-Keep the current pack as the durable knowledge layer:
+- [x] `DATALOX.md` documents `trace | web | pdf` as the supported source kinds.
+- [x] `DATALOX.md` and `README.md` document `note | skill` as the durable outputs.
+- [x] Public docs de-emphasize generated `question`, `comparison`, `concept`, `doc`, and `pattern` pages.
+- [x] Public docs keep only a short migration note for legacy folders.
 
-- `skills/<skill-name>/SKILL.md`
-- `agent-wiki/patterns/*.md`
-- `agent-wiki/sources/*.md`
-- `agent-wiki/concepts/*.md`
-- `agent-wiki/comparisons/*.md`
-- `agent-wiki/questions/*.md`
-- `agent-wiki/index.md`
-- `agent-wiki/log.md`
-- `agent-wiki/lint.md`
-- `agent-wiki/hot.md`
+## Phase 2: Reduce The Wiki Surface
 
-The skill loop should stay small:
+- [x] `agent-wiki/notes/` is the default knowledge folder.
+- [x] New automatic writes no longer target `patterns/`, `sources/`, `concepts/`, `comparisons/`, or `questions/`.
+- [x] Legacy folders remain readable during migration.
+- [x] Index and lint treat notes and skills as the main knowledge graph.
+- [x] Manual adoption now copies the reduced note-first surface instead of the old generated taxonomy.
 
-1. detect a skill
-2. read linked pattern docs
-3. follow `related` and `sources` only when needed
-4. patch knowledge
-5. lint and refresh artifacts
+## Phase 3: Make Trace First-Class
 
-Add a loop bridge that:
+- [x] `trace` is a first-class source kind.
+- [x] `extractTraceSource()` exists in the shared core.
+- [x] Trace evidence includes task, workflow, transcript, summary, observations, signal, interpretation, action, matched skill, changed files, and outcome.
+- [x] `recordTurnResult` persists grounded trace evidence in `agent-wiki/events/`.
+- [x] `recordTurnResult` and `promoteGap` return a normalized `traceBundle`.
 
-1. resolves the current skill before the model acts
-2. injects compact guidance into the loop
-3. patches knowledge after reusable learning
-4. refreshes index, log, lint, and hot cache
+## Phase 4: Add One Minimal Shared Source Bundle
 
-## Phase 1: Shared Core
+- [x] `src/core/sourceBundle.ts` defines a transport-free `SourceBundle`.
+- [x] The bundle supports only `trace`, `web`, and `pdf`.
+- [x] The bundle stays close to extracted evidence instead of abstract summaries.
 
-- [x] Extract the reusable logic from [agent-pack.mjs](/Users/yifanjin/datalox-pack/scripts/lib/agent-pack.mjs) into a shared core module.
-- [x] Keep the core transport-free. No CLI-only or MCP-only assumptions.
-- [x] Move these operations behind stable functions:
-  - `resolveLoop`
-  - `patchKnowledge`
-  - `lintPack`
-  - `adoptPack`
-  - `refreshControlArtifacts`
-- [x] Keep markdown files as the source of truth. Do not introduce a separate compiled database as the primary store.
-- [x] Preserve host-write, seed-read behavior.
+## Phase 5: Split Extraction From Rendering
 
-## Phase 2: MCP First
+- [x] Web capture uses `extractWebSource()` plus renderer-specific outputs.
+- [x] Trace has explicit rendering helpers in `src/core/traceArtifacts.ts`.
+- [x] Web renderers and trace renderers consume shared source-bundle evidence instead of ad hoc command-level state.
+- [x] CLI and MCP surfaces call core operations instead of duplicating renderer internals.
 
-- [x] Create an MCP server package or entrypoint in this repo.
-- [x] Expose only four tools:
-  - `resolve_loop`
-  - `patch_knowledge`
-  - `lint_pack`
-  - `adopt_pack`
-- [x] Make MCP responses strict JSON, not markdown.
-- [x] Keep the MCP layer thin. It should only validate input, call core functions, and return structured output.
-- [x] Make `resolve_loop` return:
-  - selected skill
-  - why matched
-  - what to do now
-  - watch for
-  - supporting pattern docs
-- [x] Make `patch_knowledge` return:
-  - pattern written
-  - skill `create_skill` or `update_skill`
-  - refreshed artifact paths
-- [x] Make `lint_pack` return issues plus the refreshed `agent-wiki/lint.md` path.
-- [x] Add one documented MCP integration example for Claude/Codex-compatible hosts.
+## Phase 6: Simplify Promotion
 
-## Phase 3: CLI Companion
+- [x] The default reusable output is `note`.
+- [x] Promotion now chooses only `note` or `skill`.
+- [x] Promotion keeps legacy content readable but stops generating new `doc`, `pattern`, `question`, `comparison`, or `concept` pages.
+- [x] Log output uses explicit actions such as `create_note`, `update_note`, `create_skill`, and `update_skill`.
+- [x] Repeated no-match gaps create live draft skills early enough for the user to feel the change immediately.
 
-- [x] Replace script-first public usage with one stable `datalox` command surface.
-- [x] Support these commands:
-  - `datalox adopt`
-  - `datalox resolve`
-  - `datalox patch`
-  - `datalox lint`
-- [x] Keep `--json` on every command.
-- [x] Make CLI a wrapper over the same core used by MCP.
-- [x] Keep the existing scripts only as temporary compatibility shims or remove them once the CLI is stable.
+## Phase 7: Define Note Shape Clearly
 
-## Phase 4: Loop Ownership
+- [x] `agent-wiki/note.schema.md` defines the note contract.
+- [x] Generated notes include title, source kind, signal, interpretation, action, evidence, examples, and related links.
+- [x] Notes are strong enough that an agent can act from one page.
+- [x] Rule and evidence stay on the same generated page by default.
 
-- [x] Define the pre-turn contract:
-  - current task
-  - optional workflow
-  - optional step
-  - repo context
-- [x] Define the post-turn contract:
-  - observation
-  - interpretation
-  - recommended action
-  - optional explicit skill id
-- [x] Ensure the bridge, not the model alone, decides when to call resolve and patch.
-- [x] Keep skill creation conservative:
-  - create a new skill only when no existing skill matches strongly enough
-  - otherwise patch the matched skill with a new pattern doc
+## Phase 8: Keep Web Specific Work Concrete
 
-## Phase 5: Control And Trust
+- [x] Web capture supports `note`.
+- [x] Web capture supports `design_doc`.
+- [x] Web capture supports `design_tokens`.
+- [x] Web capture supports `tailwind_theme`.
+- [x] Tokens are derived from extracted evidence, not post-hoc guesswork.
+- [x] Tailwind output is derived from semantic tokens.
+- [x] Web artifacts write to:
+  - `designs/web/<slug>.md`
+  - `designs/web/<slug>.tokens.json`
+  - `designs/web/<slug>.tailwind.ts`
 
-- [x] Keep `agent-wiki/index.md` refreshed after create/update operations.
-- [x] Keep `agent-wiki/log.md` refreshed after create/update/lint operations.
-- [x] Keep `agent-wiki/lint.md` refreshed after lint operations.
-- [x] Preserve explicit events in the log:
-  - `create_skill`
-  - `update_skill`
-  - `patch_pattern`
-  - `lint_pack`
-- [x] Keep lint enforcing both:
-  - structural graph health
-  - skill playbook quality
+## Phase 9: Add PDF As The Next Source Adapter
 
-## Phase 6: Verification
+- [x] `extractPdfSource()` exists on the shared source-bundle path.
+- [x] PDF capture writes notes first.
+- [x] PDF capture writes:
+  - `agent-wiki/notes/pdf/<slug>.md`
+  - `agent-wiki/notes/pdf/<slug>.capture.json`
+- [x] PDF capture does not invent a separate knowledge system.
 
-- [x] Add one end-to-end MCP test:
-  - resolve
-  - patch
-  - lint
-  - artifact refresh
-- [x] Add one end-to-end CLI test for the same loop.
-- [x] Add one host-repo adoption test where the pack is external and all writes land in the host repo.
-- [x] Add one explicit no-match test that proves a new skill is created.
-- [x] Keep `npm run check` and `npm test` green.
+## Phase 10: Keep The Public Surface Small
 
-## Phase 7: Grounded Promotion Ladder
+- [x] There is no generic `capture-source` command yet.
+- [x] Public entrypoints stay concrete:
+  - `capture-web`
+  - `capture-pdf`
+- [x] Core CLI commands emit JSON for agent consumption.
+- [x] Wrapper commands stay specialized because they must preserve prompt or child-process behavior.
+- [x] MCP surface stays small and concrete.
 
-- [x] Add a host-owned event substrate under `agent-wiki/events/` for grounded turn results.
-- [x] Record the current task, matched skill, matched wiki pages, and reusable observation before promoting anything.
-- [x] Expose a core `recordTurnResult` operation and surface it through:
-  - `record_turn_result` in MCP
-  - `datalox record` in CLI
-- [x] Add a core `promoteGap` operation with conservative thresholds:
-  - first occurrence -> `record_only`
-  - repeated gap with an existing skill match -> patch skill with a new pattern
-  - repeated gap with no skill match -> create a live draft skill immediately, then stabilize it on reuse
-- [x] Keep new-skill creation conservative enough to avoid noise, but immediate enough for users to feel the change.
-- [x] Log promotion decisions explicitly so humans can inspect why a gap became a wiki page or skill.
-- [x] Add integration tests for:
-  - record-only behavior
-  - repeated-gap wiki promotion
-  - repeated-gap skill creation
+## Phase 11: Migration
 
-## Phase 8: Host Hook Automation
+- [x] Adopted repos are not broken abruptly.
+- [x] Legacy supporting paths are still readable.
+- [x] New automatic writes go to `agent-wiki/notes/` and `skills/`.
+- [x] The refactor avoids a large migration subsystem.
 
-- [x] Add one generic post-turn hook entrypoint that any host can call:
-  - `node bin/datalox-auto-promote.js`
-- [x] Make the hook source-first so it works from the pack repo or the local GitHub cache without requiring `dist/`.
-- [x] Add a real Claude Code integration:
-  - `.claude/settings.json`
-  - `.claude/hooks/auto-promote.sh`
-- [x] Ensure host adoption copies the hook files into the host repo.
-- [x] Ensure local adoption can resolve the pack runtime through `~/.datalox/cache/datalox-pack`.
-- [x] Keep Codex on MCP for loop ownership until it exposes a real post-turn hook surface.
-- [x] Add a test that feeds a stop-hook payload plus transcript into the hook runner and proves repeated events promote into a wiki page and then a skill.
+## Verification
 
-## Phase 9: Host Wrappers
-
-- [x] Add a Codex wrapper that resolves loop guidance before `codex exec`.
-- [x] Add a generic CLI wrapper that can inject `__DATALOX_PROMPT__` into arbitrary host commands.
-- [x] Expose wrapper env vars so unsupported hosts can read `DATALOX_PROMPT` and `DATALOX_GUIDANCE_JSON`.
-- [x] Copy wrapper entrypoints into adopted host repos.
-- [x] Ship a companion skill that tells agents when to use the wrapper fallback path.
-- [x] Add wrapper tests for prompt-only wrapping, generic command wrapping, and Codex wrapper execution.
+- [x] Source bundle tests cover `trace`, `web`, and `pdf`.
+- [x] Promotion tests cover the `note | skill` ladder.
+- [x] Note tests cover actionable rule plus concrete evidence/examples.
+- [x] Web capture tests cover:
+  - note
+  - design doc
+  - design tokens
+  - tailwind theme
+- [x] Migration behavior keeps legacy supporting pages readable.
+- [x] `npm run check` is green.
+- [x] `npm test` is green.
 
 ## Acceptance Criteria
 
-This work is done when:
-
-- [x] A supported agent host can call Datalox before each loop through MCP.
-- [x] The returned guidance changes the agent's behavior in the current turn.
-- [x] Reusable learning can be written back through MCP or CLI.
-- [x] New skills are visibly created when there is no good match.
-- [x] Existing skills are patched instead of duplicated when a match already exists.
-- [x] `agent-wiki/index.md`, `agent-wiki/log.md`, and `agent-wiki/lint.md` remain the visible control surface.
+- [x] `trace`, `web`, and `pdf` fit the same source pipeline.
+- [x] `note` is the default reusable knowledge unit.
+- [x] `skill` remains the reusable workflow unit.
+- [x] A generated note is sufficient for the agent to act from one page.
+- [x] New automatic supporting writes go to `agent-wiki/notes/`.
+- [x] Web capture emits semantic design tokens.
+- [x] Tailwind output is derived from those tokens.
+- [x] PDF capture writes useful notes without inventing a second knowledge system.
+- [x] The repo no longer depends on auto-generated `doc`, `pattern`, `question`, `comparison`, or `concept` pages to feel useful.
 
 ## Non-Goals
 
-Do not do these in the first bridge pass:
-
-- [ ] no hosted Datalox server requirement
-- [ ] no new UI
-- [ ] no generic plugin marketplace
-- [ ] no vector database as the primary store
-- [ ] no large fallback chain for loop resolution
-
-## Current Best Practice
-
-For this repo, the best practice is:
-
-1. keep the pack simple
-2. build MCP first
-3. keep CLI as the fallback and bootstrap path
-4. let the bridge own the loop
-
-That is the shortest path from portable pack to real agent adoption.
+- [x] No vector database.
+- [x] No heavy review UI.
+- [x] No broad taxonomy expansion.
+- [x] No generic source framework beyond the concrete adapters actually supported.
+- [x] No document-platform product layer.

@@ -23,8 +23,8 @@ metadata:
     id: repo-engineering.evolve-portable-pack
     workflow: repo_engineering
     trigger: Use when changing the portable pack or agent guidance in this repo.
-    pattern_paths:
-      - .datalox/patterns/repo-engineering-multi-agent-bootstrap-surfaces.md
+    note_paths:
+      - agent-wiki/notes/repo-engineering-multi-agent-bootstrap-surfaces.md
     tags:
       - repo_engineering
       - portable_pack
@@ -43,7 +43,7 @@ Recommended `metadata.datalox` fields:
 - `id`
 - `workflow`
 - `trigger`
-- `pattern_paths`
+- `note_paths`
 - `tags`
 
 Optional `metadata.datalox` fields:
@@ -71,15 +71,15 @@ Give the actual steps the agent should follow.
 
 Say what the agent should produce or explain after using the skill.
 
-### Pattern Docs
+### Notes
 
-List the linked pattern docs that ground the skill.
+List the linked notes that ground the skill.
 
 ## Writing Rule
 
-The skill body should let an agent act even if it has not opened every linked pattern doc yet.
+The skill body should let an agent act even if it has not opened every linked note yet.
 
-Pattern docs are supporting references. They are not a substitute for the skill body.
+Notes are supporting references. They are not a substitute for the skill body.
 
 ## Anti-Pattern
 

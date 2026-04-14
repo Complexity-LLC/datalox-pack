@@ -1,5 +1,5 @@
 ---
-type: pattern
+type: note
 title: Review ambiguous viability gate
 workflow: flow_cytometry
 skill: flow-cytometry.review-ambiguous-viability-gate
@@ -10,8 +10,8 @@ tags:
 confidence: high
 status: active
 related:
-  - agent-wiki/patterns/dead-tail-exception.md
-  - agent-wiki/patterns/qc-escalation-policy.md
+  - agent-wiki/notes/dead-tail-exception.md
+  - agent-wiki/notes/qc-escalation-policy.md
   - agent-wiki/concepts/ambiguous-viability-gate-review.md
   - agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
 sources:
@@ -59,7 +59,7 @@ If the ambiguity is clearly explained by a known artifact pattern, follow that e
 
 ## Related
 
-- agent-wiki/patterns/dead-tail-exception.md
-- agent-wiki/patterns/qc-escalation-policy.md
+- agent-wiki/notes/dead-tail-exception.md
+- agent-wiki/notes/qc-escalation-policy.md
 - agent-wiki/concepts/ambiguous-viability-gate-review.md
 - agent-wiki/questions/when-should-qc-escalate-after-viability-review.md

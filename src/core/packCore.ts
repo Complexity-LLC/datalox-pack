@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { extractTraceSource } from "./sourceBundle.js";
+
 export interface ResolveLoopInput {
   repoPath?: string;
   task?: string;
@@ -39,12 +41,14 @@ export interface RecordTurnResultInput {
   skillId?: string;
   summary?: string;
   observations?: string[];
+  changedFiles?: string[];
   transcript?: string;
   tags?: string[];
   title?: string;
   signal?: string;
   interpretation?: string;
   recommendedAction?: string;
+  outcome?: string;
   eventKind?: string;
 }
 
@@ -157,24 +161,18 @@ const SINGLE_FILE_ADOPTION_PATHS = [
   ".datalox/config.schema.json",
   ".datalox/manifest.json",
   ".datalox/skill.schema.md",
+  "bin/claude-global-auto-promote.sh",
   "bin/datalox-auto-promote.js",
+  "bin/datalox-claude.js",
   "bin/datalox-codex.js",
   "bin/datalox-wrap.js",
-  "agent-wiki/pattern.schema.md",
-  "agent-wiki/source.schema.md",
-  "agent-wiki/concept.schema.md",
-  "agent-wiki/comparison.schema.md",
-  "agent-wiki/question.schema.md",
-  "agent-wiki/page-types.md",
+  "bin/install-default-host-integrations.sh",
+  "bin/setup-multi-agent.sh",
+  "agent-wiki/note.schema.md",
 ];
 const TREE_ADOPTION_PATHS = [
   "skills",
-  "agent-wiki/patterns",
-  "agent-wiki/meta",
-  "agent-wiki/sources",
-  "agent-wiki/concepts",
-  "agent-wiki/comparisons",
-  "agent-wiki/questions",
+  "agent-wiki/notes",
 ];
 const INSTALL_STAMP_RELATIVE_PATH = ".datalox/install.json";
 
@@ -501,7 +499,7 @@ export async function resolveLoop(input: ResolveLoopInput) {
 export async function patchKnowledge(input: PatchKnowledgeInput) {
   const repoPath = resolveRepoPath(input.repoPath);
   const legacy = await loadLegacyPackModule();
-  return legacy.learnFromInteraction(
+  const result = await legacy.learnFromInteraction(
     {
       task: input.task,
       workflow: input.workflow,
@@ -518,12 +516,16 @@ export async function patchKnowledge(input: PatchKnowledgeInput) {
     },
     repoPath,
   );
+  return {
+    ...result,
+    note: result.pattern,
+  };
 }
 
 export async function recordTurnResult(input: RecordTurnResultInput) {
   const repoPath = resolveRepoPath(input.repoPath);
   const legacy = await loadLegacyPackModule();
-  return legacy.recordTurnResult(
+  const result = await legacy.recordTurnResult(
     {
       task: input.task,
       workflow: input.workflow,
@@ -531,22 +533,44 @@ export async function recordTurnResult(input: RecordTurnResultInput) {
       skillId: input.skillId,
       summary: input.summary,
       observations: input.observations ?? [],
+      changedFiles: input.changedFiles ?? [],
       transcript: input.transcript,
       tags: input.tags ?? [],
       title: input.title,
       signal: input.signal,
       interpretation: input.interpretation,
       recommendedAction: input.recommendedAction,
+      outcome: input.outcome,
       eventKind: input.eventKind,
     },
     repoPath,
   );
+  return {
+    ...result,
+    traceBundle: extractTraceSource({
+      id: result.event.payload.id,
+      title: result.event.payload.title,
+      capturedAt: result.event.payload.timestamp,
+      task: result.event.payload.task ?? input.task,
+      workflow: result.event.payload.workflow ?? input.workflow,
+      step: result.event.payload.step ?? input.step,
+      transcript: result.event.payload.transcript ?? input.transcript,
+      summary: result.event.payload.summary ?? input.summary,
+      observations: result.event.payload.observations ?? input.observations ?? [],
+      signal: result.event.payload.signal ?? input.signal,
+      interpretation: result.event.payload.interpretation ?? input.interpretation,
+      action: result.event.payload.recommendedAction ?? input.recommendedAction,
+      matchedSkillId: result.event.payload.matchedSkillId ?? input.skillId,
+      changedFiles: result.event.payload.changedFiles ?? input.changedFiles ?? [],
+      outcome: result.event.payload.outcome ?? input.outcome,
+    }),
+  };
 }
 
 export async function promoteGap(input: PromoteGapInput) {
   const repoPath = resolveRepoPath(input.repoPath);
   const legacy = await loadLegacyPackModule();
-  return legacy.promoteGap(
+  const result = await legacy.promoteGap(
     {
       task: input.task,
       workflow: input.workflow,
@@ -554,18 +578,46 @@ export async function promoteGap(input: PromoteGapInput) {
       skillId: input.skillId,
       summary: input.summary,
       observations: input.observations ?? [],
+      changedFiles: input.changedFiles ?? [],
       transcript: input.transcript,
       tags: input.tags ?? [],
       title: input.title,
       signal: input.signal,
       interpretation: input.interpretation,
       recommendedAction: input.recommendedAction,
+      outcome: input.outcome,
       eventKind: input.eventKind,
       minWikiOccurrences: input.minWikiOccurrences,
       minSkillOccurrences: input.minSkillOccurrences,
     },
     repoPath,
   );
+  return {
+    ...result,
+    promotion: result.promotion
+      ? {
+        ...result.promotion,
+        note: result.promotion.pattern ?? null,
+      }
+      : null,
+    traceBundle: extractTraceSource({
+      id: result.event.payload.id,
+      title: result.event.payload.title,
+      capturedAt: result.event.payload.timestamp,
+      task: result.event.payload.task ?? input.task,
+      workflow: result.event.payload.workflow ?? input.workflow,
+      step: result.event.payload.step ?? input.step,
+      transcript: result.event.payload.transcript ?? input.transcript,
+      summary: result.event.payload.summary ?? input.summary,
+      observations: result.event.payload.observations ?? input.observations ?? [],
+      signal: result.event.payload.signal ?? input.signal,
+      interpretation: result.event.payload.interpretation ?? input.interpretation,
+      action: result.event.payload.recommendedAction ?? input.recommendedAction,
+      matchedSkillId: result.event.payload.matchedSkillId ?? input.skillId,
+      changedFiles: result.event.payload.changedFiles ?? input.changedFiles ?? [],
+      outcome: result.event.payload.outcome ?? input.outcome,
+    }),
+  };
 }
 
 export async function lintLocalPack(input: LintPackInput = {}) {

@@ -1,42 +1,27 @@
 # Project Overview
 
-This repo is the portable public side of Datalox.
+`datalox-pack` is a portable agent memory and skill layer.
 
-The current version is intentionally small.
+The repo is centered on:
 
-## What It Is
+- `skills/`
+- `agent-wiki/notes/`
+- `agent-wiki/events/`
 
-Datalox gives an agent two repo-local things:
+The runtime loop is:
 
-- `Skill`: a lightweight entrypoint for a task or workflow
-- `Agent Wiki`: the supporting knowledge layer a skill points to
+`detect -> use -> record -> promote -> lint`
 
-The loop is:
+The current concrete source kinds are:
 
-```text
-current task -> detect skill -> read pattern docs -> act
-                           -> patch when needed
-                           -> lint after patch
-```
+- `trace`
+- `web`
+- `pdf`
 
-## What Gets Written
+The current durable outputs are:
 
-When the agent learns something reusable:
+- `note`
+- `skill`
 
-```text
-interaction -> pattern doc -> skill update
-```
-
-Generated skills stay in `skills/`.
-Loop-time pattern docs live in `agent-wiki/patterns/`.
-Richer support can live in `agent-wiki/sources/`, `agent-wiki/concepts/`, `agent-wiki/comparisons/`, and `agent-wiki/questions/`.
-
-When the pack is external, those writes belong to the host repo while this repo remains the seed pack.
-
-## Why It Is So Small
-
-This repo is for proving one thing first:
-
-an agent can detect the right repo-local skill every loop, use linked wiki pages immediately, and keep the graph healthy with lint.
-
-Everything else is secondary until that works reliably.
+That is the core product boundary.
+Avoid expanding taxonomy unless real usage proves another generated page type is necessary.

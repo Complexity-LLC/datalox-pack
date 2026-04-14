@@ -1,280 +1,180 @@
-# Datalox Pack
+# datalox-pack
 
-This repo is a portable Datalox pack for agents.
+`datalox-pack` is a repo-local memory and skill layer for code agents.
 
-The current version is intentionally narrow:
+It keeps the model small:
 
-- detect a skill on every agent loop
-- expose actionable guidance from linked pattern docs
-- ground reusable gaps in `agent-wiki/events/` before promoting them
-- keep generated skills in `skills/`
-- keep reusable knowledge in `agent-wiki/`
-- lint the skill-to-wiki graph for broken links, stale pages, and unsupported contradictions
-- keep visible control artifacts in `agent-wiki/index.md`, `agent-wiki/log.md`, `agent-wiki/lint.md`, and `agent-wiki/hot.md`
+- source kinds: `trace`, `web`, `pdf`
+- durable outputs: `note`, `skill`
 
-No server is required.
+The loop is:
 
-## Fast Adoption
+`detect -> use -> record -> promote -> lint`
 
-If the pack repo is already local:
+## What It Writes
 
-```bash
-bash bin/adopt-host-repo.sh /path/to/host-repo
+In an adopted repo, the main surfaces are:
+
+```text
+skills/
+agent-wiki/
+  notes/
+  events/
+  index.md
+  log.md
+  lint.md
+  hot.md
 ```
 
-If you only have the GitHub repo:
+Use:
+
+- `skills/` for reusable workflows
+- `agent-wiki/notes/` for reusable local knowledge that already includes rule, evidence, and examples
+
+## Install
+
+Machine-level install:
 
 ```bash
-bash bin/adopt-from-github.sh /path/to/host-repo
-```
-
-To wire skills into common agent tools:
-
-```bash
+git clone https://github.com/Complexity-LLC/datalox-pack.git
+cd datalox-pack
 bash bin/setup-multi-agent.sh
 ```
 
-After the host integrations are installed, supported hosts can bootstrap a clean git repo automatically on the first loop. They only do this when the repo is writable and has no partial Datalox-owned paths already present.
-
-For hosts with post-turn hook support, the automatic promotion entrypoint is:
+Repo-level adoption:
 
 ```bash
-node bin/datalox-auto-promote.js
+bash bin/adopt-host-repo.sh /path/to/your-project
 ```
 
-For hosts without MCP or hook support, use the wrapper entrypoints:
+Or from GitHub:
 
 ```bash
-node bin/datalox-wrap.js prompt --repo /path/to/repo --task "review ambiguous live dead gate" --prompt "Review the current gate"
-node bin/datalox-wrap.js command --repo /path/to/repo --task "review ambiguous live dead gate" --prompt "Review the current gate" -- your-agent-cli __DATALOX_PROMPT__
-node bin/datalox-codex.js --repo /path/to/repo --task "update pack docs" --prompt "Update the docs to mention wrappers."
+bash bin/adopt-from-github.sh /path/to/your-project
 ```
 
-If a repo already contains partial `DATALOX.md`, `.datalox/`, or `agent-wiki/` files without an install stamp, wrappers refuse auto-bootstrap and pass through unchanged. That is deliberate.
+Supported default host paths include the Codex shim, the Claude shim when a real `claude` CLI exists, the Claude hook, and the generic CLI wrapper.
 
-## Loop Bridge
+## CLI
 
-For automatic loop-time adoption in supported hosts, use the MCP server first and the CLI as fallback:
+Resolve the current loop:
 
 ```bash
-npm install
-npm run build
+node dist/src/cli/main.js resolve --repo . --task "review ambiguous viability gate" --json
+```
+
+Record and promote:
+
+```bash
+node dist/src/cli/main.js record --repo . --task "review ambiguous viability gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception note before widening gate" --json
+node dist/src/cli/main.js promote --repo . --task "review ambiguous viability gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception note before widening gate" --json
+node dist/src/cli/main.js lint --repo . --json
+```
+
+Wrapper entrypoints:
+
+```bash
+node bin/datalox-claude.js --repo /path/to/repo -- --print "Update the docs."
+node bin/datalox-codex.js --repo /path/to/repo --task "update docs" --prompt "Update the docs."
+node bin/datalox-wrap.js command --repo /path/to/repo --task "update docs" --prompt "Update the docs." -- <host-command> __DATALOX_PROMPT__
+```
+
+## MCP
+
+Primary MCP tools:
+
+- `resolve_loop`
+- `record_turn_result`
+- `promote_gap`
+- `lint_pack`
+- `capture_web_artifact`
+- `capture_pdf_artifact`
+- `publish_web_capture`
+- `adopt_pack`
+
+Start the server with:
+
+```bash
 node dist/src/mcp/server.js
 ```
 
-The companion CLI exposes the same core operations:
+## Promotion Rules
+
+Default behavior:
+
+- first grounded occurrence: keep it as an event
+- repeated gap with an existing matching skill: patch that skill and its linked note set
+- repeated gap with no matching skill: create a reusable note
+- repeated no-match after the skill threshold: create a live skill
+
+Generated notes go to `agent-wiki/notes/`.
+Generated skills go to `skills/`.
+
+## Web Capture
+
+Capture a live site into repo-local design knowledge:
 
 ```bash
-node dist/src/cli/main.js resolve --task "review ambiguous live dead gate" --workflow flow_cytometry --json
-node dist/src/cli/main.js record --task "review ambiguous live dead gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception pattern before widening gate" --json
-node dist/src/cli/main.js patch --task "review ambiguous live dead gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception pattern before widening gate" --json
-node dist/src/cli/main.js promote --task "review ambiguous live dead gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception pattern before widening gate" --json
-node dist/src/cli/main.js lint --json
-node dist/src/cli/main.js wrap prompt --repo . --task "review ambiguous live dead gate" --prompt "Review the gate"
-node dist/src/cli/main.js wrap command --repo . --task "review ambiguous live dead gate" --prompt "Review the gate" -- your-agent-cli __DATALOX_PROMPT__
-node dist/src/cli/main.js codex --repo . --task "update pack docs" --prompt "Update the docs to mention wrappers."
+node dist/src/cli/main.js capture-web --repo . --url https://example.com --artifact design-doc --json
+node dist/src/cli/main.js capture-web --repo . --url https://example.com --artifact design-tokens --json
+node dist/src/cli/main.js capture-web --repo . --url https://example.com --artifact css-variables --json
+node dist/src/cli/main.js capture-web --repo . --url https://example.com --artifact tailwind-theme --json
+node dist/src/cli/main.js capture-web --repo . --url https://example.com --artifact note --json
 ```
 
-Example MCP host config:
+Outputs:
 
-```json
-{
-  "mcpServers": {
-    "datalox-pack": {
-      "command": "node",
-      "args": ["/absolute/path/to/datalox-pack/dist/src/mcp/server.js"]
-    }
-  }
-}
-```
+- note: `agent-wiki/notes/web/<slug>.md`
+- screenshots: `agent-wiki/assets/web/<slug>/desktop.png`, `mobile.png`
+- design doc: `designs/web/<slug>.md`
+- design tokens: `designs/web/<slug>.tokens.json`
+- tailwind theme: `designs/web/<slug>.tailwind.ts`
 
-## Core Loop
+Design tokens are the reusable artifact.
+Tailwind output is derived from the tokens.
 
-The pack is built around one minimal loop:
+## PDF Capture
 
-1. `detect`
-   Find the best matching skill in `skills/` from task text, workflow, and repo context.
-2. `use`
-   Read the linked pattern docs and surface `why matched`, `what to do now`, and `watch for`.
-3. `record`
-   Write grounded turn results into `agent-wiki/events/` before promoting them.
-4. `promote`
-   Promote repeated gaps into wiki patterns or new/updated skills using conservative thresholds.
-5. `lint`
-   Check that the skill-pattern graph is still coherent.
-
-When this pack is used from another repo, it acts as a seed pack. Reads can come from this repo, but generated skills and pattern docs must be written into the host repo.
-
-The human-visible payoff is in four generated files:
-
-- `agent-wiki/index.md`: what the agent currently knows
-- `agent-wiki/log.md`: what it changed, including `create_skill`, `update_skill`, `patch_pattern`, and `lint_pack`
-- `agent-wiki/lint.md`: whether the pack is still healthy
-- `agent-wiki/hot.md`: the recent context snapshot an agent can read first in the next session
-
-## Concrete Workflow: Capture Web Knowledge
-
-This repo now supports a concrete web-capture path instead of only chat-derived promotion.
+Capture a PDF into a repo-local note:
 
 ```bash
-npx playwright install chromium
-node dist/src/cli/main.js capture-web \
-  --repo /path/to/host-repo \
-  --url https://example.com \
-  --artifact design-doc \
-  --json
+node dist/src/cli/main.js capture-pdf --repo . --path ./paper.pdf --json
 ```
 
-That writes:
+Outputs:
 
-- `agent-wiki/sources/web/<slug>.md`
-- `agent-wiki/assets/web/<slug>/desktop.png`
-- `agent-wiki/assets/web/<slug>/mobile.png`
-- `designs/web/<slug>.md` when `--artifact design-doc` is selected
+- note: `agent-wiki/notes/pdf/<slug>.md`
+- metadata: `agent-wiki/notes/pdf/<slug>.capture.json`
 
-For MCP hosts, call `capture_web_artifact` with:
+PDF capture writes notes first. Promotion into a skill should still come from later trace evidence.
 
-- `repo_path`
-- `url`
-- `artifact_type: "design_doc"` or `artifact_type: "source_page"`
+## Publish Curated Web Captures
 
-The corresponding pack skill is:
-
-- `skills/capture-web-knowledge/SKILL.md`
-
-## Publish Curated Captures to R2
-
-Keep capture local first. Publish only the instances worth showing.
-
-Required environment variables:
+After capturing locally:
 
 ```bash
-export DATALOX_R2_ACCOUNT_ID=...
-export DATALOX_R2_ACCESS_KEY_ID=...
-export DATALOX_R2_SECRET_ACCESS_KEY=...
-export DATALOX_R2_BUCKET=...
-export DATALOX_R2_PUBLIC_BASE_URL=https://assets.example.com/
+node dist/src/cli/main.js publish-web-capture --repo /path/to/corpus --capture <slug> --bucket "$DATALOX_R2_BUCKET" --json
 ```
 
-Optional:
+This uploads:
 
-```bash
-export DATALOX_R2_PREFIX=design-corpus
-```
-
-Publish one captured instance:
-
-```bash
-node dist/src/cli/main.js publish-web-capture \
-  --repo /path/to/host-repo \
-  --capture <slug> \
-  --bucket "$DATALOX_R2_BUCKET" \
-  --json
-```
-
-That uploads:
-
-- source markdown
-- optional design brief markdown
-- desktop screenshot
-- mobile screenshot
+- the note
+- the derived artifact
+- the screenshots
 - `instances/<slug>/manifest.json`
-
-Then it regenerates:
-
 - `indexes/latest.json`
 
-The default bucket layout is:
+## Current Best Practice
 
-```text
-design-corpus/
-  instances/
-    <slug>/
-      manifest.json
-      source.md
-      <artifact>.md
-      desktop.png
-      mobile.png
-  indexes/
-    latest.json
-```
+Keep the pack minimal:
 
-## Read First
-
-1. [.datalox/manifest.json](.datalox/manifest.json)
-2. [.datalox/config.json](.datalox/config.json)
-3. [DATALOX.md](DATALOX.md)
-4. [agent-wiki/hot.md](agent-wiki/hot.md) when present
-5. [AGENTS.md](AGENTS.md)
-6. [CLAUDE.md](CLAUDE.md), [WIKI.md](WIKI.md), or [GEMINI.md](GEMINI.md) when relevant
-
-## Repo Contract
-
-- `skills/`: seed skills for the pack, stored as `skills/<name>/SKILL.md`
-- `agent-wiki/patterns/`: seed loop-time judgment pages
-- `agent-wiki/sources/`: seed source and provenance pages
-- `agent-wiki/concepts/`: seed reusable concept pages
-- `agent-wiki/comparisons/`: seed comparison pages
-- `agent-wiki/questions/`: seed recurring question pages
-- `agent-wiki/meta/`: seed maintenance pages
-- `agent-wiki/index.md`: generated skill-pattern map in the host repo
-- `agent-wiki/log.md`: generated operation log in the host repo
-- `agent-wiki/lint.md`: generated lint snapshot in the host repo
-- `agent-wiki/hot.md`: generated recent-context snapshot in the host repo
-- `agent-wiki/page-types.md`: wiki taxonomy for the supporting knowledge layer
-- `agent-wiki/events/`: grounded turn-result records used for conservative promotion
-- `.datalox/skill.schema.md`: authoring contract for future skills
-- `START_HERE.md`: human-friendly first-run guide
-- `bin/datalox-wrap.js`: generic CLI wrapper for hosts without MCP or hooks
-- `bin/datalox-codex.js`: Codex `exec` wrapper that resolves loop guidance first
-- host repos should write generated skills into their own `skills/`
-- host repos should write generated pattern docs into their own `agent-wiki/patterns/`
-- host repos can add richer supporting pages under the other `agent-wiki/` folders when patterns alone are not enough
-
-## Optional Reference Implementation
-
-The legacy Node scripts are optional helpers for testing the same protocol:
-
-```bash
-# detect + use
-node scripts/agent-resolve.mjs --task "review ambiguous live dead gate" --workflow flow_cytometry
-
-# patch
-node scripts/agent-learn-from-interaction.mjs \
-  --task "review ambiguous live dead gate" \
-  --workflow flow_cytometry \
-  --observation "dim dead tail overlaps live shoulder" \
-  --interpretation "likely artifact" \
-  --action "review exception doc before widening gate"
-
-# lint
-node scripts/agent-lint.mjs
-```
-
-After the patch step, the next resolve call should return the updated skill with the new pattern doc already linked in.
-The host repo should also show updated `agent-wiki/index.md`, `agent-wiki/log.md`, and `agent-wiki/hot.md`.
-
-## Skill Authoring Rule
-
-Skills should be written as operational playbooks, not metadata wrappers.
-
-- Keep top-level frontmatter minimal: `name`, `description`
-- Put Datalox-specific machine fields under `metadata.datalox`
-- Put the real procedure in the markdown body
-
-See [skill.schema.md](.datalox/skill.schema.md).
+- `trace`, `web`, and `pdf` are the only concrete source kinds
+- `note` and `skill` are the only durable generated outputs
+- read legacy supporting folders when they already exist, but do not generate new knowledge into them
 
 ## Docs
 
-- [docs/project-overview.md](docs/project-overview.md)
+- [DATALOX.md](DATALOX.md)
 - [docs/agent-configuration.md](docs/agent-configuration.md)
+- [docs/project-overview.md](docs/project-overview.md)
 - [docs/implementation-checklist.md](docs/implementation-checklist.md)
-- [START_HERE.md](START_HERE.md)
-
-## Development
-
-```bash
-npm install
-npm run check
-npm test
-```

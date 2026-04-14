@@ -6,10 +6,10 @@ metadata:
     id: flow-cytometry.review-ambiguous-viability-gate
     workflow: flow_cytometry
     trigger: Use when live/dead separation is ambiguous during viability gate review.
-    pattern_paths:
-      - agent-wiki/patterns/viability-gate-review.md
-      - agent-wiki/patterns/dead-tail-exception.md
-      - agent-wiki/patterns/qc-escalation-policy.md
+    note_paths:
+      - agent-wiki/notes/viability-gate-review.md
+      - agent-wiki/notes/dead-tail-exception.md
+      - agent-wiki/notes/qc-escalation-policy.md
     tags:
       - flow_cytometry
       - viability
@@ -36,8 +36,8 @@ Use this skill for ambiguous viability review. This is a judgment step, not a me
 ## Workflow
 
 1. Confirm the ambiguity is real and not just a visualization artifact.
-2. Read the linked pattern docs before widening or shifting the gate.
-3. Treat the pattern docs as judgment support: check signal, interpretation, and recommended action.
+2. Read the linked notes before widening or shifting the gate.
+3. Treat the notes as judgment support: check signal, interpretation, action, and examples.
 4. Prefer the narrowest change that preserves downstream interpretability.
 5. Escalate if the decision materially changes QC, sample disposition, or downstream interpretation.
 
@@ -45,11 +45,11 @@ Use this skill for ambiguous viability review. This is a judgment step, not a me
 
 - State why this skill matched.
 - State the recommended gate action.
-- State what evidence or exception pattern justified the action.
+- State what evidence or exception note justified the action.
 - State whether escalation is required.
 
-## Pattern Docs
+## Notes
 
-- agent-wiki/patterns/viability-gate-review.md
-- agent-wiki/patterns/dead-tail-exception.md
-- agent-wiki/patterns/qc-escalation-policy.md
+- agent-wiki/notes/viability-gate-review.md
+- agent-wiki/notes/dead-tail-exception.md
+- agent-wiki/notes/qc-escalation-policy.md

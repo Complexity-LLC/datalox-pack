@@ -67,9 +67,9 @@ async function createHostRepo(): Promise<string> {
 }
 
 async function seedCapture(hostDir: string, slug: string, capturedAt: string) {
-  await mkdir(path.join(hostDir, "agent-wiki", "sources", "web"), { recursive: true });
+  await mkdir(path.join(hostDir, "agent-wiki", "notes", "web"), { recursive: true });
   await mkdir(path.join(hostDir, "agent-wiki", "assets", "web", slug), { recursive: true });
-  await writeFile(path.join(hostDir, "agent-wiki", "sources", "web", `${slug}.md`), `# ${slug}\n`, "utf8");
+  await writeFile(path.join(hostDir, "agent-wiki", "notes", "web", `${slug}.md`), `# ${slug}\n`, "utf8");
   await writeFile(path.join(hostDir, "agent-wiki", "assets", "web", slug, "desktop.png"), Buffer.from(`${slug}-desktop`));
   await writeFile(path.join(hostDir, "agent-wiki", "assets", "web", slug, "mobile.png"), Buffer.from(`${slug}-mobile`));
   await mkdir(path.join(hostDir, "designs", "web"), { recursive: true });
@@ -84,7 +84,9 @@ async function seedCapture(hostDir: string, slug: string, capturedAt: string) {
     capturedAt,
     artifactType: "design_doc",
     artifactPath: `designs/web/${slug}.md`,
-    sourcePagePath: `agent-wiki/sources/web/${slug}.md`,
+    artifactContentType: "text/markdown; charset=utf-8",
+    notePath: `agent-wiki/notes/web/${slug}.md`,
+    sourcePagePath: `agent-wiki/notes/web/${slug}.md`,
     screenshotPaths: {
       desktop: `agent-wiki/assets/web/${slug}/desktop.png`,
       mobile: `agent-wiki/assets/web/${slug}/mobile.png`,
@@ -143,7 +145,7 @@ async function seedCapture(hostDir: string, slug: string, capturedAt: string) {
   };
 
   await writeFile(
-    path.join(hostDir, "agent-wiki", "sources", "web", `${slug}.capture.json`),
+    path.join(hostDir, "agent-wiki", "notes", "web", `${slug}.capture.json`),
     `${JSON.stringify(metadata, null, 2)}\n`,
     "utf8",
   );
@@ -186,7 +188,8 @@ describe("publish web capture", () => {
     ) as PublishedCaptureManifest;
     expect(manifest.id).toBe("acme");
     expect(manifest.objects.source_markdown.url).toBe("https://assets.example.com/design-corpus/instances/acme/source.md");
-    expect(manifest.objects.artifact_markdown?.url).toBe("https://assets.example.com/design-corpus/instances/acme/acme.md");
+    expect(manifest.objects.artifact_file?.url).toBe("https://assets.example.com/design-corpus/instances/acme/acme.md");
+    expect(manifest.objects.artifact_file?.content_type).toBe("text/markdown; charset=utf-8");
     expect(manifest.fonts).toContain("Inter");
     expect(manifest.section_labels).toContain("Hero");
 

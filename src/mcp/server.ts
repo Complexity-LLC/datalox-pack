@@ -12,6 +12,7 @@ import {
   recordTurnResult,
   resolveLoop,
 } from "../core/packCore.js";
+import { capturePdfArtifact } from "../core/pdfCapture.js";
 import { publishWebCapture } from "../core/publishWebCapture.js";
 import { captureDesignFromUrl, captureWebArtifact } from "../core/webCapture.js";
 
@@ -27,11 +28,11 @@ const JsonResultSchema = {
 server.registerTool(
   "capture_web_artifact",
   {
-    description: "Capture a live website into repo-local source evidence and an optional reusable artifact such as DESIGN.md.",
+    description: "Capture a live website into a repo-local note plus an optional reusable artifact such as a design brief, CSS variable sheet, tokens, or Tailwind theme.",
     inputSchema: {
       repo_path: z.string().describe("Absolute or relative path to the host repo."),
       url: z.string().describe("Website URL to capture."),
-      artifact_type: z.enum(["design_doc", "source_page"]).optional(),
+      artifact_type: z.enum(["design_doc", "design_tokens", "css_variables", "tailwind_theme", "note", "source_page"]).optional(),
       title: z.string().optional(),
       slug: z.string().optional(),
       output_path: z.string().optional(),
@@ -55,9 +56,37 @@ server.registerTool(
 );
 
 server.registerTool(
+  "capture_pdf_artifact",
+  {
+    description: "Capture a PDF into a repo-local note so agents can act from extracted evidence instead of reopening the file.",
+    inputSchema: {
+      repo_path: z.string().describe("Absolute or relative path to the host repo."),
+      path: z.string().describe("Absolute or relative path to the PDF file."),
+      title: z.string().optional(),
+      slug: z.string().optional(),
+      source_url: z.string().optional(),
+    },
+    outputSchema: JsonResultSchema,
+  },
+  async ({ repo_path, path, title, slug, source_url }) => {
+    const result = await capturePdfArtifact({
+      repoPath: repo_path,
+      path,
+      title,
+      slug,
+      sourceUrl: source_url,
+    });
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      structuredContent: { result },
+    };
+  },
+);
+
+server.registerTool(
   "capture_design_source",
   {
-    description: "Compatibility alias: capture a live website into DESIGN.md plus a source page and screenshots in the host repo.",
+    description: "Compatibility alias: capture a live website into a design brief plus a reusable note and screenshots in the host repo.",
     inputSchema: {
       repo_path: z.string().describe("Absolute or relative path to the host repo."),
       url: z.string().describe("Website URL to capture."),
@@ -88,7 +117,7 @@ server.registerTool(
     description: "Publish one captured web instance to R2, write its manifest.json, and regenerate indexes/latest.json.",
     inputSchema: {
       repo_path: z.string().describe("Absolute or relative path to the host repo."),
-      capture: z.string().describe("Capture slug under agent-wiki/sources/web/<slug>.capture.json."),
+      capture: z.string().describe("Capture slug under agent-wiki/notes/web/<slug>.capture.json."),
       bucket: z.string().optional(),
       prefix: z.string().optional(),
       public_base_url: z.string().optional(),
@@ -154,12 +183,14 @@ server.registerTool(
       skill_id: z.string().optional(),
       summary: z.string().optional(),
       observations: z.array(z.string()).optional(),
+      changed_files: z.array(z.string()).optional(),
       transcript: z.string().optional(),
       tags: z.array(z.string()).optional(),
       title: z.string().optional(),
       signal: z.string().optional(),
       interpretation: z.string().optional(),
       recommended_action: z.string().optional(),
+      outcome: z.string().optional(),
       event_kind: z.string().optional(),
     },
     outputSchema: JsonResultSchema,
@@ -172,12 +203,14 @@ server.registerTool(
     skill_id,
     summary,
     observations,
+    changed_files,
     transcript,
     tags,
     title,
     signal,
     interpretation,
     recommended_action,
+    outcome,
     event_kind,
   }) => {
     const result = await recordTurnResult({
@@ -188,12 +221,14 @@ server.registerTool(
       skillId: skill_id,
       summary,
       observations,
+      changedFiles: changed_files,
       transcript,
       tags,
       title,
       signal,
       interpretation,
       recommendedAction: recommended_action,
+      outcome,
       eventKind: event_kind,
     });
     return {
@@ -206,7 +241,7 @@ server.registerTool(
 server.registerTool(
   "patch_knowledge",
   {
-    description: "Write a reusable pattern doc, create or update a skill, and refresh the visible pack artifacts.",
+    description: "Write a reusable note, create or update a skill, and refresh the visible pack artifacts.",
     inputSchema: {
       repo_path: z.string().describe("Absolute or relative path to the host repo."),
       task: z.string().optional(),
@@ -264,7 +299,7 @@ server.registerTool(
 server.registerTool(
   "promote_gap",
   {
-    description: "Promote repeated grounded events into wiki patterns or new/updated skills using conservative thresholds.",
+    description: "Promote repeated grounded events into reusable notes or new/updated skills using conservative thresholds.",
     inputSchema: {
       repo_path: z.string().describe("Absolute or relative path to the host repo."),
       task: z.string().optional(),
@@ -273,12 +308,14 @@ server.registerTool(
       skill_id: z.string().optional(),
       summary: z.string().optional(),
       observations: z.array(z.string()).optional(),
+      changed_files: z.array(z.string()).optional(),
       transcript: z.string().optional(),
       tags: z.array(z.string()).optional(),
       title: z.string().optional(),
       signal: z.string().optional(),
       interpretation: z.string().optional(),
       recommended_action: z.string().optional(),
+      outcome: z.string().optional(),
       event_kind: z.string().optional(),
       min_wiki_occurrences: z.number().int().positive().optional(),
       min_skill_occurrences: z.number().int().positive().optional(),
@@ -293,12 +330,14 @@ server.registerTool(
     skill_id,
     summary,
     observations,
+    changed_files,
     transcript,
     tags,
     title,
     signal,
     interpretation,
     recommended_action,
+    outcome,
     event_kind,
     min_wiki_occurrences,
     min_skill_occurrences,
@@ -311,12 +350,14 @@ server.registerTool(
       skillId: skill_id,
       summary,
       observations,
+      changedFiles: changed_files,
       transcript,
       tags,
       title,
       signal,
       interpretation,
       recommendedAction: recommended_action,
+      outcome,
       eventKind: event_kind,
       minWikiOccurrences: min_wiki_occurrences,
       minSkillOccurrences: min_skill_occurrences,

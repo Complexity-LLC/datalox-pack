@@ -35,13 +35,13 @@ function resolveRuntimeRoot(root) {
     }
   }
 
-  throw new Error("Unable to resolve Datalox runtime root for datalox-wrap.js");
+  throw new Error("Unable to resolve Datalox runtime root for datalox-claude.js");
 }
 
 const runtimeRoot = resolveRuntimeRoot(repoRoot);
 const entrypoint = path.join(runtimeRoot, "dist", "src", "cli", "main.js");
 
-const child = spawn(process.execPath, [entrypoint, "wrap", ...process.argv.slice(2)], {
+const child = spawn(process.execPath, [entrypoint, "claude", ...process.argv.slice(2)], {
   stdio: "inherit",
 });
 

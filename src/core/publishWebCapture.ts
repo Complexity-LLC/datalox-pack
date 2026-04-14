@@ -30,6 +30,7 @@ export interface PublishWebCaptureInput {
 export interface PublishedObjectRef {
   key: string;
   url: string | null;
+  content_type: string;
 }
 
 export interface PublishedCaptureManifest {
@@ -45,7 +46,7 @@ export interface PublishedCaptureManifest {
   section_labels: string[];
   objects: {
     source_markdown: PublishedObjectRef;
-    artifact_markdown: PublishedObjectRef | null;
+    artifact_file: PublishedObjectRef | null;
     desktop_screenshot: PublishedObjectRef;
     mobile_screenshot: PublishedObjectRef;
   };
@@ -80,7 +81,7 @@ export interface ObjectStore {
 interface CaptureBundle {
   metadata: WebCaptureMetadata;
   sourceMarkdown: string;
-  artifactMarkdown: string | null;
+  artifactFile: string | null;
   desktopScreenshot: Buffer;
   mobileScreenshot: Buffer;
 }
@@ -129,10 +130,11 @@ async function readJsonFile<T>(filePath: string): Promise<T> {
 }
 
 async function loadCaptureBundle(repoPath: string, captureSlug: string): Promise<CaptureBundle> {
-  const metadataPath = path.join(repoPath, "agent-wiki", "sources", "web", `${captureSlug}.capture.json`);
+  const metadataPath = path.join(repoPath, "agent-wiki", "notes", "web", `${captureSlug}.capture.json`);
   const metadata = await readJsonFile<WebCaptureMetadata>(metadataPath);
+  const notePath = metadata.notePath ?? metadata.sourcePagePath;
   const [sourceMarkdown, artifactMarkdown, desktopScreenshot, mobileScreenshot] = await Promise.all([
-    readFile(path.join(repoPath, metadata.sourcePagePath), "utf8"),
+    readFile(path.join(repoPath, notePath), "utf8"),
     metadata.artifactPath ? readFile(path.join(repoPath, metadata.artifactPath), "utf8") : Promise.resolve(null),
     readFile(path.join(repoPath, metadata.screenshotPaths.desktop)),
     readFile(path.join(repoPath, metadata.screenshotPaths.mobile)),
@@ -141,7 +143,7 @@ async function loadCaptureBundle(repoPath: string, captureSlug: string): Promise
   return {
     metadata,
     sourceMarkdown,
-    artifactMarkdown,
+    artifactFile: artifactMarkdown,
     desktopScreenshot,
     mobileScreenshot,
   };
@@ -151,7 +153,7 @@ function buildManifest(
   metadata: WebCaptureMetadata,
   keys: {
     sourceMarkdown: string;
-    artifactMarkdown: string | null;
+    artifactFile: string | null;
     desktopScreenshot: string;
     mobileScreenshot: string;
   },
@@ -174,20 +176,24 @@ function buildManifest(
       source_markdown: {
         key: keys.sourceMarkdown,
         url: buildPublicUrl(publicBaseUrl, keys.sourceMarkdown),
+        content_type: "text/markdown; charset=utf-8",
       },
-      artifact_markdown: keys.artifactMarkdown
+      artifact_file: keys.artifactFile
         ? {
-            key: keys.artifactMarkdown,
-            url: buildPublicUrl(publicBaseUrl, keys.artifactMarkdown),
+            key: keys.artifactFile,
+            url: buildPublicUrl(publicBaseUrl, keys.artifactFile),
+            content_type: metadata.artifactContentType ?? "text/plain; charset=utf-8",
           }
         : null,
       desktop_screenshot: {
         key: keys.desktopScreenshot,
         url: buildPublicUrl(publicBaseUrl, keys.desktopScreenshot),
+        content_type: "image/png",
       },
       mobile_screenshot: {
         key: keys.mobileScreenshot,
         url: buildPublicUrl(publicBaseUrl, keys.mobileScreenshot),
+        content_type: "image/png",
       },
     },
   };
@@ -329,8 +335,12 @@ export async function publishWebCapture(
   const mobileKey = joinKey(baseKey, "mobile.png");
 
   await store.putText(sourceKey, bundle.sourceMarkdown, "text/markdown; charset=utf-8");
-  if (bundle.artifactMarkdown && artifactKey) {
-    await store.putText(artifactKey, bundle.artifactMarkdown, "text/markdown; charset=utf-8");
+  if (bundle.artifactFile && artifactKey) {
+    await store.putText(
+      artifactKey,
+      bundle.artifactFile,
+      bundle.metadata.artifactContentType ?? "text/plain; charset=utf-8",
+    );
   }
   await store.putBytes(desktopKey, bundle.desktopScreenshot, "image/png");
   await store.putBytes(mobileKey, bundle.mobileScreenshot, "image/png");
@@ -339,7 +349,7 @@ export async function publishWebCapture(
     bundle.metadata,
     {
       sourceMarkdown: sourceKey,
-      artifactMarkdown: artifactKey,
+      artifactFile: artifactKey,
       desktopScreenshot: desktopKey,
       mobileScreenshot: mobileKey,
     },
@@ -358,7 +368,7 @@ export async function publishWebCapture(
     logEntry: {
       action: "publish_web_capture",
       detail: `${bundle.metadata.slug} -> ${bucket}/${manifestKey}`,
-      path: bundle.metadata.sourcePagePath,
+      path: bundle.metadata.notePath ?? bundle.metadata.sourcePagePath,
     },
   });
 

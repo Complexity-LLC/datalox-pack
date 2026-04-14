@@ -184,9 +184,17 @@ function validateAgentConfig(raw: JsonObject): AgentConfig {
     },
     paths: {
       seedSkillsDir: expectString(paths.seedSkillsDir, "paths.seedSkillsDir"),
-      seedPatternsDir: expectString(paths.seedPatternsDir, "paths.seedPatternsDir"),
+      seedNotesDir: paths.seedNotesDir === undefined
+        ? expectString(paths.seedPatternsDir, "paths.seedPatternsDir")
+        : expectString(paths.seedNotesDir, "paths.seedNotesDir"),
       hostSkillsDir: paths.hostSkillsDir === null ? null : expectString(paths.hostSkillsDir, "paths.hostSkillsDir"),
-      hostPatternsDir: paths.hostPatternsDir === null ? null : expectString(paths.hostPatternsDir, "paths.hostPatternsDir"),
+      hostNotesDir: paths.hostNotesDir === undefined
+        ? (paths.hostPatternsDir === null ? null : expectString(paths.hostPatternsDir, "paths.hostPatternsDir"))
+        : (paths.hostNotesDir === null ? null : expectString(paths.hostNotesDir, "paths.hostNotesDir")),
+      seedPatternsDir: paths.seedPatternsDir === undefined ? null : expectString(paths.seedPatternsDir, "paths.seedPatternsDir"),
+      hostPatternsDir: paths.hostPatternsDir === null || paths.hostPatternsDir === undefined
+        ? null
+        : expectString(paths.hostPatternsDir, "paths.hostPatternsDir"),
     },
     runtime: {
       enabled: expectBoolean(runtime.enabled, "runtime.enabled"),

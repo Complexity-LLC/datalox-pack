@@ -43,9 +43,9 @@ const baseConfig = {
   },
   paths: {
     seedSkillsDir: "skills",
-    seedPatternsDir: "agent-wiki/patterns",
+    seedNotesDir: "agent-wiki/notes",
     hostSkillsDir: "skills",
-    hostPatternsDir: "agent-wiki/patterns",
+    hostNotesDir: "agent-wiki/notes",
   },
   runtime: {
     enabled: false,
@@ -66,6 +66,7 @@ async function createPack(tempDir: string) {
   await mkdir(path.join(tempDir, ".datalox"), { recursive: true });
   await mkdir(path.join(tempDir, "skills/review-ambiguous-viability-gate"), { recursive: true });
   await mkdir(path.join(tempDir, "skills/evolve-portable-pack"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/notes"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/patterns"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/meta"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/sources"), { recursive: true });
@@ -90,8 +91,8 @@ metadata:
     id: flow-cytometry.review-ambiguous-viability-gate
     workflow: flow_cytometry
     trigger: Use when live/dead separation is ambiguous during viability gate review.
-    pattern_paths:
-      - agent-wiki/patterns/viability-gate-review.md
+    note_paths:
+      - agent-wiki/notes/viability-gate-review.md
     tags:
       - flow_cytometry
       - viability
@@ -115,9 +116,9 @@ Use when live/dead separation is ambiguous during viability gate review.
 - State why this skill matched.
 - State the recommended gate action.
 
-## Pattern Docs
+## Notes
 
-- agent-wiki/patterns/viability-gate-review.md
+- agent-wiki/notes/viability-gate-review.md
 `,
   );
   await writeFile(
@@ -130,8 +131,8 @@ metadata:
     id: repo-engineering.evolve-portable-pack
     workflow: repo_engineering
     trigger: Use when changing the portable pack or agent guidance.
-    pattern_paths:
-      - agent-wiki/patterns/evolve-portable-pack.md
+    note_paths:
+      - agent-wiki/notes/evolve-portable-pack.md
     tags:
       - repo_engineering
       - portable_pack
@@ -153,20 +154,20 @@ Use when changing the portable pack or agent guidance.
 - State why this skill matched.
 - State the pack change being made.
 
-## Pattern Docs
+## Notes
 
-- agent-wiki/patterns/evolve-portable-pack.md
+- agent-wiki/notes/evolve-portable-pack.md
 `,
   );
   await writeFile(
-    path.join(tempDir, "agent-wiki/patterns/viability-gate-review.md"),
+    path.join(tempDir, "agent-wiki/notes/viability-gate-review.md"),
     `---
 type: pattern
 title: Review ambiguous viability gate
 workflow: flow_cytometry
 status: active
 related:
-  - agent-wiki/patterns/dead-tail-exception.md
+  - agent-wiki/notes/dead-tail-exception.md
   - agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
 sources:
   - agent-wiki/sources/flow-cytometry-demo-notes.md
@@ -202,12 +203,12 @@ Review the linked exception pattern before changing the gate.
 
 ## Related
 
-- agent-wiki/patterns/dead-tail-exception.md
+- agent-wiki/notes/dead-tail-exception.md
 - agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
 `,
   );
   await writeFile(
-    path.join(tempDir, "agent-wiki/patterns/evolve-portable-pack.md"),
+    path.join(tempDir, "agent-wiki/notes/evolve-portable-pack.md"),
     `---
 type: pattern
 title: Evolve portable pack
@@ -291,14 +292,14 @@ Keep Datalox additive to native skills and avoid extra indirection.
 `,
   );
   await writeFile(
-    path.join(tempDir, "agent-wiki/patterns/dead-tail-exception.md"),
+    path.join(tempDir, "agent-wiki/notes/dead-tail-exception.md"),
     `---
 type: pattern
 title: Dead tail exception
 workflow: flow_cytometry
 status: active
 related:
-  - agent-wiki/patterns/viability-gate-review.md
+  - agent-wiki/notes/viability-gate-review.md
 sources:
   - agent-wiki/sources/flow-cytometry-demo-notes.md
 updated: 2026-04-12T16:00:00.000Z
@@ -333,7 +334,7 @@ Review the exception path before widening the gate.
 
 ## Related
 
-- agent-wiki/patterns/viability-gate-review.md
+- agent-wiki/notes/viability-gate-review.md
 `,
   );
   await writeFile(
@@ -344,7 +345,7 @@ title: Flow cytometry demo notes
 workflow: flow_cytometry
 status: active
 related:
-  - agent-wiki/patterns/viability-gate-review.md
+  - agent-wiki/notes/viability-gate-review.md
 sources: []
 updated: 2026-04-12T16:00:00.000Z
 review_after: 2026-07-12
@@ -377,7 +378,7 @@ title: Loop bridge
 workflow: repo_engineering
 status: active
 related:
-  - agent-wiki/patterns/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-portable-pack.md
 sources:
   - agent-wiki/sources/portable-pack-design-notes.md
 updated: 2026-04-12T16:00:00.000Z
@@ -447,7 +448,7 @@ title: When should QC escalate after viability review?
 workflow: flow_cytometry
 status: active
 related:
-  - agent-wiki/patterns/viability-gate-review.md
+  - agent-wiki/notes/viability-gate-review.md
 sources:
   - agent-wiki/sources/flow-cytometry-demo-notes.md
 updated: 2026-04-12T16:00:00.000Z
@@ -470,7 +471,7 @@ Escalate when the gate change would materially affect downstream QC acceptance.
 
 ## Related
 
-- agent-wiki/patterns/viability-gate-review.md
+- agent-wiki/notes/viability-gate-review.md
 `,
   );
   await writeFile(
@@ -515,7 +516,7 @@ title: Portable pack design notes
 workflow: repo_engineering
 status: active
 related:
-  - agent-wiki/patterns/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-portable-pack.md
 sources: []
 updated: 2026-04-12T16:00:00.000Z
 review_after: 2026-07-12
@@ -683,6 +684,23 @@ describe("bridge surfaces", () => {
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("update_skill");
   }, 15000);
 
+  it("emits JSON for core CLI commands without requiring --json", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-cli-json-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+
+    const resolveResult = runBuiltCli(tempDir, [
+      "resolve",
+      "--task",
+      "review ambiguous live dead gate",
+      "--workflow",
+      "flow_cytometry",
+    ]);
+    expect(resolveResult.status).toBe(0);
+    const resolved = JSON.parse(resolveResult.stdout);
+    expect(resolved.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
+  });
+
   it("parses flow-style frontmatter in agent-native skills", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-flow-skill-"));
     tempDirs.push(tempDir);
@@ -715,7 +733,7 @@ describe("bridge surfaces", () => {
     expect(adoptResult.status).toBe(0);
     const adopted = JSON.parse(adoptResult.stdout);
     expect(adopted.copied.some((item: string) => item === "DATALOX.md")).toBe(true);
-    expect(await readFile(path.join(hostDir, "DATALOX.md"), "utf8")).toContain("Datalox Pack Protocol");
+    expect(await readFile(path.join(hostDir, "DATALOX.md"), "utf8")).toContain("durable outputs: `note`, `skill`");
     expect(await readFile(path.join(hostDir, "skills/evolve-portable-pack/SKILL.md"), "utf8")).toContain("## Workflow");
   });
 
@@ -785,7 +803,7 @@ describe("bridge surfaces", () => {
         },
       });
       const promoted = extractStructuredResult(promoteResult) as any;
-      expect(promoted.decision.action).toBe("patch_skill_with_pattern");
+      expect(promoted.decision.action).toBe("patch_skill_with_note");
       expect(promoted.promotion.skill.operation).toBe("update_skill");
 
       const lintResult = await client.callTool({
@@ -847,10 +865,9 @@ describe("bridge surfaces", () => {
     ]);
     expect(second.status).toBe(0);
     const secondBody = JSON.parse(second.stdout);
-    expect(secondBody.decision.action).toBe("create_skill_from_gap");
-    expect(secondBody.promotion.pattern.relativePath).toContain("agent-wiki/patterns/");
-    expect(secondBody.promotion.skill.operation).toBe("create_skill");
-    expect(secondBody.promotion.skill.payload.maturity).toBe("draft");
+    expect(secondBody.decision.action).toBe("create_note_from_gap");
+    expect(secondBody.promotion.note.relativePath).toContain("agent-wiki/notes/");
+    expect(secondBody.promotion.skill).toBeNull();
 
     const third = runBuiltCli(tempDir, [
       "promote",
@@ -870,10 +887,10 @@ describe("bridge surfaces", () => {
     ]);
     expect(third.status).toBe(0);
     const thirdBody = JSON.parse(third.stdout);
-    expect(thirdBody.decision.action).toBe("patch_skill_with_pattern");
-    expect(thirdBody.promotion.skill.operation).toBe("update_skill");
+    expect(thirdBody.decision.action).toBe("create_skill_from_gap");
+    expect(thirdBody.promotion.skill.operation).toBe("create_skill");
     expect(thirdBody.promotion.skill.payload.maturity).toBe("stable");
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("record_event");
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("create_skill");
-  });
+  }, 15000);
 });

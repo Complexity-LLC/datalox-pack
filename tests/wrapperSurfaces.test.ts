@@ -143,6 +143,50 @@ describe("wrapper surfaces", () => {
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
   });
 
+  it("runs the Claude wrapper with a fake claude binary and preserves the resolved prompt envelope", async () => {
+    const hostDir = await adoptHostRepo();
+    const fakeClaudePath = path.join(hostDir, "fake-claude.sh");
+    await writeFile(
+      fakeClaudePath,
+      "#!/usr/bin/env bash\nnode -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL, workflow: process.env.DATALOX_WORKFLOW}))' -- \"$@\"\n",
+      "utf8",
+    );
+    await chmod(fakeClaudePath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "claude",
+        "--repo",
+        hostDir,
+        "--task",
+        "change portable pack loop bridge",
+        "--workflow",
+        "repo_engineering",
+        "--claude-bin",
+        fakeClaudePath,
+        "--",
+        "--print",
+        "Update the pack docs to mention Claude shims.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.skill).toBe("repo-engineering.evolve-portable-pack");
+    expect(parsed.workflow).toBe("repo_engineering");
+    expect(parsed.args[0]).toBe("--print");
+    expect(parsed.args[1]).toContain("# Datalox Loop Guidance");
+    expect(parsed.args[1]).toContain("Update the pack docs to mention Claude shims.");
+    expect(result.stderr).toContain("[datalox-claude] record");
+    expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
+  });
+
   it("infers the prompt from raw codex exec args when no explicit Datalox prompt is given", async () => {
     const hostDir = await adoptHostRepo();
     const fakeCodexPath = path.join(hostDir, "fake-codex.sh");
@@ -350,11 +394,11 @@ EOF
 
     const second = runFailure();
     expect(second.status).toBe(1);
-    expect(second.stderr).toContain("create_skill_from_gap");
+    expect(second.stderr).toContain("create_note_from_gap");
 
     const third = runFailure();
     expect(third.status).toBe(1);
-    expect(third.stderr).toContain("patch_skill_with_pattern");
+    expect(third.stderr).toContain("create_skill_from_gap");
 
     const logFile = await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8");
     const indexFile = await readFile(path.join(hostDir, "agent-wiki", "index.md"), "utf8");
@@ -364,8 +408,8 @@ EOF
     );
 
     expect(logFile).toContain("record_event");
+    expect(logFile).toContain("create_note");
     expect(logFile).toContain("create_skill");
-    expect(logFile).toContain("update_skill");
     expect(indexFile).toContain("agent_adoption.stabilize-onboarding-in-non-technical-repos");
     expect(generatedSkill).toContain("## Workflow");
     expect(generatedSkill).toContain("maturity: stable");
@@ -374,6 +418,7 @@ EOF
   it("copies wrapper entrypoints and skills into adopted host repos", async () => {
     const hostDir = await adoptHostRepo();
 
+    expect(await readFile(path.join(hostDir, "bin", "datalox-claude.js"), "utf8")).toContain("\"claude\"");
     expect(await readFile(path.join(hostDir, "bin", "datalox-codex.js"), "utf8")).toContain("\"codex\"");
     expect(await readFile(path.join(hostDir, "bin", "datalox-wrap.js"), "utf8")).toContain("\"wrap\"");
     expect(await readFile(path.join(hostDir, "skills", "host-cli-wrapper", "SKILL.md"), "utf8")).toContain("Host CLI Wrapper");

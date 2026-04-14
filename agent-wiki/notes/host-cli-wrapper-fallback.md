@@ -1,10 +1,10 @@
 ---
-type: meta
+type: note
 title: Host CLI wrapper fallback
 workflow: repo_engineering
 status: active
 related:
-  - agent-wiki/meta/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-portable-pack.md
 sources:
   - agent-wiki/sources/portable-pack-design-notes.md
 updated: 2026-04-13T09:00:00.000Z
@@ -40,4 +40,4 @@ Prefer `datalox codex` for Codex `exec` flows. Otherwise use `datalox wrap comma
 
 ## Related
 
-- agent-wiki/meta/evolve-portable-pack.md
+- agent-wiki/notes/evolve-portable-pack.md

@@ -1,5 +1,5 @@
 ---
-type: pattern
+type: note
 title: Multi-agent bootstrap surfaces
 workflow: repo_engineering
 skill: repo-engineering.evolve-portable-pack
@@ -10,7 +10,7 @@ tags:
 confidence: high
 status: active
 related:
-  - agent-wiki/meta/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-portable-pack.md
   - agent-wiki/concepts/loop-bridge.md
   - agent-wiki/comparisons/repo-protocol-vs-loop-bridge.md
 sources:
@@ -57,6 +57,6 @@ If a host has a stronger native setup mechanism, use it, but keep the repo-level
 
 ## Related
 
-- agent-wiki/meta/evolve-portable-pack.md
+- agent-wiki/notes/evolve-portable-pack.md
 - agent-wiki/concepts/loop-bridge.md
 - agent-wiki/comparisons/repo-protocol-vs-loop-bridge.md

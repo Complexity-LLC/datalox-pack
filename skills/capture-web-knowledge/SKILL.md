@@ -6,8 +6,8 @@ metadata:
     id: web-capture.capture-web-knowledge
     workflow: web_capture
     trigger: Use when analyzing a website's layout, tokens, and components into reusable repo knowledge.
-    pattern_paths:
-      - agent-wiki/meta/capture-web-knowledge.md
+    note_paths:
+      - agent-wiki/notes/capture-web-knowledge.md
     tags:
       - web_capture
       - design_doc
@@ -42,13 +42,16 @@ Use this skill when an existing website should become reusable repo-local knowle
    `datalox capture-web --repo . --url <url> --artifact design-doc`
 3. Read the generated outputs together:
    - `designs/web/<slug>.md`
-   - `agent-wiki/sources/web/<slug>.md`
+   - `agent-wiki/notes/web/<slug>.md`
    - `agent-wiki/assets/web/<slug>/desktop.png`
    - `agent-wiki/assets/web/<slug>/mobile.png`
 4. Use `designs/web/<slug>.md` as the working brief when the task is visual recreation.
-5. If the task only needs source evidence, use `datalox capture-web --artifact source-page` instead of forcing a design brief.
-6. If the site has multiple important routes, capture them separately and patch the right artifact intentionally instead of merging everything into one vague note.
-7. If a capture is worth showing publicly, publish that specific slug with `datalox publish-web-capture --repo . --capture <slug>` instead of dumping raw local workspace files into a showcase repo.
+5. If implementation work needs reusable variables, emit them directly:
+   `datalox capture-web --repo . --url <url> --artifact css-variables`
+6. Use `--artifact design-tokens` for normalized JSON tokens and `--artifact tailwind-theme` only when the target stack actually needs a Tailwind theme file.
+7. If the task only needs source evidence, use `datalox capture-web --artifact source-page` instead of forcing a design brief.
+8. If the site has multiple important routes, capture them separately and patch the right artifact intentionally instead of merging everything into one vague note.
+9. If a capture is worth showing publicly, publish that specific slug with `datalox publish-web-capture --repo . --capture <slug>` instead of dumping raw local workspace files into a showcase repo.
 
 ## Checks Before Editing
 
@@ -58,12 +61,13 @@ Use this skill when an existing website should become reusable repo-local knowle
 
 ## Expected Output
 
-- A source page under `agent-wiki/sources/web/`
+- A reusable note under `agent-wiki/notes/web/`
 - Desktop and mobile screenshots under `agent-wiki/assets/web/<slug>/`
 - An optional `designs/web/<slug>.md` artifact when `--artifact design-doc` is used
+- An optional `designs/web/<slug>.vars.css` artifact when `--artifact css-variables` is used
 - A log entry in `agent-wiki/log.md`
 - A publish path into object storage when the capture should join the public corpus
 
-## Pattern Docs
+## Notes
 
-- agent-wiki/meta/capture-web-knowledge.md
+- agent-wiki/notes/capture-web-knowledge.md

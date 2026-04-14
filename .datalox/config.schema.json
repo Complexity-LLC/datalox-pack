@@ -127,12 +127,16 @@
       "type": "object",
       "required": [
         "seedSkillsDir",
-        "seedPatternsDir",
+        "seedNotesDir",
         "hostSkillsDir",
-        "hostPatternsDir"
+        "hostNotesDir"
       ],
       "properties": {
         "seedSkillsDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "seedNotesDir": {
           "type": "string",
           "minLength": 1
         },
@@ -141,6 +145,13 @@
           "minLength": 1
         },
         "hostSkillsDir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "hostNotesDir": {
           "type": [
             "string",
             "null"

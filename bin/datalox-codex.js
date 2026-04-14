@@ -1,11 +1,45 @@
 #!/usr/bin/env node
+import { existsSync, readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const entrypoint = path.join(repoRoot, "dist", "src", "cli", "main.js");
+
+function readInstallPackRoot(root) {
+  const installPath = path.join(root, ".datalox", "install.json");
+  if (!existsSync(installPath)) {
+    return null;
+  }
+  try {
+    const payload = JSON.parse(readFileSync(installPath, "utf8"));
+    return typeof payload?.packRootPath === "string" ? payload.packRootPath : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveRuntimeRoot(root) {
+  const candidates = [
+    root,
+    readInstallPackRoot(root),
+    path.join(os.homedir(), ".datalox", "cache", "datalox-pack"),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const normalized = path.resolve(candidate);
+    if (existsSync(path.join(normalized, "dist", "src", "cli", "main.js"))) {
+      return normalized;
+    }
+  }
+
+  throw new Error("Unable to resolve Datalox runtime root for datalox-codex.js");
+}
+
+const runtimeRoot = resolveRuntimeRoot(repoRoot);
+const entrypoint = path.join(runtimeRoot, "dist", "src", "cli", "main.js");
 
 const child = spawn(process.execPath, [entrypoint, "codex", ...process.argv.slice(2)], {
   stdio: "inherit",
@@ -18,4 +52,3 @@ child.on("exit", (code, signal) => {
   }
   process.exit(code ?? 1);
 });
-

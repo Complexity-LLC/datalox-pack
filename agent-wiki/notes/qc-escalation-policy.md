@@ -1,5 +1,5 @@
 ---
-type: pattern
+type: note
 title: QC escalation policy
 workflow: flow_cytometry
 skill: flow-cytometry.review-ambiguous-viability-gate
@@ -10,7 +10,7 @@ tags:
 confidence: high
 status: active
 related:
-  - agent-wiki/patterns/viability-gate-review.md
+  - agent-wiki/notes/viability-gate-review.md
   - agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
   - agent-wiki/concepts/ambiguous-viability-gate-review.md
 sources:
@@ -57,6 +57,6 @@ If the downstream effect is negligible and already covered by a documented opera
 
 ## Related
 
-- agent-wiki/patterns/viability-gate-review.md
+- agent-wiki/notes/viability-gate-review.md
 - agent-wiki/questions/when-should-qc-escalate-after-viability-review.md
 - agent-wiki/concepts/ambiguous-viability-gate-review.md

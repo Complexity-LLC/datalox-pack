@@ -31,6 +31,10 @@ export interface LoopEnvelope {
     whatToDoNow: string[];
     watchFor: string[];
     nextReads: string[];
+    supportingNotes: Array<{
+      path: string;
+      title: string;
+    }>;
     supportingPatterns: Array<{
       path: string;
       title: string;
@@ -110,10 +114,18 @@ function summarizeResolution(
       whatToDoNow: [],
       watchFor: [],
       nextReads: [],
+      supportingNotes: [],
       supportingPatterns: [],
     };
   }
   const topMatch = resolution.matches[0];
+  const supportingNotes = (topMatch?.loopGuidance.supportingNotes ?? topMatch?.loopGuidance.supportingPatterns ?? []).map((note: {
+    path: string;
+    title: string;
+  }) => ({
+    path: note.path,
+    title: note.title,
+  }));
   return {
     workflow: resolution.workflow,
     selectionBasis: resolution.selectionBasis,
@@ -122,13 +134,8 @@ function summarizeResolution(
     whatToDoNow: topMatch?.loopGuidance.whatToDoNow ?? [],
     watchFor: topMatch?.loopGuidance.watchFor ?? [],
     nextReads: topMatch?.loopGuidance.nextReads ?? [],
-    supportingPatterns: (topMatch?.loopGuidance.supportingPatterns ?? []).map((pattern: {
-      path: string;
-      title: string;
-    }) => ({
-      path: pattern.path,
-      title: pattern.title,
-    })),
+    supportingNotes,
+    supportingPatterns: supportingNotes,
   };
 }
 
@@ -157,8 +164,8 @@ export function renderWrappedPrompt(envelope: LoopEnvelope): string {
     ...renderBulletSection("What to do now", envelope.guidance.whatToDoNow),
     ...renderBulletSection("Watch for", envelope.guidance.watchFor),
     ...renderBulletSection(
-      "Supporting pages",
-      envelope.guidance.supportingPatterns.map((pattern) => `${pattern.title} | ${pattern.path}`),
+      "Supporting notes",
+      envelope.guidance.supportingNotes.map((note) => `${note.title} | ${note.path}`),
     ),
     ...renderBulletSection("Next reads", envelope.guidance.nextReads),
     "# Datalox Reusable-Gap Protocol",

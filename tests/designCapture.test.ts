@@ -190,12 +190,13 @@ describe("web capture", () => {
     const payload = JSON.parse(result.stdout) as {
       artifactType: string;
       artifactPath: string;
+      notePath: string;
       sourcePagePath: string;
       screenshotPaths: { desktop: string; mobile: string };
     };
 
     const designDoc = await readFile(path.join(hostDir, payload.artifactPath), "utf8");
-    const sourcePage = await readFile(path.join(hostDir, payload.sourcePagePath), "utf8");
+    const sourcePage = await readFile(path.join(hostDir, payload.notePath), "utf8");
     const logDoc = await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8");
 
     expect(payload.artifactType).toBe("design_doc");
@@ -209,7 +210,8 @@ describe("web capture", () => {
     expect(sourcePage).toContain("# Acme Landing");
     expect(sourcePage).toContain("Desktop screenshot");
     expect(logDoc).toContain("capture_web_artifact");
-    expect(payload.sourcePagePath).toContain("agent-wiki/sources/web/");
+    expect(payload.notePath).toContain("agent-wiki/notes/web/");
+    expect(payload.sourcePagePath).toBe(payload.notePath);
     expect(payload.screenshotPaths.desktop).toContain("agent-wiki/assets/web/");
     expect(spawnSync("test", ["-f", path.join(hostDir, payload.screenshotPaths.desktop)]).status).toBe(0);
     expect(spawnSync("test", ["-f", path.join(hostDir, payload.screenshotPaths.mobile)]).status).toBe(0);
@@ -240,14 +242,16 @@ describe("web capture", () => {
       });
       const result = (response.structuredContent as { result: {
         artifactPath: string;
+        notePath: string;
         sourcePagePath: string;
       } }).result;
       const designDoc = await readFile(path.join(hostDir, result.artifactPath), "utf8");
-      const sourcePage = await readFile(path.join(hostDir, result.sourcePagePath), "utf8");
+      const sourcePage = await readFile(path.join(hostDir, result.notePath), "utf8");
 
       expect(designDoc).toContain("# Acme Landing Design");
       expect(designDoc).toContain("Start Free");
-      expect(sourcePage).toContain("Acme landing page for design capture tests.");
+      expect(sourcePage).toContain("## Evidence");
+      expect(sourcePage).toContain("Desktop screenshot");
     } finally {
       await client.close();
     }
@@ -281,12 +285,142 @@ describe("web capture", () => {
     const payload = JSON.parse(result.stdout) as {
       artifactType: string;
       artifactPath: string | null;
+      notePath: string;
       sourcePagePath: string;
     };
 
-    expect(payload.artifactType).toBe("source_page");
+    expect(payload.artifactType).toBe("note");
     expect(payload.artifactPath).toBeNull();
     expect(spawnSync("test", ["-d", path.join(hostDir, "designs", "web")]).status).not.toBe(0);
-    expect(await readFile(path.join(hostDir, payload.sourcePagePath), "utf8")).toContain("# Acme Landing");
+    expect(await readFile(path.join(hostDir, payload.notePath), "utf8")).toContain("# Acme Landing");
+  }, 30000);
+
+  it("captures semantic design tokens from a website", async () => {
+    const hostDir = await createGitRepo();
+    tempDirs.add(hostDir);
+    const url = await createSampleSite(hostDir);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "capture-web",
+        "--repo",
+        hostDir,
+        "--url",
+        url,
+        "--artifact",
+        "design-tokens",
+        "--json",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      artifactType: string;
+      artifactPath: string;
+      notePath: string;
+    };
+    const tokens = JSON.parse(await readFile(path.join(hostDir, payload.artifactPath), "utf8")) as {
+      source: { notePath: string };
+      color: { variable: Record<string, string> };
+      font: { family: Record<string, string> };
+      radius: Record<string, string>;
+    };
+
+    expect(payload.artifactType).toBe("design_tokens");
+    expect(payload.artifactPath).toContain("designs/web/");
+    expect(payload.artifactPath).toContain(".tokens.json");
+    expect(tokens.source.notePath).toBe(payload.notePath);
+    expect(tokens.color.variable["color-brand"]).toBe("#ff5a36");
+    expect(Object.values(tokens.font.family)).toContain("Inter");
+    expect(Object.values(tokens.radius)).toContain("24px");
+  }, 30000);
+
+  it("captures reusable css variables from a website", async () => {
+    const hostDir = await createGitRepo();
+    tempDirs.add(hostDir);
+    const url = await createSampleSite(hostDir);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "capture-web",
+        "--repo",
+        hostDir,
+        "--url",
+        url,
+        "--artifact",
+        "css-variables",
+        "--json",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      artifactType: string;
+      artifactPath: string;
+      notePath: string;
+    };
+    const cssVariables = await readFile(path.join(hostDir, payload.artifactPath), "utf8");
+
+    expect(payload.artifactType).toBe("css_variables");
+    expect(payload.artifactPath).toContain(".vars.css");
+    expect(cssVariables).toContain(":root {");
+    expect(cssVariables).toContain("--color-brand: #ff5a36;");
+    expect(cssVariables).toContain(`Note: ${payload.notePath}`);
+    expect(cssVariables).toContain("--datalox-color-text-01: rgb(15, 23, 42);");
+    expect(cssVariables).toContain("--datalox-color-variable-color-brand: #ff5a36;");
+    expect(cssVariables).toContain("--datalox-font-family-01: Inter;");
+    expect(cssVariables).toContain('--datalox-font-family-02: "Space Grotesk";');
+    expect(cssVariables).toContain("--datalox-radius-01: 24px;");
+  }, 30000);
+
+  it("captures a tailwind theme derived from design tokens", async () => {
+    const hostDir = await createGitRepo();
+    tempDirs.add(hostDir);
+    const url = await createSampleSite(hostDir);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "capture-web",
+        "--repo",
+        hostDir,
+        "--url",
+        url,
+        "--artifact",
+        "tailwind-theme",
+        "--json",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      artifactType: string;
+      artifactPath: string;
+    };
+    const themeFile = await readFile(path.join(hostDir, payload.artifactPath), "utf8");
+
+    expect(payload.artifactType).toBe("tailwind_theme");
+    expect(payload.artifactPath).toContain(".tailwind.ts");
+    expect(themeFile).toContain("export const source =");
+    expect(themeFile).toContain("export const theme = {");
+    expect(themeFile).toContain("\"color-brand\": \"#ff5a36\"");
+    expect(themeFile).toContain("\"radius-01\": \"24px\"");
   }, 30000);
 });

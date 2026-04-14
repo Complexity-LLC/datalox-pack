@@ -1,256 +1,164 @@
-# Datalox Pack Protocol
+# Datalox
 
-This pack is intentionally simple.
+This repo is a portable agent pack.
 
-An agent should use it on every loop with one minimal cycle:
+The runtime model is intentionally small:
 
-1. detect
-2. use
-3. record
-4. promote
-5. lint
+- source kinds: `trace`, `web`, `pdf`
+- durable outputs: `note`, `skill`
 
-The pack must also keep four visible control artifacts in the host repo:
+The loop is:
 
+`detect -> use -> record -> promote -> lint`
+
+## Read Order
+
+On each loop:
+
+1. read `.datalox/manifest.json`
+2. read `.datalox/config.json`
+3. read `agent-wiki/hot.md` if it exists
+4. detect the best matching skill in `skills/`
+5. read the linked notes in that skill's `metadata.datalox.note_paths`
+6. follow `related` and `sources` only when the linked note says they matter
+7. act from the skill body plus the linked notes
+
+Host repo files override seed-pack files when both define the same knowledge.
+
+## Knowledge Surfaces
+
+The main repo-local surfaces are:
+
+- `skills/`
+- `agent-wiki/notes/`
+- `agent-wiki/events/`
 - `agent-wiki/index.md`
 - `agent-wiki/log.md`
 - `agent-wiki/lint.md`
 - `agent-wiki/hot.md`
 
-Do not replace the agent's native skills. Datalox is additive.
-When a host supports post-turn hooks, `node bin/datalox-auto-promote.js` is the standard automatic promotion entrypoint.
+Use `agent-wiki/notes/` for reusable local knowledge.
+Use `skills/` for reusable workflows.
 
-## Read Order
+Legacy folders such as `patterns/`, `sources/`, `concepts/`, `comparisons/`, and `questions/` may still exist in older repos. Read them when present, but new automatic writes should go to `agent-wiki/notes/`.
 
-1. `.datalox/manifest.json`
-2. `.datalox/config.local.json` if it exists
-3. `.datalox/config.json`
-4. this file
-5. `agent-wiki/hot.md` if it exists
-6. `AGENTS.md` or a tool-specific instruction file if present
+## Promotion Rule
 
-Common committed tool-specific entry files in this repo:
+Promotion should stay simple:
 
-- `CLAUDE.md`
-- `WIKI.md`
-- `GEMINI.md`
-- `.github/copilot-instructions.md`
-- `.cursor/rules/datalox-pack.mdc`
-- `.windsurf/rules/datalox-pack.md`
+- first grounded occurrence: record an event only
+- repeated gap with an existing matching skill: patch that skill and add or update a linked note
+- repeated gap with no matching skill: create a reusable note first
+- repeated no-match after the skill threshold: create a live skill
 
-If this pack is used from another repo, read seed knowledge from this repo and write generated knowledge into the host repo.
+Notes should hold both:
 
-## Loop Rule
+- signal
+- interpretation
+- action
+- examples
+- evidence
 
-At the start of every agent loop:
-
-1. inspect current task text and workflow
-2. inspect repo context when needed:
-   changed git paths, repo root files, and package metadata
-3. select the best matching skill in `skills/`
-4. read the pattern docs listed in that skill's `metadata.datalox.pattern_paths`
-5. if needed, follow the pattern docs' `related` and `sources` links into the wider `agent-wiki/`
-6. act using the pattern docs' signal, interpretation, and recommended action
-
-Host repo skills and pattern docs override seed-pack files when both define the same knowledge.
-
-This is the `detect -> use` part of the loop.
-
-Concrete example:
-
-- if the task is to learn a live website from observable evidence, match `skills/capture-web-knowledge/SKILL.md`
-- run `datalox capture-web --repo . --url <url> --artifact design-doc`
-- use `designs/web/<slug>.md` only when a design brief is needed
-- keep `agent-wiki/sources/web/*.md` and `agent-wiki/assets/web/*` as evidence
-
-## Learning Rule
-
-When the agent discovers a reusable gap:
-
-1. record the turn result into `agent-wiki/events/`
-2. keep the first occurrence as an event only
-3. promote repeated evidence into a wiki page or skill conservatively
-
-Promotion rule:
-
-- occurrence `1`: `record_only`
-- occurrence `2` with an existing skill match: `patch_skill_with_pattern`
-- occurrence `2` with no skill match: `create_skill_from_gap` as a live `draft` skill
-- next repeated reuse of that draft skill: patch it and stabilize it
-
-If the new knowledge still belongs to an existing task boundary, patch the current skill. Create a new skill only when the work represents a distinct recurring task with its own stable trigger and workflow.
-
-This is the `record -> promote` part of the loop.
-
-These writes belong to the host repo, not the seed pack repo.
-
-For curated public examples, publish selected captures outward instead of storing them in the pack repo itself:
-
-- keep local evidence under `agent-wiki/sources/web/` and `agent-wiki/assets/web/`
-- keep optional local design briefs under `designs/web/`
-- publish selected captures into object storage with one manifest per instance and one generated `indexes/latest.json`
-
-After patching, refresh:
-
-- `agent-wiki/index.md` so the current skill-pattern graph is visible
-- `agent-wiki/log.md` so the change is recorded chronologically
-- `agent-wiki/hot.md` so the next session can restore recent context
-
-`agent-wiki/events/` is the grounded evidence layer behind those promotions.
+Skills should hold the actual workflow and link to notes through `note_paths`.
 
 ## Lint Rule
 
-Run lint over the local pack when changing skills or wiki pages.
-
 Lint checks:
 
-- skills missing `metadata.datalox.pattern_paths`
-- missing pattern doc paths
-- pattern docs missing `Signal`, `Interpretation`, or `Recommended Action`
-- pattern docs missing evidence or related pages
-- orphan pattern docs and orphan supporting wiki pages
-- duplicate or overlapping skills in the same workflow
-- overdue `review_after` pages
-- contradiction pages without supporting evidence or source links
+- skills missing `note_paths`
+- skills missing core playbook sections
+- missing linked notes
+- notes missing `Signal`, `Interpretation`, or `Action`
+- notes missing examples or evidence
+- orphan notes
+- overlapping skills in the same workflow
 
-This is the `lint` part of the loop.
+Run lint after patching local knowledge.
 
-There is no separate working layer in this version.
+## Web Capture
 
-After linting, refresh:
+Use web capture when a live page should become repo-local design knowledge.
 
-- `agent-wiki/lint.md` with the latest pack health snapshot
-- `agent-wiki/log.md` with the lint result
+Commands:
 
-## Control Artifacts
+- `datalox capture-web --repo . --url <url> --artifact design-doc`
+- `datalox capture-web --repo . --url <url> --artifact design-tokens`
+- `datalox capture-web --repo . --url <url> --artifact css-variables`
+- `datalox capture-web --repo . --url <url> --artifact tailwind-theme`
+- `datalox capture-web --repo . --url <url> --artifact note`
 
-### `agent-wiki/index.md`
+Outputs:
 
-Human-readable map of the current effective pack:
+- note: `agent-wiki/notes/web/<slug>.md`
+- screenshots: `agent-wiki/assets/web/<slug>/`
+- design doc: `designs/web/<slug>.md`
+- design tokens: `designs/web/<slug>.tokens.json`
+- tailwind theme: `designs/web/<slug>.tailwind.ts`
 
-- skills
-- triggers
-- linked pattern docs
-- supporting wiki pages by type
-- source origin (`host` or `seed`)
-- last updated metadata when available
+Treat screenshots and raw CSS variables as evidence.
+Treat semantic design tokens as the reusable artifact.
+Treat Tailwind output as derived from those tokens, not the source of truth.
 
-### `agent-wiki/log.md`
+## PDF Capture
 
-Append-only change trail. Record at least:
+Use PDF capture when a binary document should become repo-local knowledge.
 
-- pattern docs written
-- skills created
-- skills updated
-- lint runs
+Command:
 
-### `agent-wiki/lint.md`
+- `datalox capture-pdf --repo . --path <pdf-path>`
 
-Latest lint snapshot in markdown so a human can see why the pack is healthy or broken without running tools.
+Outputs:
 
-### `agent-wiki/hot.md`
+- note: `agent-wiki/notes/pdf/<slug>.md`
+- metadata: `agent-wiki/notes/pdf/<slug>.capture.json`
 
-Recent-context cache for the next session. This should be the first wiki page an agent reads when it wants fast local context instead of scanning the whole knowledge layer.
+PDF capture writes notes first. Do not promote directly from a PDF into a skill unless later trace evidence proves the knowledge changed runtime behavior.
 
-## Agent Wiki Shape
+## Publish Web Captures
 
-`agent-wiki/` is a typed supporting knowledge layer:
+For curated web examples:
 
-- `patterns/`: loop-time judgment and action pages
-- `sources/`: provenance and supporting source pages
-- `concepts/`: reusable domain ideas behind patterns
-- `comparisons/`: choice pages for competing workflows or interpretations
-- `questions/`: recurring open questions with current answers
-- `meta/`: maintenance and control pages for the wiki itself
+1. capture locally
+2. publish the selected instance
+3. regenerate the public index
 
-Skills should usually link to `patterns/` first. Patterns can then point into the rest of `agent-wiki/` through `related` and `sources`.
+Command:
 
-## Skill Shape
+- `datalox publish-web-capture --repo <repo> --capture <slug> --bucket <bucket>`
 
-Each skill should live at `skills/<skill-name>/SKILL.md`.
+This uploads:
 
-Use YAML frontmatter plus markdown body.
+- the note
+- the derived artifact
+- the screenshots
+- `instances/<slug>/manifest.json`
+- `indexes/latest.json`
 
-Top-level required frontmatter fields:
+## MCP and CLI
 
-- `name`
-- `description`
+Preferred MCP tools:
 
-Put Datalox-specific runtime fields under `metadata.datalox`.
+- `resolve_loop`
+- `record_turn_result`
+- `promote_gap`
+- `lint_pack`
+- `capture_web_artifact`
+- `capture_pdf_artifact`
+- `publish_web_capture`
+- `adopt_pack`
 
-Recommended `metadata.datalox` fields:
+CLI commands mirror the same operations.
 
-- `id`
-- `workflow`
-- `trigger`
-- `pattern_paths`
-- `tags`
+Core CLI commands emit JSON for agent consumption. Wrapper commands keep passthrough behavior by default; use `--json` there when you need a structured envelope instead of prompt or child-process output.
 
-Optional `metadata.datalox` fields:
+## Host Integration
 
-- `display_name`
-- `status`
-- `author`
-- `updated_at`
-- `repo_hints`
+Supported default paths:
 
-The skill body must be the primary workflow artifact. It should contain a real playbook:
+- Codex shim
+- Claude shim when a real `claude` CLI binary exists
+- Claude hook
+- generic CLI wrapper
 
-- `When to Use`
-- `Workflow`
-- `Expected Output`
-- `Pattern Docs`
-
-See `.datalox/skill.schema.md`.
-
-## Current Default
-
-- mode: `repo_only`
-- runtime required: `false`
-- detect on every loop: `true`
-
-## Practical Distribution
-
-For host repo adoption:
-
-- local pack: `bash bin/adopt-host-repo.sh /path/to/host-repo`
-- GitHub-hosted pack: `bash bin/adopt-from-github.sh /path/to/host-repo`
-
-Supported host adapters may also auto-bootstrap a clean git repo on first use. They must only do that when:
-
-- the repo is writable
-- no partial Datalox-owned paths already exist
-- the bootstrap can stay inside Datalox-owned paths only
-
-If partial `DATALOX.md`, `.datalox/`, or `agent-wiki/` paths already exist without an install stamp, adapters must refuse auto-bootstrap and pass through unchanged.
-
-For multi-agent skill discovery:
-
-- `bash bin/setup-multi-agent.sh`
-
-For loop ownership in supported hosts:
-
-- prefer the MCP bridge at `node dist/src/mcp/server.js`
-- use the CLI bridge at `node dist/src/cli/main.js` when MCP is not available
-- use `record_turn_result` / `datalox record` before promotion when you need explicit event grounding
-- use `promote_gap` / `datalox promote` when you want the pack to decide between event-only, wiki promotion, or skill creation
-- for hosts with hook APIs, use `node bin/datalox-auto-promote.js` as the post-turn hook command
-- for Codex `exec`, use `node bin/datalox-codex.js` so loop guidance is injected before the run
-- for other CLI hosts, use `node bin/datalox-wrap.js prompt` or `node bin/datalox-wrap.js command -- <host-command> __DATALOX_PROMPT__`
-
-Minimal MCP host config:
-
-```json
-{
-  "mcpServers": {
-    "datalox-pack": {
-      "command": "node",
-      "args": ["/absolute/path/to/datalox-pack/dist/src/mcp/server.js"]
-    }
-  }
-}
-```
-
-Implementation status and remaining work:
-
-- see `docs/implementation-checklist.md`
+After machine-level install, a clean writable git repo can auto-bootstrap on first use.
+If a repo is already partially adopted or conflicting, do not mutate it blindly. Repair or adopt it explicitly.

@@ -6,8 +6,8 @@ metadata:
     id: repo-engineering.host-cli-wrapper
     workflow: repo_engineering
     trigger: Use when the host agent cannot auto-call Datalox through MCP or hooks and needs a CLI wrapper path.
-    pattern_paths:
-      - agent-wiki/meta/host-cli-wrapper-fallback.md
+    note_paths:
+      - agent-wiki/notes/host-cli-wrapper-fallback.md
     tags:
       - repo_engineering
       - host_adapter
@@ -56,7 +56,6 @@ Use this skill when the host agent cannot call Datalox automatically through MCP
 - State how the wrapped prompt is injected into the host.
 - State whether promotion stays automatic or requires manual `record` / `promote`.
 
-## Pattern Docs
+## Notes
 
-- agent-wiki/meta/host-cli-wrapper-fallback.md
-
+- agent-wiki/notes/host-cli-wrapper-fallback.md

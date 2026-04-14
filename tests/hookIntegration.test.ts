@@ -90,11 +90,11 @@ describe("automatic host hooks", () => {
 
     const second = runHook();
     expect(second.status).toBe(0);
-    expect(second.stderr).toContain("create_skill_from_gap");
+    expect(second.stderr).toContain("create_note_from_gap");
 
     const third = runHook();
     expect(third.status).toBe(0);
-    expect(third.stderr).toContain("patch_skill_with_pattern");
+    expect(third.stderr).toContain("create_skill_from_gap");
 
     const logFile = await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8");
     const indexFile = await readFile(path.join(hostDir, "agent-wiki", "index.md"), "utf8");
@@ -104,8 +104,8 @@ describe("automatic host hooks", () => {
     );
 
     expect(logFile).toContain("record_event");
+    expect(logFile).toContain("create_note");
     expect(logFile).toContain("create_skill");
-    expect(logFile).toContain("update_skill");
     expect(indexFile).toContain("agent_adoption.stabilize-manual-pack-adoption-in-non-technical-repos");
     expect(generatedSkill).toContain("## Workflow");
     expect(generatedSkill).toContain("maturity: stable");
