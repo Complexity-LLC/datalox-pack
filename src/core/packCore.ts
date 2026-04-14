@@ -50,11 +50,26 @@ export interface RecordTurnResultInput {
   recommendedAction?: string;
   outcome?: string;
   eventKind?: string;
+  matchedNotePaths?: string[];
+  sessionId?: string;
+  hostKind?: string;
 }
 
 export interface PromoteGapInput extends RecordTurnResultInput {
   minWikiOccurrences?: number;
   minSkillOccurrences?: number;
+}
+
+export interface CompileRecordedEventInput {
+  repoPath?: string;
+  eventPath?: string;
+  minWikiOccurrences?: number;
+  minSkillOccurrences?: number;
+}
+
+export interface RecordLoopApplicationInput {
+  repoPath?: string;
+  notePaths: string[];
 }
 
 export interface LintPackInput {
@@ -175,6 +190,280 @@ const TREE_ADOPTION_PATHS = [
   "agent-wiki/notes",
 ];
 const INSTALL_STAMP_RELATIVE_PATH = ".datalox/install.json";
+const EVENTS_RELATIVE_DIR = path.join("agent-wiki", "events");
+const NOTES_RELATIVE_DIR = path.join("agent-wiki", "notes");
+
+interface NoteUsageStats {
+  readCount: number;
+  lastReadAt: string | null;
+  applyCount: number;
+  lastAppliedAt: string | null;
+  evidenceCount: number;
+}
+
+interface RecordedEventPayload {
+  id?: string;
+  timestamp?: string;
+  title?: string | null;
+  summary?: string | null;
+  workflow?: string | null;
+  step?: string | null;
+  eventKind?: string | null;
+  signal?: string | null;
+  interpretation?: string | null;
+  recommendedAction?: string | null;
+  outcome?: string | null;
+  matchedSkillId?: string | null;
+  matchedNotePaths?: string[] | null;
+  observations?: string[] | null;
+  sessionId?: string | null;
+  hostKind?: string | null;
+}
+
+function normalizePath(value: string): string {
+  return value.replaceAll("\\", "/");
+}
+
+function firstNonEmpty(values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function truncateLine(value: string, maxLength: number = 160): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength - 1).trim()}…`;
+}
+
+function parseTimestamp(value: string | null | undefined): number {
+  const parsed = value ? Date.parse(value) : Number.NaN;
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+async function readJsonIfPresent<T>(filePath: string): Promise<T | null> {
+  try {
+    const raw = await readFile(filePath, "utf8");
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function readJsonFiles(dirPath: string): Promise<string[]> {
+  try {
+    const entries = await readdir(dirPath, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((entry) => path.join(dirPath, entry.name));
+  } catch {
+    return [];
+  }
+}
+
+async function listMarkdownFiles(dirPath: string): Promise<string[]> {
+  try {
+    const entries = await readdir(dirPath, { withFileTypes: true });
+    const nested = await Promise.all(
+      entries.map(async (entry) => {
+        const entryPath = path.join(dirPath, entry.name);
+        if (entry.isDirectory()) {
+          return listMarkdownFiles(entryPath);
+        }
+        if (entry.isFile() && entry.name.endsWith(".md")) {
+          return [entryPath];
+        }
+        return [];
+      }),
+    );
+    return nested.flat().sort((left, right) => left.localeCompare(right));
+  } catch {
+    return [];
+  }
+}
+
+function splitFrontmatter(content: string): { frontmatterLines: string[]; body: string } | null {
+  if (!content.startsWith("---\n")) {
+    return null;
+  }
+  const endIndex = content.indexOf("\n---\n", 4);
+  if (endIndex === -1) {
+    return null;
+  }
+  return {
+    frontmatterLines: content.slice(4, endIndex).split("\n"),
+    body: content.slice(endIndex + 5),
+  };
+}
+
+function parseUsageStats(frontmatterLines: string[]): NoteUsageStats {
+  const defaults: NoteUsageStats = {
+    readCount: 0,
+    lastReadAt: null,
+    applyCount: 0,
+    lastAppliedAt: null,
+    evidenceCount: 0,
+  };
+  const usageIndex = frontmatterLines.findIndex((line) => line.trim() === "usage:");
+  if (usageIndex === -1) {
+    return defaults;
+  }
+
+  const next: NoteUsageStats = { ...defaults };
+  for (let index = usageIndex + 1; index < frontmatterLines.length; index += 1) {
+    const line = frontmatterLines[index];
+    if (!line.startsWith("  ")) {
+      break;
+    }
+    const trimmed = line.trim();
+    const [key, ...rest] = trimmed.split(":");
+    const rawValue = rest.join(":").trim();
+    switch (key) {
+      case "read_count":
+        next.readCount = Number.parseInt(rawValue, 10) || 0;
+        break;
+      case "last_read_at":
+        next.lastReadAt = rawValue || null;
+        break;
+      case "apply_count":
+        next.applyCount = Number.parseInt(rawValue, 10) || 0;
+        break;
+      case "last_applied_at":
+        next.lastAppliedAt = rawValue || null;
+        break;
+      case "evidence_count":
+        next.evidenceCount = Number.parseInt(rawValue, 10) || 0;
+        break;
+      default:
+        break;
+    }
+  }
+  return next;
+}
+
+function renderUsageBlock(usage: NoteUsageStats): string[] {
+  return [
+    "usage:",
+    `  read_count: ${usage.readCount}`,
+    `  last_read_at: ${usage.lastReadAt ?? ""}`,
+    `  apply_count: ${usage.applyCount}`,
+    `  last_applied_at: ${usage.lastAppliedAt ?? ""}`,
+    `  evidence_count: ${usage.evidenceCount}`,
+  ];
+}
+
+function withUsageBlock(frontmatterLines: string[], usage: NoteUsageStats): string[] {
+  const usageBlock = renderUsageBlock(usage);
+  const usageIndex = frontmatterLines.findIndex((line) => line.trim() === "usage:");
+  if (usageIndex !== -1) {
+    let endIndex = usageIndex + 1;
+    while (endIndex < frontmatterLines.length && frontmatterLines[endIndex].startsWith("  ")) {
+      endIndex += 1;
+    }
+    return [
+      ...frontmatterLines.slice(0, usageIndex),
+      ...usageBlock,
+      ...frontmatterLines.slice(endIndex),
+    ];
+  }
+
+  const updatedIndex = frontmatterLines.findIndex((line) => line.startsWith("updated:"));
+  if (updatedIndex !== -1) {
+    return [
+      ...frontmatterLines.slice(0, updatedIndex),
+      ...usageBlock,
+      ...frontmatterLines.slice(updatedIndex),
+    ];
+  }
+
+  return [...frontmatterLines, ...usageBlock];
+}
+
+function joinFrontmatter(frontmatterLines: string[], body: string): string {
+  return `---\n${frontmatterLines.join("\n")}\n---\n${body.startsWith("\n") ? body.slice(1) : body}`;
+}
+
+async function updateNoteUsage(
+  repoPath: string,
+  relativeNotePath: string,
+  updater: (current: NoteUsageStats) => NoteUsageStats,
+): Promise<string | null> {
+  const normalized = normalizePath(relativeNotePath);
+  const filePath = path.resolve(repoPath, normalized);
+  if (!(await fileExists(filePath))) {
+    return null;
+  }
+
+  const content = await readFile(filePath, "utf8");
+  const split = splitFrontmatter(content);
+  if (!split) {
+    return null;
+  }
+
+  const current = parseUsageStats(split.frontmatterLines);
+  const next = updater(current);
+  const frontmatterLines = withUsageBlock(split.frontmatterLines, next);
+  await writeFile(filePath, joinFrontmatter(frontmatterLines, split.body), "utf8");
+  return normalized;
+}
+
+async function updateManyNotesUsage(
+  repoPath: string,
+  notePaths: string[],
+  updater: (current: NoteUsageStats) => NoteUsageStats,
+): Promise<string[]> {
+  const updated: string[] = [];
+  for (const notePath of [...new Set(notePaths.map(normalizePath))]) {
+    const next = await updateNoteUsage(repoPath, notePath, updater);
+    if (next) {
+      updated.push(next);
+    }
+  }
+  return updated;
+}
+
+async function listRecordedEventPayloads(repoPath: string): Promise<Array<{ filePath: string; relativePath: string; value: RecordedEventPayload }>> {
+  const eventsDir = path.join(repoPath, EVENTS_RELATIVE_DIR);
+  const files = await readJsonFiles(eventsDir);
+  const events = await Promise.all(
+    files.map(async (filePath) => ({
+      filePath,
+      relativePath: normalizePath(path.relative(repoPath, filePath)),
+      value: (await readJsonIfPresent<RecordedEventPayload>(filePath)) ?? {},
+    })),
+  );
+  return events.sort((left, right) => parseTimestamp(right.value.timestamp) - parseTimestamp(left.value.timestamp));
+}
+
+async function patchRecordedEvent(
+  repoPath: string,
+  relativePath: string,
+  patch: Partial<RecordedEventPayload>,
+): Promise<RecordedEventPayload | null> {
+  const eventPath = path.join(repoPath, relativePath);
+  const event = await readJsonIfPresent<RecordedEventPayload>(eventPath);
+  if (!event) {
+    return null;
+  }
+
+  const next = { ...event, ...patch };
+  await writeFile(eventPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return next;
+}
+
+function collectSupportingNotePaths(result: any): string[] {
+  const topMatch = result?.matches?.[0];
+  const noteDocs = Array.isArray(topMatch?.noteDocs) ? topMatch.noteDocs : [];
+  return noteDocs
+    .map((noteDoc: { path?: string }) => noteDoc?.path)
+    .filter((value: unknown): value is string => typeof value === "string" && value.length > 0);
+}
 
 async function loadLegacyPackModule() {
   return import(pathToFileURL(path.join(PACK_ROOT, "scripts", "lib", "agent-pack.mjs")).href);
@@ -483,7 +772,7 @@ export async function probeBootstrapCandidate(repoPath?: string): Promise<Bootst
 export async function resolveLoop(input: ResolveLoopInput) {
   const repoPath = resolveRepoPath(input.repoPath);
   const legacy = await loadLegacyPackModule();
-  return legacy.resolveLocalKnowledge(
+  const result = await legacy.resolveLocalKnowledge(
     {
       task: input.task,
       workflow: input.workflow,
@@ -494,6 +783,16 @@ export async function resolveLoop(input: ResolveLoopInput) {
     },
     repoPath,
   );
+  const supportingNotePaths = collectSupportingNotePaths(result);
+  if (supportingNotePaths.length > 0) {
+    const timestamp = new Date().toISOString();
+    await updateManyNotesUsage(repoPath, supportingNotePaths, (current) => ({
+      ...current,
+      readCount: current.readCount + 1,
+      lastReadAt: timestamp,
+    }));
+  }
+  return result;
 }
 
 export async function patchKnowledge(input: PatchKnowledgeInput) {
@@ -564,6 +863,14 @@ export async function recordTurnResult(input: RecordTurnResultInput) {
       changedFiles: result.event.payload.changedFiles ?? input.changedFiles ?? [],
       outcome: result.event.payload.outcome ?? input.outcome,
     }),
+    event: {
+      ...result.event,
+      payload: await patchRecordedEvent(repoPath, result.event.relativePath, {
+        matchedNotePaths: input.matchedNotePaths ?? null,
+        sessionId: input.sessionId ?? null,
+        hostKind: input.hostKind ?? null,
+      }) ?? result.event.payload,
+    },
   };
 }
 
@@ -617,12 +924,72 @@ export async function promoteGap(input: PromoteGapInput) {
       changedFiles: result.event.payload.changedFiles ?? input.changedFiles ?? [],
       outcome: result.event.payload.outcome ?? input.outcome,
     }),
+    event: {
+      ...result.event,
+      payload: await patchRecordedEvent(repoPath, result.event.relativePath, {
+        matchedNotePaths: input.matchedNotePaths ?? null,
+        sessionId: input.sessionId ?? null,
+        hostKind: input.hostKind ?? null,
+      }) ?? result.event.payload,
+    },
+  };
+}
+
+export async function compileRecordedEvent(input: CompileRecordedEventInput) {
+  const repoPath = resolveRepoPath(input.repoPath);
+  const legacy = await loadLegacyPackModule();
+  const result = await legacy.compileRecordedEvent(
+    {
+      eventPath: input.eventPath,
+      minWikiOccurrences: input.minWikiOccurrences,
+      minSkillOccurrences: input.minSkillOccurrences,
+    },
+    repoPath,
+  );
+  return {
+    ...result,
+    promotion: result.promotion
+      ? {
+        ...result.promotion,
+        note: result.promotion.pattern ?? result.promotion.note ?? null,
+      }
+      : null,
   };
 }
 
 export async function lintLocalPack(input: LintPackInput = {}) {
   const legacy = await loadLegacyPackModule();
-  return legacy.lintPack(resolveRepoPath(input.repoPath));
+  const repoPath = resolveRepoPath(input.repoPath);
+  const base = await legacy.lintPack(repoPath);
+  const supportingIssues = await (async () => {
+    const issues: Array<{ level: string; code: string; path: string; message: string }> = [];
+    const notesDir = path.join(repoPath, NOTES_RELATIVE_DIR);
+    const noteFiles = await listMarkdownFiles(notesDir);
+    for (const entryPath of noteFiles) {
+      const split = splitFrontmatter(await readFile(entryPath, "utf8"));
+      if (!split) {
+        continue;
+      }
+      const usage = parseUsageStats(split.frontmatterLines);
+      if (usage.applyCount > usage.readCount) {
+        issues.push({
+          level: "warning",
+          code: "note_usage_apply_exceeds_read",
+          path: normalizePath(path.relative(repoPath, entryPath)),
+          message: "Note apply_count should not exceed read_count.",
+        });
+      }
+    }
+    return issues;
+  })();
+
+  const issues = [...base.issues, ...supportingIssues];
+  return {
+    ...base,
+    issues,
+    issueCount: issues.length,
+    ok: issues.filter((issue: { level: string }) => issue.level === "error").length === 0,
+  };
 }
 
 export async function refreshControlArtifacts(input: RefreshControlArtifactsInput = {}) {
@@ -713,4 +1080,19 @@ export async function autoBootstrapIfSafe(input: AutoBootstrapInput = {}): Promi
 
 export function getDefaultPackUrl(): string {
   return DEFAULT_PACK_URL;
+}
+
+export async function recordLoopApplication(input: RecordLoopApplicationInput): Promise<{ updatedNotes: string[] }> {
+  const repoPath = resolveRepoPath(input.repoPath);
+  const timestamp = new Date().toISOString();
+  const updatedNotes = await updateManyNotesUsage(repoPath, input.notePaths, (current) => ({
+    ...current,
+    readCount: current.readCount + (current.readCount === 0 ? 1 : 0),
+    lastReadAt: current.lastReadAt ?? timestamp,
+    applyCount: current.applyCount + 1,
+    lastAppliedAt: timestamp,
+  }));
+  return {
+    updatedNotes,
+  };
 }

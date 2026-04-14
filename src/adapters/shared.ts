@@ -3,21 +3,23 @@ import path from "node:path";
 
 import {
   autoBootstrapIfSafe,
-  promoteGap,
+  compileRecordedEvent,
+  recordLoopApplication,
   recordTurnResult,
   resolveLoop,
   type AutoBootstrapResult,
-  type PromoteGapInput,
   type RecordTurnResultInput,
   type ResolveLoopInput,
 } from "../core/packCore.js";
 
 export interface LoopEnvelopeInput extends ResolveLoopInput {
   prompt?: string;
+  sessionId?: string;
 }
 
 export interface LoopEnvelope {
   repoPath: string;
+  sessionId: string | null;
   active: boolean;
   originalPrompt: string;
   wrappedPrompt: string;
@@ -34,10 +36,11 @@ export interface LoopEnvelope {
     supportingNotes: Array<{
       path: string;
       title: string;
-    }>;
-    supportingPatterns: Array<{
-      path: string;
-      title: string;
+      whenToUse: string | null;
+      signal: string | null;
+      interpretation: string | null;
+      action: string | null;
+      examples: string[];
     }>;
   };
 }
@@ -61,12 +64,13 @@ export interface WrapperPostRunInput {
   postRunMode?: "off" | "record" | "auto" | "promote";
   minWikiOccurrences?: number;
   minSkillOccurrences?: number;
+  sessionId?: string;
 }
 
 export interface WrapperPostRunResult {
   mode: "off" | "record" | "promote";
   trigger: "disabled" | "record_only" | "explicit_signal" | "failure_exit";
-  result: Awaited<ReturnType<typeof recordTurnResult>> | Awaited<ReturnType<typeof promoteGap>> | null;
+  result: Awaited<ReturnType<typeof recordTurnResult>> | Awaited<ReturnType<typeof compileRecordedEvent>> | null;
 }
 
 export interface WrappedLoopResult {
@@ -115,27 +119,43 @@ function summarizeResolution(
       watchFor: [],
       nextReads: [],
       supportingNotes: [],
-      supportingPatterns: [],
     };
   }
   const topMatch = resolution.matches[0];
-  const supportingNotes = (topMatch?.loopGuidance.supportingNotes ?? topMatch?.loopGuidance.supportingPatterns ?? []).map((note: {
+  const supportingNotes = (topMatch?.noteDocs ?? []).map((noteDoc: {
     path: string;
     title: string;
+    whenToUse?: string | null;
+    signal?: string | null;
+    interpretation?: string | null;
+    action?: string | null;
+    examples?: string[] | null;
   }) => ({
-    path: note.path,
-    title: note.title,
+    path: noteDoc.path,
+    title: noteDoc.title,
+    whenToUse: noteDoc.whenToUse ?? null,
+    signal: noteDoc.signal ?? null,
+    interpretation: noteDoc.interpretation ?? null,
+    action: noteDoc.action ?? null,
+    examples: Array.isArray(noteDoc.examples) ? noteDoc.examples.filter(Boolean) : [],
   }));
   return {
     workflow: resolution.workflow,
     selectionBasis: resolution.selectionBasis,
     matchedSkillId: topMatch?.skill.id ?? null,
     whyMatched: topMatch?.loopGuidance.whyMatched ?? [],
-    whatToDoNow: topMatch?.loopGuidance.whatToDoNow ?? [],
-    watchFor: topMatch?.loopGuidance.watchFor ?? [],
+    whatToDoNow: (topMatch?.loopGuidance.whatToDoNow?.length ?? 0) > 0
+      ? (topMatch?.loopGuidance.whatToDoNow ?? [])
+      : supportingNotes
+        .map((note: LoopEnvelope["guidance"]["supportingNotes"][number]) => note.action)
+        .filter((value: string | null): value is string => Boolean(value)),
+    watchFor: (topMatch?.loopGuidance.watchFor?.length ?? 0) > 0
+      ? (topMatch?.loopGuidance.watchFor ?? [])
+      : supportingNotes
+        .map((note: LoopEnvelope["guidance"]["supportingNotes"][number]) => note.signal)
+        .filter((value: string | null): value is string => Boolean(value)),
     nextReads: topMatch?.loopGuidance.nextReads ?? [],
     supportingNotes,
-    supportingPatterns: supportingNotes,
   };
 }
 
@@ -148,6 +168,34 @@ function renderBulletSection(title: string, lines: string[]): string[] {
     ...lines.map((line) => `- ${line}`),
     "",
   ];
+}
+
+function renderSupportingNotes(notes: LoopEnvelope["guidance"]["supportingNotes"]): string[] {
+  if (notes.length === 0) {
+    return [];
+  }
+
+  const rendered: string[] = ["Supporting notes:"];
+  for (const note of notes) {
+    rendered.push(`- ${note.title} | ${note.path}`);
+    if (note.whenToUse) {
+      rendered.push(`  When to use: ${note.whenToUse}`);
+    }
+    if (note.signal) {
+      rendered.push(`  Signal: ${note.signal}`);
+    }
+    if (note.interpretation) {
+      rendered.push(`  Interpretation: ${note.interpretation}`);
+    }
+    if (note.action) {
+      rendered.push(`  Action: ${note.action}`);
+    }
+    if (note.examples.length > 0) {
+      rendered.push(`  Example: ${note.examples[0]}`);
+    }
+  }
+  rendered.push("");
+  return rendered;
 }
 
 export function renderWrappedPrompt(envelope: LoopEnvelope): string {
@@ -163,10 +211,7 @@ export function renderWrappedPrompt(envelope: LoopEnvelope): string {
     ...renderBulletSection("Why matched", envelope.guidance.whyMatched),
     ...renderBulletSection("What to do now", envelope.guidance.whatToDoNow),
     ...renderBulletSection("Watch for", envelope.guidance.watchFor),
-    ...renderBulletSection(
-      "Supporting notes",
-      envelope.guidance.supportingNotes.map((note) => `${note.title} | ${note.path}`),
-    ),
+    ...renderSupportingNotes(envelope.guidance.supportingNotes),
     ...renderBulletSection("Next reads", envelope.guidance.nextReads),
     "# Datalox Reusable-Gap Protocol",
     "Only if you discover a reusable gap, recurring workflow, or repeated failure worth remembering, append plain text marker lines at the very end of your response:",
@@ -204,6 +249,7 @@ export async function buildLoopEnvelope(input: LoopEnvelopeInput): Promise<LoopE
   const guidance = summarizeResolution(resolution, input.workflow);
   const baseEnvelope = {
     repoPath,
+    sessionId: input.sessionId ?? null,
     active: resolution !== null,
     originalPrompt,
     resolution,
@@ -221,6 +267,7 @@ export async function buildLoopEnvelope(input: LoopEnvelopeInput): Promise<LoopE
 export function buildWrapperEnv(envelope: LoopEnvelope): NodeJS.ProcessEnv {
   return {
     DATALOX_REPO_PATH: envelope.repoPath,
+    DATALOX_SESSION_ID: envelope.sessionId ?? "",
     DATALOX_ORIGINAL_PROMPT: envelope.originalPrompt,
     DATALOX_PROMPT: envelope.wrappedPrompt,
     DATALOX_GUIDANCE_JSON: JSON.stringify(envelope.guidance),
@@ -424,7 +471,7 @@ export async function finalizeWrappedRun(
   input: WrapperPostRunInput & { hostKind: string },
 ): Promise<WrapperPostRunResult> {
   const postRunMode = input.postRunMode ?? "auto";
-  if (postRunMode === "off" || !child || !envelope.active) {
+  if (!child || !envelope.active) {
     return {
       mode: "off",
       trigger: "disabled",
@@ -446,12 +493,12 @@ export async function finalizeWrappedRun(
       ? [buildFailureObservation(sanitized.child)].filter((value): value is string => Boolean(value))
       : [];
 
-  const payloadBase: RecordTurnResultInput & PromoteGapInput = {
+  const payloadBase: RecordTurnResultInput = {
     repoPath: envelope.repoPath,
     task: input.task ?? (envelope.originalPrompt || undefined),
     workflow: input.workflow ?? envelope.guidance.workflow,
     step: input.step,
-    skillId: input.skillId,
+    skillId: input.skillId ?? envelope.guidance.matchedSkillId ?? undefined,
     summary: input.summary
       ?? markers.summary
       ?? firstNonEmpty([
@@ -460,6 +507,7 @@ export async function finalizeWrappedRun(
       ]),
     observations,
     transcript: buildTranscript(envelope, sanitized.child),
+    matchedNotePaths: envelope.guidance.supportingNotes.map((note) => note.path),
     tags: [
       ...(input.tags ?? []),
       ...markers.tags,
@@ -479,24 +527,32 @@ export async function finalizeWrappedRun(
         : "Inspect the failure and retry only after the gap is understood."
     ),
     eventKind: input.eventKind ?? markers.eventKind ?? `wrapper:${input.hostKind}:${sanitized.child.exitCode === 0 ? "success" : "failure"}`,
-    minWikiOccurrences: input.minWikiOccurrences,
-    minSkillOccurrences: input.minSkillOccurrences,
+    sessionId: envelope.sessionId ?? undefined,
+    hostKind: input.hostKind,
   };
 
-  const shouldPromote = postRunMode === "promote"
-    || (postRunMode === "auto" && trigger !== "record_only");
+  const recorded = await recordTurnResult(payloadBase);
 
-  if (shouldPromote) {
-    return {
-      mode: "promote",
-      trigger,
-      result: await promoteGap(payloadBase),
-    };
+  if (sanitized.child.exitCode === 0 && envelope.guidance.supportingNotes.length > 0) {
+    await recordLoopApplication({
+      repoPath: envelope.repoPath,
+      notePaths: envelope.guidance.supportingNotes.map((note) => note.path),
+    });
   }
 
+  const shouldCompile = postRunMode !== "off" && postRunMode !== "record";
+  const result = shouldCompile
+    ? await compileRecordedEvent({
+      repoPath: envelope.repoPath,
+      eventPath: recorded.event.relativePath,
+      minWikiOccurrences: input.minWikiOccurrences,
+      minSkillOccurrences: input.minSkillOccurrences,
+    })
+    : recorded;
+
   return {
-    mode: "record",
+    mode: shouldCompile ? "promote" : "record",
     trigger,
-    result: await recordTurnResult(payloadBase),
+    result,
   };
 }

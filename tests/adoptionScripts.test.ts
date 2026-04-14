@@ -28,7 +28,7 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(hostDir, "WIKI.md"), "utf8")).toContain("agent-wiki/notes/");
     expect(await readFile(path.join(hostDir, ".claude/settings.json"), "utf8")).toContain("\"Stop\"");
     expect(await readFile(path.join(hostDir, ".claude/hooks/auto-promote.sh"), "utf8")).toContain("datalox-auto-promote.js");
-    expect(await readFile(path.join(hostDir, "bin/datalox-auto-promote.js"), "utf8")).toContain("promoteGap");
+    expect(await readFile(path.join(hostDir, "bin/datalox-auto-promote.js"), "utf8")).toContain("compileRecordedEvent");
     expect(await readFile(path.join(hostDir, "bin/claude-global-auto-promote.sh"), "utf8")).toContain("datalox-auto-promote.js");
     expect(await readFile(path.join(hostDir, "bin/datalox-claude.js"), "utf8")).toContain("\"claude\"");
     expect(await readFile(path.join(hostDir, "bin/datalox-codex.js"), "utf8")).toContain("\"codex\"");

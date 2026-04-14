@@ -1990,23 +1990,27 @@ export async function writeNoteDoc(
   const action = recommendedAction;
   const filePath = path.join(hostNotesDir, `${slugify(stableId)}.md`);
   const operation = (await fileExists(filePath)) ? "update_note" : "create_note";
+  const existingUsage = operation === "update_note"
+    ? await (async () => {
+      const existing = splitFrontmatter(await readFile(filePath, "utf8"));
+      return isRecord(existing.frontmatter.usage) ? existing.frontmatter.usage : null;
+    })()
+    : null;
   const content = [
     "---",
-    "type: note",
-    `title: ${titleText}`,
-    `kind: trace`,
-    `workflow: ${workflow}`,
-    skillId ? `skill: ${skillId}` : null,
-    tags.length > 0 ? "tags:" : "tags: []",
-    ...(tags.length > 0 ? tags.map((tag) => `  - ${tag}`) : []),
-    "confidence: medium",
-    "status: active",
-    related.length > 0 ? "related:" : "related: []",
-    ...(related.length > 0 ? related.map((item) => `  - ${item}`) : []),
-    sources.length > 0 ? "sources:" : "sources: []",
-    ...(sources.length > 0 ? sources.map((item) => `  - ${item}`) : []),
-    `author: ${author}`,
-    `updated: ${updatedAt}`,
+    renderFrontmatterValue("type", "note"),
+    renderFrontmatterValue("title", titleText),
+    renderFrontmatterValue("kind", "trace"),
+    renderFrontmatterValue("workflow", workflow),
+    skillId ? renderFrontmatterValue("skill", skillId) : null,
+    renderFrontmatterValue("tags", tags),
+    renderFrontmatterValue("confidence", "medium"),
+    renderFrontmatterValue("status", "active"),
+    renderFrontmatterValue("related", related),
+    renderFrontmatterValue("sources", sources),
+    existingUsage ? renderFrontmatterValue("usage", existingUsage) : null,
+    renderFrontmatterValue("author", author),
+    renderFrontmatterValue("updated", updatedAt),
     "---",
     "",
     `# ${titleText}`,
@@ -2455,6 +2459,118 @@ function decidePromotionAction({ occurrenceCount, matchedSkillId, minWikiOccurre
   };
 }
 
+export async function compileRecordedEvent(
+  {
+    eventPath,
+    minWikiOccurrences = 2,
+    minSkillOccurrences = 3,
+  },
+  cwd = process.cwd(),
+) {
+  const { config, sourcePath } = await loadAgentConfig(cwd);
+  const { hostRoot } = resolvePackPaths(config, { cwd, sourcePath });
+  const recordedEvents = await listRecordedEvents(config, cwd, sourcePath);
+  const normalizedEventPath = eventPath
+    ? normalizePath(
+      path.isAbsolute(eventPath)
+        ? path.relative(hostRoot, eventPath)
+        : eventPath
+    )
+    : null;
+  const recordedEntry = normalizedEventPath
+    ? recordedEvents.find((entry) => entry.relativePath === normalizedEventPath)
+    : recordedEvents[0] ?? null;
+
+  if (!recordedEntry) {
+    throw new Error(`Recorded event not found: ${eventPath ?? "latest"}`);
+  }
+
+  const payload = recordedEntry.value ?? {};
+  const occurrenceCount = recordedEvents.filter((entry) => entry.value?.fingerprint === payload.fingerprint).length;
+  const decision = {
+    ...decidePromotionAction({
+      occurrenceCount,
+      matchedSkillId: payload.explicitSkillId ?? payload.matchedSkillId ?? null,
+      minWikiOccurrences,
+      minSkillOccurrences,
+    }),
+    occurrenceCount,
+  };
+  const recorded = {
+    event: {
+      filePath: recordedEntry.filePath,
+      relativePath: recordedEntry.relativePath,
+      payload,
+    },
+    occurrenceCount,
+    fingerprint: payload.fingerprint ?? null,
+  };
+
+  if (decision.action === "record_only") {
+    return {
+      ...recorded,
+      decision,
+      promotion: null,
+    };
+  }
+
+  const effectiveWorkflow = payload.workflow ?? config.runtime.defaultWorkflow;
+
+  if (decision.action === "create_note_from_gap") {
+    const note = await writeNoteDoc(
+      {
+        title: payload.title,
+        workflow: effectiveWorkflow,
+        signal: payload.signal,
+        interpretation: payload.interpretation,
+        recommendedAction: payload.recommendedAction,
+        skillId: null,
+        related: unique(payload.matchedNotePaths ?? []),
+        sources: [],
+        tags: unique([...(payload.tags ?? []), "promoted"]),
+      },
+      cwd,
+    );
+
+    return {
+      ...recorded,
+      decision,
+      promotion: {
+        note,
+        skill: null,
+        pattern: note,
+      },
+    };
+  }
+
+  const learned = await learnFromInteraction(
+    {
+      task: payload.task ?? undefined,
+      workflow: effectiveWorkflow,
+      step: payload.step ?? undefined,
+      skillId: decision.action === "patch_skill_with_note"
+        ? (payload.explicitSkillId ?? payload.matchedSkillId ?? undefined)
+        : undefined,
+      summary: payload.summary ?? undefined,
+      observations: payload.observations ?? [],
+      transcript: payload.transcript ?? undefined,
+      tags: unique([...(payload.tags ?? []), "promoted"]),
+      title: payload.title ?? undefined,
+      signal: payload.signal ?? undefined,
+      interpretation: payload.interpretation ?? undefined,
+      recommendedAction: payload.recommendedAction ?? undefined,
+      occurrenceCount: decision.occurrenceCount,
+    },
+    cwd,
+  );
+
+  return {
+    ...recorded,
+    decision,
+    promotion: learned,
+  };
+}
+
 export async function promoteGap(
   {
     task,
@@ -2497,82 +2613,19 @@ export async function promoteGap(
     },
     cwd,
   );
-  const topMatch = recorded.resolution.matches[0] ?? null;
-  const reusableMatch = topMatch && (!workflow || topMatch.skill.workflow === workflow)
-    ? topMatch
-    : null;
-  const decision = {
-    ...decidePromotionAction({
-      occurrenceCount: recorded.occurrenceCount,
-      matchedSkillId: skillId ?? reusableMatch?.skill.id ?? null,
+  const compiled = await compileRecordedEvent(
+    {
+      eventPath: recorded.event.relativePath,
       minWikiOccurrences,
       minSkillOccurrences,
-    }),
-    occurrenceCount: recorded.occurrenceCount,
-  };
-
-  if (decision.action === "record_only") {
-    return {
-      ...recorded,
-      decision,
-      promotion: null,
-    };
-  }
-
-  const effectiveWorkflow = workflow
-    || reusableMatch?.skill.workflow
-    || recorded.event.payload.workflow;
-
-  if (decision.action === "create_note_from_gap") {
-    const note = await writeNoteDoc(
-      {
-        title: recorded.event.payload.title,
-        workflow: effectiveWorkflow,
-        signal: recorded.event.payload.signal,
-        interpretation: recorded.event.payload.interpretation,
-        recommendedAction: recorded.event.payload.recommendedAction,
-        skillId: null,
-        related: unique(recorded.event.payload.matchedNotePaths ?? []),
-        sources: [],
-        tags: unique([...(recorded.event.payload.tags ?? []), "promoted"]),
-      },
-      cwd,
-    );
-
-    return {
-      ...recorded,
-      decision,
-      promotion: {
-        note,
-        skill: null,
-        pattern: note,
-      },
-    };
-  }
-
-  const learned = await learnFromInteraction(
-    {
-      task,
-      workflow: effectiveWorkflow,
-      step,
-      skillId: decision.action === "patch_skill_with_note" ? (skillId ?? reusableMatch?.skill.id) : undefined,
-      summary,
-      observations,
-      transcript,
-      tags: unique([...tags, "promoted"]),
-      title,
-      signal,
-      interpretation,
-      recommendedAction,
-      occurrenceCount: decision.occurrenceCount,
     },
     cwd,
   );
 
   return {
     ...recorded,
-    decision,
-    promotion: learned,
+    decision: compiled.decision,
+    promotion: compiled.promotion,
   };
 }
 

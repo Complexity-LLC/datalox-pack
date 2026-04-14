@@ -252,8 +252,8 @@ async function main() {
   }
 
   const moduleUrl = pathToFileURL(path.join(packRoot, "scripts", "lib", "agent-pack.mjs")).href;
-  const { promoteGap } = await import(moduleUrl);
-  const result = await promoteGap(
+  const { compileRecordedEvent, recordTurnResult } = await import(moduleUrl);
+  const recorded = await recordTurnResult(
     {
       task: task ?? summary ?? "auto-promote-hook",
       workflow: typeof args.workflow === "string"
@@ -275,6 +275,12 @@ async function main() {
         : payload?.hook_event_name
           ? `hook:${payload.hook_event_name}`
           : "hook:auto-promote",
+    },
+    repoPath,
+  );
+  const result = await compileRecordedEvent(
+    {
+      eventPath: recorded.event.relativePath,
       minWikiOccurrences: parseOptionalPositiveInt(args["min-wiki-occurrences"])
         ?? parseOptionalPositiveInt(process.env.DATALOX_AUTO_PROMOTE_MIN_WIKI),
       minSkillOccurrences: parseOptionalPositiveInt(args["min-skill-occurrences"])

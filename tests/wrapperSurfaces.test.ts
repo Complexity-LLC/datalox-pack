@@ -60,6 +60,8 @@ describe("wrapper surfaces", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("# Datalox Loop Guidance");
     expect(result.stdout).toContain("Matched skill: flow-cytometry.review-ambiguous-viability-gate");
+    expect(result.stdout).toContain("Signal: Live and dead populations are not cleanly separated during viability gate review.");
+    expect(result.stdout).toContain("Action: Check the exception and escalation pattern docs before widening the gate");
     expect(result.stdout).toContain("# Original Prompt");
     expect(result.stdout).toContain("Review the current viability gate and tell me what to do.");
   });
@@ -99,9 +101,119 @@ describe("wrapper surfaces", () => {
     expect(parsed.workflow).toBe("flow_cytometry");
     expect(parsed.prompt).toContain("# Datalox Loop Guidance");
     expect(parsed.prompt).toContain("Need a gate recommendation");
-    expect(result.stderr).toContain("[datalox-wrap] record");
+    expect(result.stderr).toContain("[datalox-wrap] record_only");
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
-    expect((await readdir(path.join(hostDir, "agent-wiki", "events"))).length).toBe(1);
+    const eventFiles = await readdir(path.join(hostDir, "agent-wiki", "events"));
+    expect(eventFiles.length).toBe(1);
+    const eventPayload = JSON.parse(
+      await readFile(path.join(hostDir, "agent-wiki", "events", eventFiles[0]), "utf8"),
+    );
+    expect(eventPayload.hostKind).toBe("generic");
+    expect(eventPayload.matchedSkillId).toBe("flow-cytometry.review-ambiguous-viability-gate");
+    expect(eventPayload.matchedNotePaths).toContain("agent-wiki/notes/viability-gate-review.md");
+    const noteFile = await readFile(path.join(hostDir, "agent-wiki", "notes", "viability-gate-review.md"), "utf8");
+    expect(noteFile).toContain("read_count: 1");
+    expect(noteFile).toContain("apply_count: 1");
+  }, 10000);
+
+  it("records a raw wrapper event even when post-run compilation is turned off and no markers are emitted", async () => {
+    const hostDir = await adoptHostRepo();
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "wrap",
+        "command",
+        "--repo",
+        hostDir,
+        "--task",
+        "review ambiguous live dead gate",
+        "--workflow",
+        "flow_cytometry",
+        "--prompt",
+        "Need a gate recommendation",
+        "--post-run-mode",
+        "off",
+        "--",
+        "node",
+        "-e",
+        "process.stdout.write('plain wrapped answer')",
+        "__DATALOX_PROMPT__",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("plain wrapped answer");
+    expect(result.stderr).toContain("[datalox-wrap] record | record_only");
+    const eventFiles = await readdir(path.join(hostDir, "agent-wiki", "events"));
+    expect(eventFiles.length).toBe(1);
+    const eventPayload = JSON.parse(
+      await readFile(path.join(hostDir, "agent-wiki", "events", eventFiles[0]), "utf8"),
+    );
+    expect(eventPayload.summary).toBe("plain wrapped answer");
+    expect(eventPayload.eventKind).toBe("wrapper:generic:success");
+    expect(eventPayload.hostKind).toBe("generic");
+  }, 10000);
+
+  it("treats DATALOX markers as optional enrichment on top of the recorded event", async () => {
+    const hostDir = await adoptHostRepo();
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "wrap",
+        "command",
+        "--repo",
+        hostDir,
+        "--task",
+        "review ambiguous live dead gate",
+        "--workflow",
+        "flow_cytometry",
+        "--prompt",
+        "Need a gate recommendation",
+        "--post-run-mode",
+        "record",
+        "--",
+        "node",
+        "-e",
+        [
+          "const lines = [",
+          "\"DATALOX_TITLE: Ambiguous viability gate follow-up\",",
+          "\"DATALOX_SIGNAL: user kept rechecking the same unstable boundary\",",
+          "\"DATALOX_INTERPRETATION: this is a reusable review judgment rather than a one-off answer\",",
+          "\"DATALOX_ACTION: revisit the linked note before widening the gate\",",
+          "\"DATALOX_OBSERVATION: gate drift was visible on the live/dead shoulder\",",
+          "\"Visible wrapped answer\"",
+          "];",
+          "process.stdout.write(lines.join('\\n'));",
+        ].join(" "),
+        "__DATALOX_PROMPT__",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("Visible wrapped answer");
+    const eventFiles = await readdir(path.join(hostDir, "agent-wiki", "events"));
+    expect(eventFiles.length).toBe(1);
+    const eventPayload = JSON.parse(
+      await readFile(path.join(hostDir, "agent-wiki", "events", eventFiles[0]), "utf8"),
+    );
+    expect(eventPayload.title).toBe("Ambiguous viability gate follow-up");
+    expect(eventPayload.signal).toBe("user kept rechecking the same unstable boundary");
+    expect(eventPayload.interpretation).toBe(
+      "this is a reusable review judgment rather than a one-off answer",
+    );
+    expect(eventPayload.recommendedAction).toBe("revisit the linked note before widening the gate");
+    expect(eventPayload.observations).toContain("gate drift was visible on the live/dead shoulder");
+    expect(eventPayload.summary).toBe("Visible wrapped answer");
   }, 10000);
 
   it("runs the Codex wrapper with a fake codex binary and preserves the resolved prompt envelope", async () => {
@@ -358,7 +470,7 @@ EOF
     expect(spawnSync("test", ["-f", path.join(hostDir, "DATALOX.md")]).status).not.toBe(0);
   }, 10000);
 
-  it("owns the full loop for repeated no-match failures and creates a new skill", async () => {
+  it("patches a matched wrapper skill when the same wrapped failure repeats", async () => {
     const hostDir = await adoptHostRepo();
     const failingScript = "process.stderr.write('fatal onboarding gap\\n'); process.exit(1)";
 
@@ -372,11 +484,13 @@ EOF
           "--repo",
           hostDir,
           "--task",
-          "stabilize onboarding in non technical repos",
+          "debug repeated wrapper failure in unsupported host cli path",
           "--workflow",
-          "agent_adoption",
+          "repo_engineering",
+          "--skill",
+          "repo-engineering.host-cli-wrapper",
           "--prompt",
-          "Stabilize onboarding in non technical repos",
+          "Debug repeated wrapper failure in unsupported host cli path",
           "--",
           "node",
           "-e",
@@ -394,25 +508,22 @@ EOF
 
     const second = runFailure();
     expect(second.status).toBe(1);
-    expect(second.stderr).toContain("create_note_from_gap");
+    expect(second.stderr).toContain("patch_skill_with_note");
 
     const third = runFailure();
     expect(third.status).toBe(1);
-    expect(third.stderr).toContain("create_skill_from_gap");
+    expect(third.stderr).toContain("patch_skill_with_note");
 
     const logFile = await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8");
-    const indexFile = await readFile(path.join(hostDir, "agent-wiki", "index.md"), "utf8");
-    const generatedSkill = await readFile(
-      path.join(hostDir, "skills", "stabilize-onboarding-in-non-technical-repos", "SKILL.md"),
+    const patchedSkill = await readFile(
+      path.join(hostDir, "skills", "host-cli-wrapper", "SKILL.md"),
       "utf8",
     );
 
     expect(logFile).toContain("record_event");
     expect(logFile).toContain("create_note");
-    expect(logFile).toContain("create_skill");
-    expect(indexFile).toContain("agent_adoption.stabilize-onboarding-in-non-technical-repos");
-    expect(generatedSkill).toContain("## Workflow");
-    expect(generatedSkill).toContain("maturity: stable");
+    expect(logFile).toContain("update_skill");
+    expect(patchedSkill).toContain("agent-wiki/notes/");
   }, 20000);
 
   it("copies wrapper entrypoints and skills into adopted host repos", async () => {

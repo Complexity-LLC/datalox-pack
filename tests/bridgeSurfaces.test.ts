@@ -7,6 +7,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { compileRecordedEvent, recordTurnResult } from "../src/core/packCore.js";
+
 const repoRoot = process.cwd();
 const builtCliPath = path.join(repoRoot, "dist", "src", "cli", "main.js");
 const builtMcpPath = path.join(repoRoot, "dist", "src", "mcp", "server.js");
@@ -676,6 +678,9 @@ describe("bridge surfaces", () => {
     expect(patchResult.status).toBe(0);
     const patched = JSON.parse(patchResult.stdout);
     expect(patched.skill.operation).toBe("update_skill");
+    const patchedNoteFile = await readFile(path.join(tempDir, "agent-wiki", "notes", "viability-gate-review.md"), "utf8");
+    expect(patchedNoteFile).toContain("usage:");
+    expect(patchedNoteFile).toContain("read_count: 1");
 
     const lintResult = runBuiltCli(tempDir, ["lint", "--json"]);
     expect(lintResult.status).toBe(0);
@@ -699,6 +704,9 @@ describe("bridge surfaces", () => {
     expect(resolveResult.status).toBe(0);
     const resolved = JSON.parse(resolveResult.stdout);
     expect(resolved.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
+    const noteFile = await readFile(path.join(tempDir, "agent-wiki", "notes", "viability-gate-review.md"), "utf8");
+    expect(noteFile).toContain("read_count: 1");
+    expect(noteFile).toContain("apply_count: 0");
   });
 
   it("parses flow-style frontmatter in agent-native skills", async () => {
@@ -893,4 +901,53 @@ describe("bridge surfaces", () => {
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("record_event");
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("create_skill");
   }, 15000);
+
+  it("records first and compiles repeated stored events into a note then a skill", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-compile-recorded-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+
+    const input = {
+      repoPath: tempDir,
+      task: "stabilize release onboarding in agent-managed repos",
+      workflow: "agent_adoption",
+      summary: "new repos need a reversible onboarding path before first agent run",
+      observations: [
+        "release onboarding keeps failing because repos have no visible install surface",
+      ],
+      interpretation: "this is a reusable onboarding gap rather than a one-off setup note",
+      recommendedAction: "create an onboarding playbook and attach it to a reusable skill",
+      outcome: "failure",
+      eventKind: "wrapper:generic:failure",
+    };
+
+    const firstRecorded = await recordTurnResult(input);
+    expect(firstRecorded.event.relativePath).toContain("agent-wiki/events/");
+    const firstCompiled = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: firstRecorded.event.relativePath,
+    });
+    expect(firstCompiled.decision.action).toBe("record_only");
+    expect(firstCompiled.promotion).toBeNull();
+
+    const secondRecorded = await recordTurnResult(input);
+    const secondCompiled = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: secondRecorded.event.relativePath,
+    });
+    expect(secondCompiled.decision.action).toBe("create_note_from_gap");
+    expect(secondCompiled.promotion?.note?.relativePath).toContain("agent-wiki/notes/");
+    expect(secondCompiled.promotion?.skill).toBeNull();
+
+    const thirdRecorded = await recordTurnResult(input);
+    const thirdCompiled = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: thirdRecorded.event.relativePath,
+    });
+    expect(thirdCompiled.decision.action).toBe("create_skill_from_gap");
+    expect(thirdCompiled.promotion?.skill?.operation).toBe("create_skill");
+    expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
+    expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("create_note");
+    expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("create_skill");
+  });
 });
