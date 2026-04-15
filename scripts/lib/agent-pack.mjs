@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -10,10 +11,12 @@ const BASE_URL_ENV = "DATALOX_BASE_URL";
 const DEFAULT_WORKFLOW_ENV = "DATALOX_DEFAULT_WORKFLOW";
 const AGENT_PROFILE_ENV = "DATALOX_AGENT_PROFILE";
 const MODE_ENV = "DATALOX_MODE";
+const QMD_BIN_ENV = "DATALOX_QMD_BIN";
 const PACK_MODES = ["repo_only", "service_backed"];
 const AGENT_PROFILES = ["local_first", "runtime_first"];
 const AGENT_INTERFACES = ["skill_loop", "runtime_compile"];
 const SOURCE_KINDS = ["local_repo"];
+const NOTE_RETRIEVAL_BACKENDS = ["native", "qmd"];
 const DEFAULT_WIKI_DIR = "agent-wiki";
 const DEFAULT_NOTE_DIR = `${DEFAULT_WIKI_DIR}/notes`;
 const DEFAULT_META_DIR = `${DEFAULT_WIKI_DIR}/meta`;
@@ -108,6 +111,7 @@ function validateAgentConfig(raw) {
   const sources = raw.sources;
   const agent = raw.agent;
   const paths = raw.paths;
+  const retrieval = raw.retrieval;
   const runtime = raw.runtime;
   const auth = raw.auth;
 
@@ -115,6 +119,9 @@ function validateAgentConfig(raw) {
   if (!Array.isArray(sources)) throw new Error("Agent config field sources must be an array");
   if (!isRecord(agent)) throw new Error("Agent config field agent must be an object");
   if (!isRecord(paths)) throw new Error("Agent config field paths must be an object");
+  if (retrieval !== undefined && !isRecord(retrieval)) {
+    throw new Error("Agent config field retrieval must be an object");
+  }
   if (!isRecord(runtime)) throw new Error("Agent config field runtime must be an object");
   if (!isRecord(auth)) throw new Error("Agent config field auth must be an object");
   if (!isRecord(runtime.endpoints)) {
@@ -171,6 +178,11 @@ function validateAgentConfig(raw) {
       hostPatternsDir: paths.hostPatternsDir === null || paths.hostPatternsDir === undefined
         ? null
         : expectString(paths.hostPatternsDir, "paths.hostPatternsDir"),
+    },
+    retrieval: {
+      notesBackend: retrieval?.notesBackend === undefined
+        ? "native"
+        : expectEnumValue(retrieval.notesBackend, "retrieval.notesBackend", NOTE_RETRIEVAL_BACKENDS),
     },
     runtime: {
       enabled: expectBoolean(runtime.enabled, "runtime.enabled"),
@@ -1935,6 +1947,231 @@ function scoreNote(note, query) {
   return score;
 }
 
+function getConfiguredNotesBackend(config) {
+  return config.retrieval?.notesBackend ?? "native";
+}
+
+function buildDirectNoteQueryText(query) {
+  return [query.workflow, query.skill, query.task, query.step]
+    .filter((value) => typeof value === "string" && value.trim().length > 0)
+    .join("\n");
+}
+
+async function listParsedNoteEntries(config, cwd, sourcePath, includeContent) {
+  const wikiEntries = await listWikiEntries(config, cwd, sourcePath);
+  const noteEntries = wikiEntries.filter((entry) => entry.pageType === "note");
+  return Promise.all(
+    noteEntries.map(async (entry) => ({
+      filePath: entry.filePath,
+      origin: entry.origin,
+      note: parseNoteDoc(entry.relativePath, await readFile(entry.filePath, "utf8"), includeContent),
+    })),
+  );
+}
+
+async function searchNotesWithNative(config, cwd, sourcePath, query, limit, includeContent) {
+  const parsedNotes = await listParsedNoteEntries(config, cwd, sourcePath, includeContent);
+  return parsedNotes
+    .map((item) => ({
+      ...item,
+      score: scoreNote(item.note, query),
+    }))
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit)
+    .map((item) => ({
+      score: item.score,
+      notePath: item.note.path,
+      noteOrigin: item.origin,
+      noteDoc: item.note,
+      whyMatched: explainNoteMatch(item.note, query),
+    }));
+}
+
+function buildQmdNotesCollectionName(config, cwd, sourcePath) {
+  const paths = resolvePackPaths(config, { cwd, sourcePath });
+  const projectKey = slugify(config.project.id || config.project.name || "repo");
+  const repoHash = createHash("sha1").update(paths.hostRoot).digest("hex").slice(0, 12);
+  return `datalox-${projectKey}-${repoHash}-notes`;
+}
+
+function resolveQmdBin() {
+  return process.env[QMD_BIN_ENV] || "qmd";
+}
+
+function runQmdCommand(args, cwd) {
+  const result = spawnSync(resolveQmdBin(), args, {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      NO_COLOR: "1",
+    },
+  });
+  if (result.status !== 0) {
+    const stderr = result.stderr?.trim();
+    const stdout = result.stdout?.trim();
+    throw new Error(
+      [
+        `QMD command failed: ${resolveQmdBin()} ${args.join(" ")}`,
+        stderr ? `stderr: ${stderr}` : null,
+        stdout ? `stdout: ${stdout}` : null,
+      ].filter(Boolean).join("\n"),
+    );
+  }
+  return result;
+}
+
+function collectionListContainsName(output, name) {
+  const pattern = new RegExp(`^${name}\\b`, "m");
+  return pattern.test(output);
+}
+
+async function ensureQmdNotesCollection(config, cwd, sourcePath) {
+  const paths = resolvePackPaths(config, { cwd, sourcePath });
+  const notesDir = paths.hostNotesDir;
+  if (!(await fileExists(notesDir))) {
+    throw new Error(`QMD notes collection root does not exist: ${notesDir}`);
+  }
+
+  const collectionName = buildQmdNotesCollectionName(config, cwd, sourcePath);
+  const listed = runQmdCommand(["collection", "list"], cwd).stdout ?? "";
+  if (!collectionListContainsName(listed, collectionName)) {
+    runQmdCommand(
+      ["collection", "add", notesDir, "--name", collectionName, "--mask", "**/*.md"],
+      cwd,
+    );
+    return {
+      backend: "qmd",
+      collectionName,
+      notesDir,
+      action: "created",
+    };
+  }
+
+  return {
+    backend: "qmd",
+    collectionName,
+    notesDir,
+    action: "existing",
+  };
+}
+
+export async function syncNoteRetrieval(cwd = process.cwd()) {
+  const { config, sourcePath } = await loadAgentConfig(cwd);
+  const backend = getConfiguredNotesBackend(config);
+  if (backend !== "qmd") {
+    return {
+      backend,
+      synced: false,
+      reason: "native backend does not require index sync",
+    };
+  }
+
+  const paths = resolvePackPaths(config, { cwd, sourcePath });
+  const collectionName = buildQmdNotesCollectionName(config, cwd, sourcePath);
+  const notesDir = paths.hostNotesDir;
+  if (!(await fileExists(notesDir))) {
+    throw new Error(`QMD notes collection root does not exist: ${notesDir}`);
+  }
+
+  const listed = runQmdCommand(["collection", "list"], cwd).stdout ?? "";
+  const existed = collectionListContainsName(listed, collectionName);
+  if (existed) {
+    runQmdCommand(["collection", "remove", collectionName], cwd);
+  }
+  runQmdCommand(
+    ["collection", "add", notesDir, "--name", collectionName, "--mask", "**/*.md"],
+    cwd,
+  );
+
+  const noteFiles = await readDirMarkdown(notesDir);
+  return {
+    backend,
+    synced: true,
+    action: existed ? "refreshed" : "created",
+    collectionName,
+    notesDir: normalizePath(path.relative(cwd, notesDir) || "."),
+    noteFileCount: noteFiles.length,
+  };
+}
+
+function mapQmdResultToNotePath(collectionName, hostNotesDir, hostRoot, qmdFile) {
+  if (typeof qmdFile !== "string" || !qmdFile.startsWith("qmd://")) {
+    return null;
+  }
+  const raw = qmdFile.slice("qmd://".length);
+  const prefix = `${collectionName}/`;
+  if (!raw.startsWith(prefix)) {
+    return null;
+  }
+  const relativeWithinNotes = raw.slice(prefix.length);
+  const hostNotesRelativeDir = normalizePath(path.relative(hostRoot, hostNotesDir));
+  return normalizePath(path.join(hostNotesRelativeDir, relativeWithinNotes));
+}
+
+async function searchNotesWithQmd(config, cwd, sourcePath, query, limit, includeContent) {
+  const queryText = buildDirectNoteQueryText(query);
+  if (!queryText) {
+    return [];
+  }
+
+  const ensured = await ensureQmdNotesCollection(config, cwd, sourcePath);
+  const paths = resolvePackPaths(config, { cwd, sourcePath });
+  const result = runQmdCommand(
+    ["query", "--json", "-n", String(limit), "-c", ensured.collectionName, queryText],
+    cwd,
+  );
+  const parsed = JSON.parse(result.stdout || "[]");
+  if (!Array.isArray(parsed)) {
+    throw new Error("QMD query output must be a JSON array");
+  }
+
+  const candidates = [];
+  for (const item of parsed) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const notePath = mapQmdResultToNotePath(
+      ensured.collectionName,
+      paths.hostNotesDir,
+      paths.hostRoot,
+      item.file,
+    );
+    if (!notePath) {
+      continue;
+    }
+    const noteDoc = await loadNoteDoc(cwd, sourcePath, notePath, includeContent);
+    const score = typeof item.score === "number" ? item.score : 0;
+    candidates.push({
+      score,
+      notePath: noteDoc.path,
+      noteOrigin: noteDoc.origin,
+      noteDoc,
+      whyMatched: unique([
+        `qmd score: ${score.toFixed(2)}`,
+        ...explainNoteMatch(noteDoc, query),
+      ]),
+    });
+  }
+
+  return candidates;
+}
+
+async function retrieveDirectNotes(config, cwd, sourcePath, query, limit, includeContent) {
+  const backend = getConfiguredNotesBackend(config);
+  if (backend === "qmd") {
+    return {
+      backend,
+      directNotes: await searchNotesWithQmd(config, cwd, sourcePath, query, limit, includeContent),
+    };
+  }
+  return {
+    backend: "native",
+    directNotes: await searchNotesWithNative(config, cwd, sourcePath, query, limit, includeContent),
+  };
+}
+
 function buildNoteIdentity({
   id,
   fingerprint,
@@ -2050,51 +2287,19 @@ export async function resolveLocalKnowledge(
     .sort((left, right) => right.score - left.score)
     .slice(0, limit);
 
-  const directNotes = ranked.length === 0
-    ? await (async () => {
-      const wikiEntries = await listWikiEntries(config, cwd, sourcePath);
-      const noteEntries = wikiEntries.filter((entry) => entry.pageType === "note");
-      const parsedNotes = await Promise.all(
-        noteEntries.map(async (entry) => ({
-          filePath: entry.filePath,
-          origin: entry.origin,
-          note: parseNoteDoc(entry.relativePath, await readFile(entry.filePath, "utf8"), includeContent),
-        })),
-      );
-
-      return parsedNotes
-        .map((item) => ({
-          ...item,
-          score: scoreNote(
-            item.note,
-            {
-              task,
-              workflow,
-              step,
-              skill,
-            },
-          ),
-        }))
-        .filter((item) => item.score > 0)
-        .sort((left, right) => right.score - left.score)
-        .slice(0, limit)
-        .map((item) => ({
-          score: item.score,
-          notePath: item.note.path,
-          noteOrigin: item.origin,
-          noteDoc: item.note,
-          whyMatched: explainNoteMatch(
-            item.note,
-            {
-              task,
-              workflow,
-              step,
-              skill,
-            },
-          ),
-        }));
-    })()
-    : [];
+  const directNoteQuery = {
+    task,
+    workflow,
+    step,
+    skill,
+  };
+  const directNoteResolution = ranked.length === 0
+    ? await retrieveDirectNotes(config, cwd, sourcePath, directNoteQuery, limit, includeContent)
+    : {
+      backend: getConfiguredNotesBackend(config),
+      directNotes: [],
+    };
+  const directNotes = directNoteResolution.directNotes;
 
   const effectiveWorkflow = workflow
     || ranked[0]?.skill.workflow
@@ -2144,6 +2349,7 @@ export async function resolveLocalKnowledge(
     runtimeEnabled: config.runtime.enabled,
     detectOnEveryLoop: config.agent.detectOnEveryLoop,
     nativeSkillPolicy: config.agent.nativeSkillPolicy,
+    directNoteBackend: directNoteResolution.backend,
     selectionBasis,
     configPath: sourcePath,
     localOverridePath,

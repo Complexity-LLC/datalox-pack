@@ -1,147 +1,168 @@
-# Datalox Refactor Checklist
+# Datalox Retrieval Checklist
 
-Status: complete for this pass.
+Status: completed.
 
-This refactor reduces `datalox-pack` to a smaller, agent-first knowledge model:
+This pass upgraded note retrieval in `datalox-pack` without changing the core product boundary:
 
-- concrete source kinds: `trace`, `web`, `pdf`
-- durable outputs: `note`, `skill`
-- durable repo surfaces:
-  - `skills/`
-  - `agent-wiki/notes/`
-  - `agent-wiki/events/`
-  - `agent-wiki/index.md`
-  - `agent-wiki/log.md`
-  - `agent-wiki/lint.md`
-  - `agent-wiki/hot.md`
+- `skills/` stay the primary execution entrypoints
+- `agent-wiki/notes/` stays the primary knowledge body
+- Datalox keeps ownership of:
+  - note and skill schemas
+  - workflow and skill scoping
+  - loop injection
+  - read/apply tracking
+  - event -> note -> skill compilation
+
+The only pluggable part is direct note retrieval.
 
 ## Core Rule
 
-- [x] Reusable local learning becomes a `note`.
-- [x] Reusable workflow learning becomes a `skill`.
-- [x] `note` holds both rule and concrete evidence/examples.
-- [x] New automatic writes go to `agent-wiki/notes/` and `skills/`.
+- [x] Skill-linked notes remain primary.
+- [x] Direct note retrieval is backend-driven.
+- [x] Supported note retrieval backends are:
+  - `native`
+  - `qmd`
+- [x] QMD is a retrieval engine, not the knowledge system.
 
-## Phase 1: Freeze The Contract
+## Target Retrieval Flow
 
-- [x] `DATALOX.md` documents `trace | web | pdf` as the supported source kinds.
-- [x] `DATALOX.md` and `README.md` document `note | skill` as the durable outputs.
-- [x] Public docs de-emphasize generated `question`, `comparison`, `concept`, `doc`, and `pattern` pages.
-- [x] Public docs keep only a short migration note for legacy folders.
+- [x] Resolve the best matching skill first.
+- [x] Load linked notes from that skill first.
+- [x] If no skill matches, retrieve direct notes through the selected backend.
+- [x] Parse note markdown through the existing Datalox note parser.
+- [x] Inject final note content into the loop through the existing wrapper path.
+- [x] Keep read/apply tracking unchanged.
 
-## Phase 2: Reduce The Wiki Surface
+## Phase 1: Extract The Native Backend
 
-- [x] `agent-wiki/notes/` is the default knowledge folder.
-- [x] New automatic writes no longer target `patterns/`, `sources/`, `concepts/`, `comparisons/`, or `questions/`.
-- [x] Legacy folders remain readable during migration.
-- [x] Index and lint treat notes and skills as the main knowledge graph.
-- [x] Manual adoption now copies the reduced note-first surface instead of the old generated taxonomy.
+- [x] Move current direct note retrieval out of `resolveLocalKnowledge()`.
+- [x] Define a small backend interface for direct note retrieval only.
+- [x] Keep the interface minimal:
+  - query input
+  - retrieved note candidates
+  - backend name
+- [x] Implement `native` by reusing the existing logic from:
+  - `scoreNote()`
+  - `explainNoteMatch()`
+  - direct note fallback in `resolveLocalKnowledge()`
+- [x] Keep current behavior as the default path.
 
-## Phase 3: Make Trace First-Class
+## Phase 2: Add Backend Selection
 
-- [x] `trace` is a first-class source kind.
-- [x] `extractTraceSource()` exists in the shared core.
-- [x] Trace evidence includes task, workflow, transcript, summary, observations, signal, interpretation, action, matched skill, changed files, and outcome.
-- [x] `recordTurnResult` persists grounded trace evidence in `agent-wiki/events/`.
-- [x] `recordTurnResult` and `promoteGap` return a normalized `traceBundle`.
+- [x] Add a retrieval config surface to the pack config:
+  - `retrieval.notesBackend = "native" | "qmd"`
+- [x] Default to `native`.
+- [x] Thread this selection through:
+  - `resolveLocalKnowledge()`
+  - `resolveLoop()`
+  - CLI resolve surfaces
+  - MCP resolve surfaces
+- [x] Keep skill matching and note injection unchanged.
 
-## Phase 4: Add One Minimal Shared Source Bundle
+## Phase 3: Keep Skill-Linked Retrieval Primary
 
-- [x] `src/core/sourceBundle.ts` defines a transport-free `SourceBundle`.
-- [x] The bundle supports only `trace`, `web`, and `pdf`.
-- [x] The bundle stays close to extracted evidence instead of abstract summaries.
+- [x] Preserve current skill scoring as the first retrieval stage.
+- [x] Preserve loading of `skill.notePaths` as the first note source.
+- [x] Do not replace skill-linked notes with QMD search results.
+- [x] Allow direct-note retrieval only when:
+  - no skill matched
+- [x] Keep this initial pass conservative:
+  - no supplemental-note merge logic
+  - no heuristic “note set is insufficient” logic
 
-## Phase 5: Split Extraction From Rendering
+## Phase 4: Add QMD As An Optional Direct-Note Backend
 
-- [x] Web capture uses `extractWebSource()` plus renderer-specific outputs.
-- [x] Trace has explicit rendering helpers in `src/core/traceArtifacts.ts`.
-- [x] Web renderers and trace renderers consume shared source-bundle evidence instead of ad hoc command-level state.
-- [x] CLI and MCP surfaces call core operations instead of duplicating renderer internals.
+- [x] Integrate QMD through its CLI first, not MCP.
+- [x] Use:
+  - `qmd query ... --json`
+- [x] Do not depend on QMD for note parsing or injection.
+- [x] QMD only returns candidate paths and scores.
+- [x] Datalox still:
+  - maps returned files back to repo-relative note paths
+  - parses note markdown
+  - builds `whyMatched`
+  - injects note fields into the loop
 
-## Phase 6: Simplify Promotion
+## Phase 5: Add Repo-Scoped Index Management
 
-- [x] The default reusable output is `note`.
-- [x] Promotion now chooses only `note` or `skill`.
-- [x] Promotion keeps legacy content readable but stops generating new `doc`, `pattern`, `question`, `comparison`, or `concept` pages.
-- [x] Log output uses explicit actions such as `create_note`, `update_note`, `create_skill`, and `update_skill`.
-- [x] Repeated no-match gaps create live draft skills early enough for the user to feel the change immediately.
+- [x] Scope QMD collections per repo.
+- [x] Do not use a single global collection for all repos.
+- [x] Start by indexing:
+  - `agent-wiki/notes/`
+- [x] Leave `agent-wiki/docs/` for later, when that surface is real.
+- [x] Add one Datalox-managed sync command:
+  - `datalox retrieval sync`
+- [x] Sync:
+  - ensures QMD is installed
+  - creates or refreshes the repo note collection
 
-## Phase 7: Define Note Shape Clearly
+## Phase 6: Keep Query Construction Simple
 
-- [x] `agent-wiki/note.schema.md` defines the note contract.
-- [x] Generated notes include title, source kind, signal, interpretation, action, evidence, examples, and related links.
-- [x] Notes are strong enough that an agent can act from one page.
-- [x] Rule and evidence stay on the same generated page by default.
+- [x] Build one direct-note query text from:
+  - `workflow`
+  - matched `skillId` when present
+  - `task`
+  - `step`
+- [x] Keep the first version simple and deterministic.
+- [x] Do not add LLM-generated query expansion inside Datalox in this phase.
 
-## Phase 8: Keep Web Specific Work Concrete
+## Phase 7: Preserve Note Usage Tracking
 
-- [x] Web capture supports `note`.
-- [x] Web capture supports `design_doc`.
-- [x] Web capture supports `design_tokens`.
-- [x] Web capture supports `tailwind_theme`.
-- [x] Tokens are derived from extracted evidence, not post-hoc guesswork.
-- [x] Tailwind output is derived from semantic tokens.
-- [x] Web artifacts write to:
-  - `designs/web/<slug>.md`
-  - `designs/web/<slug>.tokens.json`
-  - `designs/web/<slug>.tailwind.ts`
+- [x] `resolveLoop()` still increments:
+  - `read_count`
+  - `last_read_at`
+- [x] Successful managed runs still increment:
+  - `apply_count`
+  - `last_applied_at`
+- [x] This tracking works for:
+  - skill-linked notes
+  - direct notes returned by `native`
+  - direct notes returned by `qmd`
 
-## Phase 9: Add PDF As The Next Source Adapter
+## Phase 8: Preserve Event Compilation Boundary
 
-- [x] `extractPdfSource()` exists on the shared source-bundle path.
-- [x] PDF capture writes notes first.
-- [x] PDF capture writes:
-  - `agent-wiki/notes/pdf/<slug>.md`
-  - `agent-wiki/notes/pdf/<slug>.capture.json`
-- [x] PDF capture does not invent a separate knowledge system.
+- [x] Retrieval changes do not change:
+  - raw event capture
+  - event compilation into notes
+  - note promotion into skills
+- [x] QMD does not become a source of truth for notes.
+- [x] `agent-wiki/notes/` remains the source of truth.
 
-## Phase 10: Keep The Public Surface Small
+## Phase 9: CLI And MCP Surfaces
 
-- [x] There is no generic `capture-source` command yet.
-- [x] Public entrypoints stay concrete:
-  - `capture-web`
-  - `capture-pdf`
-- [x] Core CLI commands emit JSON for agent consumption.
-- [x] Wrapper commands stay specialized because they must preserve prompt or child-process behavior.
-- [x] MCP surface stays small and concrete.
+- [x] Keep public surfaces small.
+- [x] Add only what is necessary:
+  - backend selection config
+  - retrieval sync command
+- [x] Do not add a separate public retrieval product surface.
+- [x] Do not expose QMD-specific details in the core user flow unless necessary.
 
-## Phase 11: Migration
+## Phase 10: Tests
 
-- [x] Adopted repos are not broken abruptly.
-- [x] Legacy supporting paths are still readable.
-- [x] New automatic writes go to `agent-wiki/notes/` and `skills/`.
-- [x] The refactor avoids a large migration subsystem.
-
-## Verification
-
-- [x] Source bundle tests cover `trace`, `web`, and `pdf`.
-- [x] Promotion tests cover the `note | skill` ladder.
-- [x] Note tests cover actionable rule plus concrete evidence/examples.
-- [x] Web capture tests cover:
-  - note
-  - design doc
-  - design tokens
-  - tailwind theme
-- [x] Migration behavior keeps legacy supporting pages readable.
-- [x] `npm run check` is green.
-- [x] `npm test` is green.
+- [x] Native retrieval tests keep current behavior.
+- [x] Add tests proving:
+  - skill-linked notes stay primary
+  - direct note fallback still works under `native`
+  - direct note fallback works under `qmd`
+  - read/apply tracking still updates note metadata under both backends
+  - retrieval backend swap does not change event compilation semantics
+- [x] Add one integration test for repo-scoped QMD sync.
+- [x] Add one integration test for direct note retrieval through QMD JSON output.
 
 ## Acceptance Criteria
 
-- [x] `trace`, `web`, and `pdf` fit the same source pipeline.
-- [x] `note` is the default reusable knowledge unit.
-- [x] `skill` remains the reusable workflow unit.
-- [x] A generated note is sufficient for the agent to act from one page.
-- [x] New automatic supporting writes go to `agent-wiki/notes/`.
-- [x] Web capture emits semantic design tokens.
-- [x] Tailwind output is derived from those tokens.
-- [x] PDF capture writes useful notes without inventing a second knowledge system.
-- [x] The repo no longer depends on auto-generated `doc`, `pattern`, `question`, `comparison`, or `concept` pages to feel useful.
+- [x] `native` remains the default and matches current behavior.
+- [x] `qmd` can be enabled without changing note or skill schemas.
+- [x] Skill-linked note retrieval remains primary.
+- [x] Direct note retrieval works under `qmd`.
+- [x] The wrapped loop still injects parsed note content, not just file paths.
+- [x] Note read/apply tracking still works end to end.
+- [x] Event -> note -> skill compilation remains unchanged.
 
 ## Non-Goals
 
-- [x] No vector database.
-- [x] No heavy review UI.
-- [x] No broad taxonomy expansion.
-- [x] No generic source framework beyond the concrete adapters actually supported.
-- [x] No document-platform product layer.
+- [x] No vector database owned by Datalox in this pass.
+- [x] No cloud retrieval service in this pass.
+- [x] No replacement of skills with free-form search.
+- [x] No separate memory browser or second wiki system.
+- [x] No broad `agent-wiki/docs/` retrieval until that surface is actually adopted.

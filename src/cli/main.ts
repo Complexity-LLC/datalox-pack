@@ -10,6 +10,7 @@ import {
   promoteGap,
   recordTurnResult,
   resolveLoop,
+  syncNoteRetrieval,
 } from "../core/packCore.js";
 import { capturePdfArtifact } from "../core/pdfCapture.js";
 import { publishWebCapture } from "../core/publishWebCapture.js";
@@ -30,6 +31,7 @@ function usage(): string {
     "  datalox capture-pdf [--repo <path>] --path <pdf-path> [--title <title>] [--slug <slug>] [--source-url <url>] [--json]",
     "  datalox publish-web-capture [--repo <path>] --capture <slug> [--bucket <bucket>] [--prefix <prefix>] [--public-base-url <url>] [--json]",
     "  datalox resolve [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--limit <n>] [--include-content] [--json]",
+    "  datalox retrieval sync [--repo <path>] [--json]",
     "  datalox record [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--changed-file <path>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--outcome <text>] [--tag <tag>] [--event-kind <kind>] [--json]",
     "  datalox patch [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--tag <tag>] [--json]",
     "  datalox promote [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--changed-file <path>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--outcome <text>] [--tag <tag>] [--event-kind <kind>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--json]",
@@ -198,6 +200,16 @@ async function main(): Promise<void> {
         skill: typeof args.skill === "string" ? args.skill : undefined,
         limit: Number.isFinite(limit) ? limit : undefined,
         includeContent: args["include-content"] === true,
+      });
+      writeResult(result, true);
+      return;
+    }
+    case "retrieval": {
+      if (positional !== "sync") {
+        throw new Error("retrieval requires a subcommand; supported: sync");
+      }
+      const result = await syncNoteRetrieval({
+        repoPath: typeof args.repo === "string" ? args.repo : undefined,
       });
       writeResult(result, true);
       return;

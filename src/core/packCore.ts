@@ -17,6 +17,10 @@ export interface ResolveLoopInput {
   includeContent?: boolean;
 }
 
+export interface SyncNoteRetrievalInput {
+  repoPath?: string;
+}
+
 export interface PatchKnowledgeInput {
   repoPath?: string;
   task?: string;
@@ -797,6 +801,12 @@ export async function resolveLoop(input: ResolveLoopInput) {
     }));
   }
   return result;
+}
+
+export async function syncNoteRetrieval(input: SyncNoteRetrievalInput = {}) {
+  const repoPath = resolveRepoPath(input.repoPath);
+  const legacy = await loadLegacyPackModule();
+  return legacy.syncNoteRetrieval(repoPath);
 }
 
 export async function patchKnowledge(input: PatchKnowledgeInput) {

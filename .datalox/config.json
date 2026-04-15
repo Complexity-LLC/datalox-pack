@@ -35,6 +35,9 @@
     "hostSkillsDir": null,
     "hostNotesDir": null
   },
+  "retrieval": {
+    "notesBackend": "native"
+  },
   "runtime": {
     "enabled": false,
     "baseUrl": "http://localhost:3000",

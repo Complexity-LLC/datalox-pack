@@ -10,6 +10,7 @@
     "sources",
     "agent",
     "paths",
+    "retrieval",
     "runtime",
     "auth"
   ],
@@ -164,6 +165,22 @@
             "null"
           ],
           "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "retrieval": {
+      "type": "object",
+      "required": [
+        "notesBackend"
+      ],
+      "properties": {
+        "notesBackend": {
+          "type": "string",
+          "enum": [
+            "native",
+            "qmd"
+          ]
         }
       },
       "additionalProperties": false
