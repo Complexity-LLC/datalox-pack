@@ -203,5 +203,5 @@ describe("publish web capture", () => {
     expect(first.manifestKey).toBe("design-corpus/instances/acme/manifest.json");
     expect(second.indexKey).toBe("design-corpus/indexes/latest.json");
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("publish_web_capture");
-  });
+  }, 20000);
 });

@@ -122,7 +122,19 @@ function summarizeResolution(
     };
   }
   const topMatch = resolution.matches[0];
-  const supportingNotes = (topMatch?.noteDocs ?? []).map((noteDoc: {
+  const directNotes = Array.isArray((resolution as { directNotes?: Array<{ noteDoc?: unknown }> }).directNotes)
+    ? ((resolution as { directNotes?: Array<{ noteDoc?: {
+      path: string;
+      title: string;
+      whenToUse?: string | null;
+      signal?: string | null;
+      interpretation?: string | null;
+      action?: string | null;
+      examples?: string[] | null;
+    } }> }).directNotes ?? []).map((entry) => entry.noteDoc).filter(Boolean)
+    : [];
+  const noteDocs = topMatch?.noteDocs ?? directNotes;
+  const supportingNotes = noteDocs.map((noteDoc: {
     path: string;
     title: string;
     whenToUse?: string | null;
@@ -139,22 +151,28 @@ function summarizeResolution(
     action: noteDoc.action ?? null,
     examples: Array.isArray(noteDoc.examples) ? noteDoc.examples.filter(Boolean) : [],
   }));
+  const loopGuidance = topMatch?.loopGuidance ?? (resolution as { loopGuidance?: {
+    whyMatched?: string[];
+    whatToDoNow?: string[];
+    watchFor?: string[];
+    nextReads?: string[];
+  } | null }).loopGuidance ?? null;
   return {
     workflow: resolution.workflow,
     selectionBasis: resolution.selectionBasis,
     matchedSkillId: topMatch?.skill.id ?? null,
-    whyMatched: topMatch?.loopGuidance.whyMatched ?? [],
-    whatToDoNow: (topMatch?.loopGuidance.whatToDoNow?.length ?? 0) > 0
-      ? (topMatch?.loopGuidance.whatToDoNow ?? [])
+    whyMatched: loopGuidance?.whyMatched ?? [],
+    whatToDoNow: (loopGuidance?.whatToDoNow?.length ?? 0) > 0
+      ? (loopGuidance?.whatToDoNow ?? [])
       : supportingNotes
         .map((note: LoopEnvelope["guidance"]["supportingNotes"][number]) => note.action)
         .filter((value: string | null): value is string => Boolean(value)),
-    watchFor: (topMatch?.loopGuidance.watchFor?.length ?? 0) > 0
-      ? (topMatch?.loopGuidance.watchFor ?? [])
+    watchFor: (loopGuidance?.watchFor?.length ?? 0) > 0
+      ? (loopGuidance?.watchFor ?? [])
       : supportingNotes
         .map((note: LoopEnvelope["guidance"]["supportingNotes"][number]) => note.signal)
         .filter((value: string | null): value is string => Boolean(value)),
-    nextReads: topMatch?.loopGuidance.nextReads ?? [],
+    nextReads: loopGuidance?.nextReads ?? [],
     supportingNotes,
   };
 }

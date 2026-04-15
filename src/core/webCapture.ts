@@ -102,6 +102,36 @@ function take(items: string[], limit: number): string[] {
   return dedupe(items).slice(0, limit);
 }
 
+function cleanFontName(value: string): string {
+  return value
+    .split(",")[0]
+    .trim()
+    .replace(/^['"]+|['"]+$/g, "");
+}
+
+function readableList(items: string[]): string {
+  if (items.length === 0) {
+    return "";
+  }
+  if (items.length === 1) {
+    return items[0];
+  }
+  if (items.length === 2) {
+    return `${items[0]} and ${items[1]}`;
+  }
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
+function firstNonEmpty(items: Array<string | null | undefined>): string | null {
+  for (const item of items) {
+    const normalized = item?.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return null;
+}
+
 function chooseTitle(input: { explicitTitle?: string; snapshotTitle: string; slug: string }): string {
   return input.explicitTitle?.trim() || input.snapshotTitle.trim() || input.slug;
 }
@@ -130,6 +160,90 @@ function toIndexedRecord(prefix: string, values: string[]): Record<string, strin
   return Object.fromEntries(
     values.map((value, index) => [`${prefix}-${String(index + 1).padStart(2, "0")}`, value]),
   );
+}
+
+function describeWebTypography(style: NonNullable<SourceBundle["style"]>): string {
+  const fonts = take([
+    ...style.cssVariables
+      .filter((item) => /font|display/i.test(item.name))
+      .map((item) => cleanFontName(item.value)),
+    ...style.fonts.map(cleanFontName),
+  ], 2);
+  if (fonts.length === 0) {
+    return "the captured type system";
+  }
+  if (fonts.length === 1) {
+    return `${fonts[0]} as the dominant type family`;
+  }
+  return `${fonts[0]} paired with ${fonts[1]}`;
+}
+
+function describeWebPalette(style: NonNullable<SourceBundle["style"]>): string {
+  const palette = take([...style.colors, ...style.backgrounds], 3);
+  if (palette.length === 0) {
+    return "the captured palette";
+  }
+  return `a palette anchored by ${readableList(palette)}`;
+}
+
+function describeWebLayout(bundle: SourceBundle, desktop: PageSnapshot): string {
+  const headings = take(
+    bundle.structure.headings
+      .map((heading) => heading.trim())
+      .filter((value) => value && value.length <= 80),
+    3,
+  );
+  if (headings.length > 0) {
+    return `a hero-to-section flow built around ${readableList(headings)}`;
+  }
+
+  const sectionTitles = take(
+    bundle.structure.sections
+      .map((section) => section.title.trim())
+      .filter((value) => value && value.length <= 40),
+    3,
+  );
+  if (sectionTitles.length > 0) {
+    return `a page rhythm built around ${readableList(sectionTitles)}`;
+  }
+
+  const navItems = take(desktop.navItems, 3);
+  if (navItems.length > 0) {
+    return `top-level navigation organized around ${readableList(navItems)}`;
+  }
+
+  const heading = bundle.structure.headings[0]?.trim();
+  if (heading) {
+    return `a hero-led page that opens with "${heading}"`;
+  }
+
+  return "the captured page structure";
+}
+
+function buildWebExamples(input: {
+  bundle: SourceBundle;
+  desktop: PageSnapshot;
+  mobile: PageSnapshot;
+}): string[] {
+  const examples = [
+    input.bundle.structure.headings[0]
+      ? `Lead headline: ${input.bundle.structure.headings[0]}`
+      : null,
+    input.desktop.navItems.length > 0
+      ? `Navigation labels: ${take(input.desktop.navItems, 5).join(", ")}`
+      : null,
+    input.desktop.buttons.length > 0
+      ? `Primary button language: ${take(input.desktop.buttons, 3).join(", ")}`
+      : null,
+    input.bundle.structure.headings.length > 0
+      ? `Section flow: ${take(input.bundle.structure.headings, 3).join(" -> ")}`
+      : null,
+    input.mobile.buttons.length > 0
+      ? `Mobile-visible buttons: ${take(input.mobile.buttons, 3).join(", ")}`
+      : null,
+  ];
+
+  return dedupe(examples.filter(Boolean) as string[]);
 }
 
 function normalizeCssVariableName(name: string): string {
@@ -561,6 +675,17 @@ function renderWebNote(input: {
   if (!style) {
     throw new Error("Web source bundle was missing style evidence.");
   }
+  const typography = describeWebTypography(style);
+  const palette = describeWebPalette(style);
+  const layout = describeWebLayout(input.bundle, input.desktop);
+  const leadHeading = input.bundle.structure.headings[0]?.trim();
+  const navLabels = take(input.desktop.navItems, 4);
+  const examples = buildWebExamples({
+    bundle: input.bundle,
+    desktop: input.desktop,
+    mobile: input.mobile,
+  });
+
   return [
     "---",
     "type: note",
@@ -578,28 +703,29 @@ function renderWebNote(input: {
     "",
     "## When to Use",
     "",
-    "Use this note when a live website needs to become reusable repo-local design knowledge instead of another one-off screenshot or chat summary.",
+    `Use this reference when building pages that should borrow ${typography}, ${palette}, and ${layout}.`,
     "",
     "## Signal",
     "",
-    `Captured live web evidence from ${input.bundle.source.url} with reusable typography, layout, and component signals.`,
+    firstNonEmpty([
+      leadHeading
+        ? `Observed the headline "${leadHeading}" with ${navLabels.length > 0 ? `${readableList(navLabels)} in the top navigation, ` : ""}${palette}.`
+        : null,
+      `Captured live web evidence from ${input.bundle.source.url} with ${typography} and ${layout}.`,
+    ]) ?? `Captured live web evidence from ${input.bundle.source.url}.`,
     "",
     "## Interpretation",
     "",
-    "This note captures the page structure and visual evidence so another agent can reason from repo-local artifacts instead of reopening the site and starting over.",
+    `The page gets most of its character from ${typography}, while ${layout} keeps the hierarchy legible and reusable for later implementation work.`,
     "",
     "## Action",
     "",
-    "Read this note with the screenshots before generating or editing a design brief, tokens, or implementation plan.",
+    `Start from ${layout}, preserve ${typography}, and reuse ${palette} as the visual baseline before copying exact copywriting or section order.`,
     "",
     "## Examples",
     "",
     ...formatList(
-      [
-        `Desktop navigation labels: ${input.desktop.navItems.join(", ") || "none detected"}.`,
-        `Observed heading structure: ${input.bundle.structure.headings.join(" | ") || "none detected"}.`,
-        `Visible mobile buttons: ${input.mobile.buttons.join(", ") || "none detected"}.`,
-      ],
+      examples,
       "No extracted examples.",
     ),
     "",

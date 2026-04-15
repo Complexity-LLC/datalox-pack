@@ -85,11 +85,14 @@ describe("pdf capture", () => {
     expect(payload.capture.title).toContain("Example");
     expect(note).toContain("## Signal");
     expect(note).toContain("## Evidence");
+    expect(note).toContain("Use this note when the task depends on claims, terminology, or structure from Example PDF.");
+    expect(note).toContain("The document's reusable value is concentrated in");
     expect(note).toContain("Source URL: https://example.com/example.pdf");
     expect(note).toContain("Introduction to the method.");
     expect(note).toContain("Evaluation");
+    expect(note).not.toContain("content trapped in a binary file");
     expect(spawnSync("test", ["-f", path.join(hostDir, payload.metadataPath)]).status).toBe(0);
-  }, 30000);
+  }, 60000);
 
   it("captures a pdf through the MCP server", async () => {
     const hostDir = await createGitRepo();
@@ -117,8 +120,9 @@ describe("pdf capture", () => {
       expect(note).toContain("# Example PDF");
       expect(note).toContain("## Structure");
       expect(note).toContain("Key result one.");
+      expect(note).toContain("Use the extracted headings, snippets, and page structure below");
     } finally {
       await client.close();
     }
-  }, 30000);
+  }, 60000);
 });

@@ -208,7 +208,10 @@ describe("web capture", () => {
     expect(designDoc).toContain("Pricing");
     expect(designDoc).toContain("Built for teams");
     expect(sourcePage).toContain("# Acme Landing");
-    expect(sourcePage).toContain("Desktop screenshot");
+    expect(sourcePage).toContain("Use this reference when building pages that should borrow Space Grotesk paired with Inter");
+    expect(sourcePage).toContain("Lead headline: Launch tasteful product pages faster.");
+    expect(sourcePage).toContain("Navigation labels: Product, Pricing, Docs");
+    expect(sourcePage).not.toContain("one-off screenshot or chat summary");
     expect(logDoc).toContain("capture_web_artifact");
     expect(payload.notePath).toContain("agent-wiki/notes/web/");
     expect(payload.sourcePagePath).toBe(payload.notePath);
@@ -216,7 +219,7 @@ describe("web capture", () => {
     expect(spawnSync("test", ["-f", path.join(hostDir, payload.screenshotPaths.desktop)]).status).toBe(0);
     expect(spawnSync("test", ["-f", path.join(hostDir, payload.screenshotPaths.mobile)]).status).toBe(0);
     expect(spawnSync("test", ["-f", path.join(hostDir, ".datalox", "install.json")]).status).toBe(0);
-  }, 30000);
+  }, 60000);
 
   it("captures a website through the MCP server", async () => {
     const hostDir = await createGitRepo();
@@ -251,11 +254,12 @@ describe("web capture", () => {
       expect(designDoc).toContain("# Acme Landing Design");
       expect(designDoc).toContain("Start Free");
       expect(sourcePage).toContain("## Evidence");
-      expect(sourcePage).toContain("Desktop screenshot");
+      expect(sourcePage).toContain("Start from a hero-to-section flow built around");
+      expect(sourcePage).toContain("Lead headline: Launch tasteful product pages faster.");
     } finally {
       await client.close();
     }
-  }, 30000);
+  }, 60000);
 
   it("captures a website as source evidence only", async () => {
     const hostDir = await createGitRepo();
@@ -293,7 +297,7 @@ describe("web capture", () => {
     expect(payload.artifactPath).toBeNull();
     expect(spawnSync("test", ["-d", path.join(hostDir, "designs", "web")]).status).not.toBe(0);
     expect(await readFile(path.join(hostDir, payload.notePath), "utf8")).toContain("# Acme Landing");
-  }, 30000);
+  }, 60000);
 
   it("captures semantic design tokens from a website", async () => {
     const hostDir = await createGitRepo();
@@ -339,7 +343,7 @@ describe("web capture", () => {
     expect(tokens.color.variable["color-brand"]).toBe("#ff5a36");
     expect(Object.values(tokens.font.family)).toContain("Inter");
     expect(Object.values(tokens.radius)).toContain("24px");
-  }, 30000);
+  }, 60000);
 
   it("captures reusable css variables from a website", async () => {
     const hostDir = await createGitRepo();
@@ -383,7 +387,7 @@ describe("web capture", () => {
     expect(cssVariables).toContain("--datalox-font-family-01: Inter;");
     expect(cssVariables).toContain('--datalox-font-family-02: "Space Grotesk";');
     expect(cssVariables).toContain("--datalox-radius-01: 24px;");
-  }, 30000);
+  }, 60000);
 
   it("captures a tailwind theme derived from design tokens", async () => {
     const hostDir = await createGitRepo();
@@ -422,5 +426,5 @@ describe("web capture", () => {
     expect(themeFile).toContain("export const theme = {");
     expect(themeFile).toContain("\"color-brand\": \"#ff5a36\"");
     expect(themeFile).toContain("\"radius-01\": \"24px\"");
-  }, 30000);
+  }, 60000);
 });

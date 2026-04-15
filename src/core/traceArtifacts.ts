@@ -27,11 +27,27 @@ function list(items: string[], fallback: string): string[] {
   return items.map((item) => `- ${item}`);
 }
 
+function sectionText(bundle: SourceBundle, title: string): string | null {
+  return bundle.structure.sections.find((section) => section.title === title)?.text?.trim() ?? null;
+}
+
+function firstMeaningfulHeading(bundle: SourceBundle): string | null {
+  return bundle.structure.headings.find((heading) => !heading.startsWith("Workflow:") && !heading.startsWith("Matched Skill:")) ?? null;
+}
+
 export function renderTraceNote(input: RenderTraceNoteInput): string {
   const title = input.bundle.source.title;
   const signal = input.bundle.evidence.textSnippets[0] ?? "Trace evidence recorded for this loop.";
-  const interpretation = input.bundle.structure.headings[0] ?? "This trace captured reusable loop evidence.";
-  const action = "Use this note before repeating the same loop or promoting the trace into a skill-backed workflow.";
+  const task = sectionText(input.bundle, "Task");
+  const summary = sectionText(input.bundle, "Summary");
+  const interpretation = firstMeaningfulHeading(input.bundle)
+    ?? summary
+    ?? "This trace captured reusable loop evidence.";
+  const action = input.bundle.evidence.textSnippets[2]
+    ?? "Check this note before repeating the same loop.";
+  const whenToUse = task
+    ? `Use this note when ${task.toLowerCase()} and the same signal shows up again.`
+    : `Use this note when ${signal.charAt(0).toLowerCase()}${signal.slice(1)} reappears.`;
 
   return [
     "---",
@@ -51,7 +67,7 @@ export function renderTraceNote(input: RenderTraceNoteInput): string {
     "",
     "## When to Use",
     "",
-    "Use this note when the same trace evidence or correction pattern shows up again.",
+    whenToUse,
     "",
     "## Signal",
     "",

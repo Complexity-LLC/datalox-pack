@@ -1566,6 +1566,10 @@ function scoreRepoHints(skill, repoContext) {
 }
 
 function scoreSkill(skill, query, repoContext) {
+  if (query.workflow && skill.workflow && skill.workflow !== query.workflow) {
+    return -1;
+  }
+
   const text = buildSkillText(skill);
   let score = 0;
 
@@ -1761,7 +1765,9 @@ function parseNoteDoc(relativePath, content, includeContent) {
 
   return {
     path: relativePath,
+    id: page.frontmatter.id ?? null,
     pageType: page.pageType,
+    kind: page.frontmatter.kind ?? null,
     title: page.title,
     summary,
     workflow: page.workflow,
@@ -1772,6 +1778,7 @@ function parseNoteDoc(relativePath, content, includeContent) {
     reviewAfter: page.reviewAfter,
     confidence: page.confidence,
     status: page.status,
+    usage: isRecord(page.frontmatter.usage) ? page.frontmatter.usage : null,
     sources: page.sources,
     related: page.related,
     contradictionLines: page.contradictionLines,
@@ -1856,6 +1863,155 @@ function buildLoopGuidance(noteDocs, whyMatched) {
   };
 }
 
+function buildNoteText(note) {
+  return [
+    note.id,
+    note.title,
+    note.workflow,
+    note.skillId,
+    note.whenToUse,
+    note.signal,
+    note.interpretation,
+    note.action,
+    note.summary,
+    ...(note.tags ?? []),
+    ...(note.examples ?? []),
+    ...(note.related ?? []),
+    ...(note.sources ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function explainNoteMatch(note, query) {
+  const reasons = [];
+
+  if (query.workflow && note.workflow === query.workflow) {
+    reasons.push(`workflow match: ${query.workflow}`);
+  }
+
+  if (query.skill && note.skillId === query.skill) {
+    reasons.push(`skill-linked note: ${query.skill}`);
+  }
+
+  const queryTokens = tokenize([query.task, query.step].filter(Boolean).join(" "));
+  const noteText = buildNoteText(note);
+  const matchedTokens = unique(queryTokens.filter((token) => noteText.includes(token))).slice(0, 5);
+  if (matchedTokens.length > 0) {
+    reasons.push(`note overlap: ${matchedTokens.join(", ")}`);
+  }
+
+  return reasons;
+}
+
+function scoreNote(note, query) {
+  if (query.workflow && note.workflow && note.workflow !== query.workflow) {
+    return -1;
+  }
+
+  const text = buildNoteText(note);
+  let score = 0;
+
+  if (query.workflow && note.workflow === query.workflow) {
+    score += 40;
+  }
+
+  if (query.skill && note.skillId === query.skill) {
+    score += 80;
+  }
+
+  const tokens = tokenize([query.task, query.step].filter(Boolean).join(" "));
+  for (const token of new Set(tokens)) {
+    if (text.includes(token)) {
+      score += 8;
+    }
+  }
+
+  if (query.task && text.includes(query.task.toLowerCase())) {
+    score += 20;
+  }
+
+  return score;
+}
+
+function buildNoteIdentity({
+  id,
+  fingerprint,
+  workflow,
+  skillId,
+  title,
+  signal,
+  summary,
+  task,
+  step,
+}) {
+  if (id) {
+    return slugify(id);
+  }
+
+  if (fingerprint) {
+    const [fingerprintWorkflow, fingerprintSeed] = String(fingerprint).split("::");
+    return slugify(`${fingerprintWorkflow ?? workflow ?? "unknown"}-${fingerprintSeed ?? "note"}`);
+  }
+
+  const seed = firstNonEmpty([signal, summary, task, step, title, skillId, workflow, "note"]) ?? "note";
+  return slugify(`${workflow ?? "unknown"}-${seed}`);
+}
+
+function buildNoteIdentityKey({
+  id,
+  fingerprint,
+  workflow,
+  skillId,
+  title,
+  signal,
+  summary,
+  task,
+  step,
+}) {
+  const effectiveWorkflow = workflow ?? "unknown";
+  return `${effectiveWorkflow}::${buildNoteIdentity({
+    id,
+    fingerprint,
+    workflow,
+    skillId,
+    title,
+    signal,
+    summary,
+    task,
+    step,
+  })}`;
+}
+
+function buildParsedNoteIdentityKey(note) {
+  return buildNoteIdentityKey({
+    id: note.id ?? undefined,
+    workflow: note.workflow ?? undefined,
+    title: note.title,
+    signal: note.signal,
+    summary: note.summary,
+  });
+}
+
+async function findExistingNoteByIdentity(config, cwd, sourcePath, identityKey) {
+  const wikiEntries = await listWikiEntries(config, cwd, sourcePath);
+  for (const entry of wikiEntries) {
+    if (entry.pageType !== "note") {
+      continue;
+    }
+    const parsed = parseNoteDoc(entry.relativePath, await readFile(entry.filePath, "utf8"), false);
+    if (buildParsedNoteIdentityKey(parsed) === identityKey) {
+      return {
+        filePath: entry.filePath,
+        relativePath: entry.relativePath,
+        note: parsed,
+      };
+    }
+  }
+  return null;
+}
+
 export async function resolveLocalKnowledge(
   {
     task,
@@ -1890,16 +2046,65 @@ export async function resolveLocalKnowledge(
         repoContext,
       ),
     }))
-    .filter((item) => item.score >= 0)
+    .filter((item) => skill ? item.score >= 0 : item.score > 0)
     .sort((left, right) => right.score - left.score)
     .slice(0, limit);
 
+  const directNotes = ranked.length === 0
+    ? await (async () => {
+      const wikiEntries = await listWikiEntries(config, cwd, sourcePath);
+      const noteEntries = wikiEntries.filter((entry) => entry.pageType === "note");
+      const parsedNotes = await Promise.all(
+        noteEntries.map(async (entry) => ({
+          filePath: entry.filePath,
+          origin: entry.origin,
+          note: parseNoteDoc(entry.relativePath, await readFile(entry.filePath, "utf8"), includeContent),
+        })),
+      );
+
+      return parsedNotes
+        .map((item) => ({
+          ...item,
+          score: scoreNote(
+            item.note,
+            {
+              task,
+              workflow,
+              step,
+              skill,
+            },
+          ),
+        }))
+        .filter((item) => item.score > 0)
+        .sort((left, right) => right.score - left.score)
+        .slice(0, limit)
+        .map((item) => ({
+          score: item.score,
+          notePath: item.note.path,
+          noteOrigin: item.origin,
+          noteDoc: item.note,
+          whyMatched: explainNoteMatch(
+            item.note,
+            {
+              task,
+              workflow,
+              step,
+              skill,
+            },
+          ),
+        }));
+    })()
+    : [];
+
   const effectiveWorkflow = workflow
     || ranked[0]?.skill.workflow
+    || directNotes[0]?.noteDoc.workflow
     || config.runtime.defaultWorkflow;
 
   const selectionBasis = skill
     ? "explicit_skill"
+    : directNotes.length > 0 && ranked.length === 0
+      ? "direct_note_query"
     : task || step || workflow
       ? "task_query"
       : "repo_context";
@@ -1945,6 +2150,13 @@ export async function resolveLocalKnowledge(
     workflow: effectiveWorkflow,
     repoContext,
     matches,
+    directNotes,
+    loopGuidance: ranked.length === 0
+      ? buildLoopGuidance(
+        directNotes.map((entry) => entry.noteDoc),
+        unique(directNotes.flatMap((entry) => entry.whyMatched)),
+      )
+      : null,
   };
 }
 
@@ -1966,48 +2178,102 @@ function resolveAuthor() {
 export async function writeNoteDoc(
   {
     id,
+    fingerprint,
     title,
     workflow,
     signal,
     interpretation,
     recommendedAction,
+    summary,
+    task,
+    step,
     skillId,
     related = [],
     sources = [],
+    examples = [],
+    evidence = [],
     tags = [],
+    kind = "trace",
   },
   cwd = process.cwd(),
 ) {
   const { config, sourcePath } = await loadAgentConfig(cwd);
   const { hostNotesDir, hostRoot } = resolvePackPaths(config, { cwd, sourcePath });
-  const stableId = id ?? `${workflow}-${slugify(title)}`;
+  const identityKey = buildNoteIdentityKey({
+    id,
+    fingerprint,
+    workflow,
+    skillId,
+    title,
+    signal,
+  });
+  const stableId = buildNoteIdentity({
+    id,
+    fingerprint,
+    workflow,
+    skillId,
+    title,
+    signal,
+  });
   const author = resolveAuthor();
   const updatedAt = new Date().toISOString();
-  const titleText = title.trim();
-  const defaultWhenToUse = signal.trim().endsWith(".")
-    ? signal.trim()
-    : `${signal.trim()}.`;
-  const action = recommendedAction;
-  const filePath = path.join(hostNotesDir, `${slugify(stableId)}.md`);
-  const operation = (await fileExists(filePath)) ? "update_note" : "create_note";
-  const existingUsage = operation === "update_note"
-    ? await (async () => {
-      const existing = splitFrontmatter(await readFile(filePath, "utf8"));
-      return isRecord(existing.frontmatter.usage) ? existing.frontmatter.usage : null;
-    })()
+  const defaultFilePath = path.join(hostNotesDir, `${slugify(stableId)}.md`);
+  const identityMatch = !(await fileExists(defaultFilePath))
+    ? await findExistingNoteByIdentity(config, cwd, sourcePath, identityKey)
     : null;
+  const filePath = identityMatch?.filePath ?? defaultFilePath;
+  const operation = (await fileExists(filePath)) ? "update_note" : "create_note";
+  const existingNote = operation === "update_note"
+    ? (identityMatch?.note ?? parseNoteDoc(normalizePath(path.relative(hostRoot, filePath)), await readFile(filePath, "utf8"), false))
+    : null;
+  const existingUsage = existingNote?.usage ?? null;
+  const titleText = (existingNote?.title ?? title).trim();
+  const signalText = (existingNote?.signal || signal).trim();
+  const interpretationText = firstNonEmpty([
+    existingNote?.interpretation,
+    interpretation,
+    summary ? `This ${workflow} loop keeps converging on ${shortenSentence(summary, 100)}.` : null,
+    `This note captures a repeated ${workflow} decision around ${signalText.toLowerCase()}.`,
+  ])?.trim() ?? "";
+  const action = firstNonEmpty([
+    existingNote?.action,
+    recommendedAction,
+    task ? `Check this note before repeating ${task}.` : null,
+    step ? `Check this note before repeating ${step}.` : null,
+    `Check this note before repeating the same ${workflow} loop.`,
+  ])?.trim() ?? "";
+  const whenToUseText = firstNonEmpty([
+    existingNote?.whenToUse,
+    task ? `${task.toLowerCase()} and the same signal reappears` : null,
+    step ? `${step.toLowerCase()} and the same signal reappears` : null,
+    `${signalText.replace(/[.]+$/, "").toLowerCase()} reappears`,
+  ]) ?? "this note applies";
+  const mergedRelated = unique([...(related ?? []), ...(existingNote?.related ?? [])]);
+  const mergedSources = unique([...(sources ?? []), ...(existingNote?.sources ?? [])]);
+  const mergedTags = unique([...(existingNote?.tags ?? []), ...(tags ?? [])]);
+  const mergedExamples = unique(
+    [...(examples ?? []), ...(existingNote?.examples ?? [])]
+      .map((value) => String(value).trim())
+      .filter(Boolean),
+  );
+  const mergedEvidence = unique(
+    [...(evidence ?? []), ...(existingNote?.evidenceLines ?? []), ...(sources ?? [])]
+      .map((value) => String(value).trim())
+      .filter(Boolean),
+  );
   const content = [
     "---",
     renderFrontmatterValue("type", "note"),
+    renderFrontmatterValue("id", stableId),
     renderFrontmatterValue("title", titleText),
-    renderFrontmatterValue("kind", "trace"),
+    renderFrontmatterValue("kind", existingNote?.kind ?? kind),
     renderFrontmatterValue("workflow", workflow),
-    skillId ? renderFrontmatterValue("skill", skillId) : null,
-    renderFrontmatterValue("tags", tags),
+    (existingNote?.skillId ?? skillId) ? renderFrontmatterValue("skill", existingNote?.skillId ?? skillId) : null,
+    renderFrontmatterValue("tags", mergedTags),
     renderFrontmatterValue("confidence", "medium"),
     renderFrontmatterValue("status", "active"),
-    renderFrontmatterValue("related", related),
-    renderFrontmatterValue("sources", sources),
+    renderFrontmatterValue("related", mergedRelated),
+    renderFrontmatterValue("sources", mergedSources),
     existingUsage ? renderFrontmatterValue("usage", existingUsage) : null,
     renderFrontmatterValue("author", author),
     renderFrontmatterValue("updated", updatedAt),
@@ -2017,15 +2283,15 @@ export async function writeNoteDoc(
     "",
     "## When to Use",
     "",
-    `Use this note when ${defaultWhenToUse.charAt(0).toLowerCase()}${defaultWhenToUse.slice(1)}`,
+    `Use this note when ${whenToUseText.charAt(0).toLowerCase()}${whenToUseText.slice(1)}`,
     "",
     "## Signal",
     "",
-    signal,
+    signalText,
     "",
     "## Interpretation",
     "",
-    interpretation,
+    interpretationText,
     "",
     "## Action",
     "",
@@ -2033,18 +2299,20 @@ export async function writeNoteDoc(
     "",
     "## Examples",
     "",
-    "- Add a concrete observed case here when this note gets reused.",
+    ...(mergedExamples.length > 0
+      ? mergedExamples.map((item) => `- ${item}`)
+      : ["- Add a concrete observed case here when this note gets reused."]),
     "",
     "## Evidence",
     "",
-    ...(sources.length > 0
-      ? sources.map((item) => `- ${item}`)
+    ...(mergedEvidence.length > 0
+      ? mergedEvidence.map((item) => `- ${item}`)
       : ["- Add a concrete source, reviewer note, or case trace here."]),
     "",
     "## Related",
     "",
-    ...(related.length > 0
-      ? related.map((item) => `- ${item}`)
+    ...(mergedRelated.length > 0
+      ? mergedRelated.map((item) => `- ${item}`)
       : ["- Add a wiki page path such as agent-wiki/notes/example.md."]),
     "",
   ]
@@ -2068,16 +2336,18 @@ export async function writeNoteDoc(
     payload: {
       version: 1,
       id: stableId,
-      title,
+      title: titleText,
       workflow,
-      signal,
-      interpretation,
+      signal: signalText,
+      interpretation: interpretationText,
       action,
       recommendedAction: action,
-      skillId: skillId ?? null,
-      related,
-      sources,
-      tags,
+      skillId: existingNote?.skillId ?? skillId ?? null,
+      related: mergedRelated,
+      sources: mergedSources,
+      tags: mergedTags,
+      examples: mergedExamples,
+      evidence: mergedEvidence,
       author,
       updatedAt,
     },
@@ -2264,12 +2534,15 @@ function derivePatternFields(input) {
 
   const interpretation = firstNonEmpty([
     input.interpretation,
-    `This interaction exposed a reusable note for ${input.workflow}.`,
+    input.summary ? `This ${input.workflow} loop keeps converging on ${shortenSentence(input.summary, 100)}.` : null,
+    `This interaction exposed a reusable ${input.workflow} decision.`,
   ]) ?? `Note for ${input.workflow}`;
 
   const recommendedAction = firstNonEmpty([
     input.recommendedAction,
-    "Reuse this note before changing the current workflow.",
+    input.task ? `Check this note before repeating ${input.task}.` : null,
+    input.step ? `Check this note before repeating ${input.step}.` : null,
+    `Check this note before repeating the same ${input.workflow} loop.`,
   ]) ?? "Reuse this note before continuing.";
 
   return {
@@ -2519,14 +2792,30 @@ export async function compileRecordedEvent(
   if (decision.action === "create_note_from_gap") {
     const note = await writeNoteDoc(
       {
+        id: buildNoteIdentity({
+          fingerprint: payload.fingerprint,
+          workflow: effectiveWorkflow,
+          skillId: payload.explicitSkillId ?? payload.matchedSkillId ?? null,
+          title: payload.title,
+          signal: payload.signal,
+          summary: payload.summary,
+          task: payload.task,
+          step: payload.step,
+        }),
+        fingerprint: payload.fingerprint,
         title: payload.title,
         workflow: effectiveWorkflow,
         signal: payload.signal,
         interpretation: payload.interpretation,
         recommendedAction: payload.recommendedAction,
+        summary: payload.summary,
+        task: payload.task,
+        step: payload.step,
         skillId: null,
         related: unique(payload.matchedNotePaths ?? []),
-        sources: [],
+        sources: [recordedEntry.relativePath],
+        examples: unique([payload.summary, ...(payload.observations ?? [])].filter(Boolean)),
+        evidence: unique([recordedEntry.relativePath, ...(payload.changedFiles ?? [])].filter(Boolean)),
         tags: unique([...(payload.tags ?? []), "promoted"]),
       },
       cwd,
@@ -2559,6 +2848,18 @@ export async function compileRecordedEvent(
       signal: payload.signal ?? undefined,
       interpretation: payload.interpretation ?? undefined,
       recommendedAction: payload.recommendedAction ?? undefined,
+      noteId: buildNoteIdentity({
+        fingerprint: payload.fingerprint,
+        workflow: effectiveWorkflow,
+        skillId: payload.explicitSkillId ?? payload.matchedSkillId ?? null,
+        title: payload.title,
+        signal: payload.signal,
+        summary: payload.summary,
+        task: payload.task,
+        step: payload.step,
+      }),
+      sourceRefs: [recordedEntry.relativePath],
+      evidence: unique([recordedEntry.relativePath, ...(payload.changedFiles ?? [])].filter(Boolean)),
       occurrenceCount: decision.occurrenceCount,
     },
     cwd,
@@ -2643,6 +2944,9 @@ export async function learnFromInteraction(
     signal,
     interpretation,
     recommendedAction,
+    noteId,
+    sourceRefs = [],
+    evidence = [],
     occurrenceCount,
   },
   cwd = process.cwd(),
@@ -2706,14 +3010,28 @@ export async function learnFromInteraction(
 
   const note = await writeNoteDoc(
     {
+      id: noteId ?? buildNoteIdentity({
+        workflow: effectiveWorkflow,
+        skillId: sourceSkill?.value?.id ?? skillId ?? null,
+        title: derived.title,
+        signal: derived.signal,
+        summary,
+        task,
+        step,
+      }),
       title: derived.title,
       workflow: effectiveWorkflow,
       signal: derived.signal,
       interpretation: derived.interpretation,
       recommendedAction: derived.recommendedAction,
+      summary,
+      task,
+      step,
       skillId: sourceSkill?.value?.id,
       related: inheritedRelated,
-      sources: inheritedSources,
+      sources: unique([...(sourceRefs ?? []), ...inheritedSources]),
+      examples: unique([summary, ...observations].filter(Boolean)),
+      evidence: unique([...(evidence ?? []), ...(sourceRefs ?? [])]),
       tags: unique([...tags, effectiveWorkflow]),
     },
     cwd,
@@ -2794,6 +3112,7 @@ export async function lintPack(cwd = process.cwd()) {
   const triggerKeys = new Map();
   const wikiPaths = new Set(wikiFiles.map((entry) => normalizePath(entry.relativePath)));
   const parsedDocs = new Map();
+  const noteIdentityPaths = new Map();
 
   const isExternalRef = (value) => /^(https?:)?\/\//.test(value) || value.startsWith("doi:") || value.startsWith("urn:");
   const parseDocForEntry = async (entry) => {
@@ -2998,6 +3317,20 @@ export async function lintPack(cwd = process.cwd()) {
         path: relativePath,
         message: "Note is not referenced by any skill or other wiki page.",
       });
+    }
+
+    if (wikiEntry.pageType === "note" || parsed.pageType === "note") {
+      const noteIdentity = buildParsedNoteIdentityKey(parsed);
+      if (noteIdentityPaths.has(noteIdentity)) {
+        issues.push({
+          level: "warning",
+          code: "duplicate_note_identity",
+          path: relativePath,
+          message: `Another note already uses identity ${noteIdentity}.`,
+        });
+      } else {
+        noteIdentityPaths.set(noteIdentity, relativePath);
+      }
     }
 
     for (const ref of localRefs) {

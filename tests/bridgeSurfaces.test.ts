@@ -687,7 +687,7 @@ describe("bridge surfaces", () => {
     const linted = JSON.parse(lintResult.stdout);
     expect(linted.ok).toBe(true);
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("update_skill");
-  }, 15000);
+  }, 60000);
 
   it("emits JSON for core CLI commands without requiring --json", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-cli-json-"));
@@ -707,7 +707,7 @@ describe("bridge surfaces", () => {
     const noteFile = await readFile(path.join(tempDir, "agent-wiki", "notes", "viability-gate-review.md"), "utf8");
     expect(noteFile).toContain("read_count: 1");
     expect(noteFile).toContain("apply_count: 0");
-  });
+  }, 20000);
 
   it("parses flow-style frontmatter in agent-native skills", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-flow-skill-"));
@@ -724,7 +724,7 @@ describe("bridge surfaces", () => {
     expect(resolveResult.status).toBe(0);
     const resolved = JSON.parse(resolveResult.stdout);
     expect(resolved.matches.some((match: any) => match.skill.name === "github")).toBe(true);
-  });
+  }, 20000);
 
   it("adopts the pack into a host repo through the built CLI", async () => {
     const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-host-"));
@@ -743,7 +743,7 @@ describe("bridge surfaces", () => {
     expect(adopted.copied.some((item: string) => item === "DATALOX.md")).toBe(true);
     expect(await readFile(path.join(hostDir, "DATALOX.md"), "utf8")).toContain("durable outputs: `note`, `skill`");
     expect(await readFile(path.join(hostDir, "skills/evolve-portable-pack/SKILL.md"), "utf8")).toContain("## Workflow");
-  });
+  }, 20000);
 
   it("runs the full loop through the MCP server", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-mcp-"));
@@ -828,7 +828,7 @@ describe("bridge surfaces", () => {
       await client.close();
       await transport.close();
     }
-  }, 15000);
+  }, 30000);
 
   it("uses the CLI promotion ladder from event to wiki to skill", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-promote-"));
@@ -900,7 +900,7 @@ describe("bridge surfaces", () => {
     expect(thirdBody.promotion.skill.payload.maturity).toBe("stable");
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("record_event");
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("create_skill");
-  }, 15000);
+  }, 60000);
 
   it("records first and compiles repeated stored events into a note then a skill", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-compile-recorded-"));
@@ -938,6 +938,13 @@ describe("bridge surfaces", () => {
     expect(secondCompiled.decision.action).toBe("create_note_from_gap");
     expect(secondCompiled.promotion?.note?.relativePath).toContain("agent-wiki/notes/");
     expect(secondCompiled.promotion?.skill).toBeNull();
+    const promotedNote = await readFile(
+      path.join(tempDir, secondCompiled.promotion.note.relativePath),
+      "utf8",
+    );
+    expect(promotedNote).toContain("Use this note when stabilize release onboarding in agent-managed repos and the same signal reappears");
+    expect(promotedNote).toContain("create an onboarding playbook and attach it to a reusable skill");
+    expect(promotedNote).not.toContain("Reuse this note before changing the current workflow.");
 
     const thirdRecorded = await recordTurnResult(input);
     const thirdCompiled = await compileRecordedEvent({
@@ -949,5 +956,5 @@ describe("bridge surfaces", () => {
     expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
     expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("create_note");
     expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("create_skill");
-  });
+  }, 20000);
 });

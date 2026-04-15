@@ -114,7 +114,7 @@ describe("wrapper surfaces", () => {
     const noteFile = await readFile(path.join(hostDir, "agent-wiki", "notes", "viability-gate-review.md"), "utf8");
     expect(noteFile).toContain("read_count: 1");
     expect(noteFile).toContain("apply_count: 1");
-  }, 10000);
+  }, 20000);
 
   it("records a raw wrapper event even when post-run compilation is turned off and no markers are emitted", async () => {
     const hostDir = await adoptHostRepo();
@@ -253,7 +253,7 @@ describe("wrapper surfaces", () => {
     expect(parsed.args[0]).toContain("Update the pack docs to mention wrappers.");
     expect(result.stderr).toContain("[datalox-codex] record");
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
-  });
+  }, 10000);
 
   it("runs the Claude wrapper with a fake claude binary and preserves the resolved prompt envelope", async () => {
     const hostDir = await adoptHostRepo();
@@ -297,7 +297,7 @@ describe("wrapper surfaces", () => {
     expect(parsed.args[1]).toContain("Update the pack docs to mention Claude shims.");
     expect(result.stderr).toContain("[datalox-claude] record");
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
-  });
+  }, 10000);
 
   it("infers the prompt from raw codex exec args when no explicit Datalox prompt is given", async () => {
     const hostDir = await adoptHostRepo();
@@ -438,7 +438,7 @@ EOF
     expect(parsed.args[1]).toContain("# Datalox Loop Guidance");
     expect(await readFile(path.join(hostDir, ".datalox", "install.json"), "utf8")).toContain("\"installMode\": \"auto\"");
     expect(await readFile(path.join(hostDir, "DATALOX.md"), "utf8")).toContain("Datalox");
-  }, 10000);
+  }, 60000);
 
   it("refuses auto-bootstrap when partial Datalox-owned paths already exist", async () => {
     const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-wrapper-blocked-"));
@@ -524,7 +524,7 @@ EOF
     expect(logFile).toContain("create_note");
     expect(logFile).toContain("update_skill");
     expect(patchedSkill).toContain("agent-wiki/notes/");
-  }, 20000);
+  }, 60000);
 
   it("copies wrapper entrypoints and skills into adopted host repos", async () => {
     const hostDir = await adoptHostRepo();

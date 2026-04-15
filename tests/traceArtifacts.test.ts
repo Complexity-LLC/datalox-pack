@@ -33,7 +33,9 @@ describe("trace artifacts", () => {
     expect(note).toContain("## Action");
     expect(note).toContain("## Examples");
     expect(note).toContain("## Evidence");
+    expect(note).toContain("Use this note when review ambiguous viability gate and the same signal shows up again.");
     expect(note).toContain("review exception note before widening gate");
+    expect(note).not.toContain("same trace evidence or correction pattern");
     expect(note).toContain("agent-wiki/notes/dead-tail-exception.md");
   });
 

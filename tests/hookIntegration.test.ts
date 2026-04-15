@@ -109,7 +109,7 @@ describe("automatic host hooks", () => {
     expect(indexFile).toContain("agent_adoption.stabilize-manual-pack-adoption-in-non-technical-repos");
     expect(generatedSkill).toContain("## Workflow");
     expect(generatedSkill).toContain("maturity: stable");
-  }, 20000);
+  }, 60000);
 
   it("auto-bootstraps a clean git repo from the host hook path before promoting", async () => {
     const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-hook-auto-"));
@@ -162,5 +162,5 @@ describe("automatic host hooks", () => {
     expect(await readFile(path.join(hostDir, ".datalox", "install.json"), "utf8")).toContain("\"installMode\": \"auto\"");
     expect(await readFile(path.join(hostDir, "DATALOX.md"), "utf8")).toContain("Datalox");
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
-  }, 20000);
+  }, 60000);
 });

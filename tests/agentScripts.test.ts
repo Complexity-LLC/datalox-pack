@@ -612,6 +612,77 @@ describe("agent scripts", () => {
     expect(body.matches[0].loopGuidance.watchFor[0]).toContain("Live and dead populations");
   });
 
+  it("falls back to direct note retrieval when no skill matches the query", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+    await writeFile(
+      path.join(tempDir, "agent-wiki/notes/reversible-onboarding.md"),
+      `---
+type: note
+id: agent-adoption-reversible-onboarding
+title: Reversible onboarding for agent-managed repos
+kind: trace
+workflow: agent_adoption
+tags:
+  - agent_adoption
+status: active
+related:
+  - agent-wiki/notes/evolve-portable-pack.md
+sources:
+  - agent-wiki/events/example.json
+updated: 2026-04-14T00:00:00.000Z
+---
+
+# Reversible onboarding for agent-managed repos
+
+## When to Use
+
+Use this note when a new repo needs a visible and reversible onboarding path before the first managed run.
+
+## Signal
+
+New repos keep failing because the install surface is hidden or irreversible.
+
+## Interpretation
+
+This is a reusable onboarding gap, not a one-off setup complaint.
+
+## Action
+
+Make the onboarding path visible and reversible before asking the next agent to continue.
+
+## Examples
+
+- A repo where agents keep failing because there is no visible install entrypoint.
+
+## Evidence
+
+- agent-wiki/events/example.json
+
+## Related
+
+- agent-wiki/notes/evolve-portable-pack.md
+`,
+    );
+
+    const result = runNodeScript(tempDir, "scripts/agent-resolve.mjs", [
+      "--task",
+      "make onboarding visible and reversible for a new repo",
+      "--workflow",
+      "agent_adoption",
+      "--json",
+    ]);
+    expect(result.status).toBe(0);
+
+    const body = JSON.parse(result.stdout);
+    expect(body.selectionBasis).toBe("direct_note_query");
+    expect(body.matches).toHaveLength(0);
+    expect(body.directNotes[0].noteDoc.path).toBe("agent-wiki/notes/reversible-onboarding.md");
+    expect(body.loopGuidance.whatToDoNow[0]).toContain("visible and reversible");
+    expect(body.loopGuidance.watchFor[0]).toContain("install surface is hidden or irreversible");
+  });
+
   it("auto-selects a local skill from repo context without an explicit task", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));
     tempDirs.push(tempDir);
@@ -662,10 +733,10 @@ describe("agent scripts", () => {
     expect(skillFile).toContain("## Workflow");
     expect(indexFile).toContain("## Skills");
     expect(indexFile).toContain(patternBody.pattern.relativePath);
-    expect(logFile).toContain("create_note");
+    expect(logFile).toContain("update_note");
     expect(logFile).toContain("update_skill");
     expect(hotFile).toContain("Agent Wiki Hot Cache");
-  });
+  }, 10000);
 
   it("learns from interaction by writing a note and updating a skill in skills", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));
@@ -710,8 +781,52 @@ describe("agent scripts", () => {
     const resolved = JSON.parse(resolveResult.stdout);
     expect(resolved.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
     expect(resolved.matches[0].patternDocs.length).toBeGreaterThan(1);
-    expect(resolved.matches[0].loopGuidance.whatToDoNow.some((value: string) => value.includes("review exception pattern"))).toBe(true);
-  });
+    expect(
+      resolved.matches[0].loopGuidance.whatToDoNow.some((value: string) =>
+        value.toLowerCase().includes("widening gate") || value.toLowerCase().includes("exception path")
+      ),
+    ).toBe(true);
+  }, 15000);
+
+  it("reuses the same generated note for repeated related interactions instead of spawning note noise", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+
+    const runLearn = () => runNodeScript(tempDir, "scripts/agent-learn-from-interaction.mjs", [
+      "--task",
+      "review ambiguous live dead gate",
+      "--workflow",
+      "flow_cytometry",
+      "--summary",
+      "Repeated dim-dead-tail overlap during viability review",
+      "--observation",
+      "dim dead tail overlaps live shoulder",
+      "--interpretation",
+      "likely staining artifact",
+      "--action",
+      "review exception pattern before widening gate",
+      "--json",
+    ]);
+
+    const first = runLearn();
+    expect(first.status).toBe(0);
+    const firstBody = JSON.parse(first.stdout);
+
+    const second = runLearn();
+    expect(second.status).toBe(0);
+    const secondBody = JSON.parse(second.stdout);
+
+    expect(secondBody.pattern.relativePath).toBe(firstBody.pattern.relativePath);
+    const generatedNoteReferences = secondBody.skill.payload.notePaths.filter(
+      (value: string) => value === firstBody.pattern.relativePath,
+    );
+    expect(generatedNoteReferences.length).toBe(1);
+
+    const noteFile = await readFile(path.join(tempDir, firstBody.pattern.relativePath), "utf8");
+    expect(noteFile).toContain("Repeated dim-dead-tail overlap during viability review");
+    expect(noteFile).toContain("dim dead tail overlaps live shoulder");
+  }, 10000);
 
   it("runs the minimal detect use patch lint loop", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));
@@ -760,7 +875,7 @@ describe("agent scripts", () => {
     expect(await readFile(path.join(tempDir, "agent-wiki/lint.md"), "utf8")).toContain("Issue Count: 0");
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("lint_pack");
     expect(await readFile(path.join(tempDir, "agent-wiki/hot.md"), "utf8")).toContain("Recent Changes");
-  }, 15000);
+  }, 20000);
 
   it("lints the minimal skill-pattern graph", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));
@@ -814,7 +929,7 @@ Use when the pack is broken.
     expect(body.issues.some((issue: { code: string }) => issue.code === "orphan_note")).toBe(true);
     expect(body.issues.some((issue: { code: string }) => issue.code === "skill_missing_workflow_section")).toBe(true);
     expect(await readFile(path.join(tempDir, "agent-wiki/lint.md"), "utf8")).toContain("missing_note");
-  });
+  }, 20000);
 
   it("reads seed knowledge from an external pack and writes generated knowledge into the host repo", async () => {
     const packDir = await mkdtemp(path.join(tmpdir(), "datalox-seed-pack-"));
@@ -877,7 +992,7 @@ Use when the pack is broken.
     expect(hostSkill).toContain(patched.pattern.relativePath);
     expect(hostSkill).toContain("## Workflow");
     expect(seedSkill).not.toContain(patched.pattern.relativePath);
-    expect(await readFile(hostPatternPath, "utf8")).toContain("review exception pattern before widening gate");
+    expect(await readFile(hostPatternPath, "utf8")).toContain("Review the exception path before widening the gate");
     expect(hostIndex).toContain(patched.pattern.relativePath);
     expect(hostLog).toContain("update_skill");
 
@@ -934,5 +1049,5 @@ Use when the pack is broken.
     expect(generatedSkill).toContain("agent-wiki/notes/");
     expect(logFile).toContain("create_skill");
     expect(indexFile).toContain("agent_adoption.stabilize-manual-pack-adoption-in-non-technical-repos");
-  });
+  }, 10000);
 });

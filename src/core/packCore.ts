@@ -459,7 +459,11 @@ async function patchRecordedEvent(
 
 function collectSupportingNotePaths(result: any): string[] {
   const topMatch = result?.matches?.[0];
-  const noteDocs = Array.isArray(topMatch?.noteDocs) ? topMatch.noteDocs : [];
+  const noteDocs = Array.isArray(topMatch?.noteDocs)
+    ? topMatch.noteDocs
+    : Array.isArray(result?.directNotes)
+      ? result.directNotes.map((entry: { noteDoc?: unknown }) => entry.noteDoc).filter(Boolean)
+      : [];
   return noteDocs
     .map((noteDoc: { path?: string }) => noteDoc?.path)
     .filter((value: unknown): value is string => typeof value === "string" && value.length > 0);

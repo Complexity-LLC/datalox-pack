@@ -84,6 +84,19 @@ function formatList(items: string[], emptyLine: string): string[] {
   return items.map((item) => `- ${item}`);
 }
 
+function readableList(items: string[]): string {
+  if (items.length === 0) {
+    return "";
+  }
+  if (items.length === 1) {
+    return items[0];
+  }
+  if (items.length === 2) {
+    return `${items[0]} and ${items[1]}`;
+  }
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
 function firstNonEmptyLine(value: string): string | null {
   for (const line of value.split(/\r?\n/)) {
     const normalized = line.replace(/\s+/g, " ").trim();
@@ -118,6 +131,13 @@ function renderPdfNote(input: {
   sections: Array<{ title: string; text: string }>;
   textSnippets: string[];
 }): string {
+  const keyHeadings = input.headings.slice(0, 3);
+  const keySnippets = input.textSnippets.slice(0, 3);
+  const headingPhrase = keyHeadings.length > 0
+    ? readableList(keyHeadings)
+    : `${input.pageCount} extracted PDF page${input.pageCount === 1 ? "" : "s"}`;
+  const sourceDescriptor = input.sourceUrl ?? input.sourcePath;
+
   return [
     "---",
     "type: note",
@@ -135,19 +155,21 @@ function renderPdfNote(input: {
     "",
     "## When to Use",
     "",
-    "Use this note when a PDF should become repo-local knowledge another agent can act on without reopening the file first.",
+    `Use this note when the task depends on claims, terminology, or structure from ${input.title}.`,
     "",
     "## Signal",
     "",
-    `Captured ${input.pageCount} PDF page(s) from ${input.sourceUrl ?? input.sourcePath}.`,
+    `Captured ${input.pageCount} page(s) from ${sourceDescriptor}, centered on ${headingPhrase}.`,
     "",
     "## Interpretation",
     "",
-    "This note turns extracted PDF evidence into a reusable repo-local page instead of leaving the content trapped in a binary file.",
+    keySnippets.length > 0
+      ? `The document's reusable value is concentrated in ${headingPhrase}, with concrete excerpts such as "${keySnippets[0]}".`
+      : `The document's reusable value is concentrated in ${headingPhrase}.`,
     "",
     "## Action",
     "",
-    "Read this note before writing a workflow summary, extracting claims, or promoting the PDF knowledge into a skill-backed procedure.",
+    `Use the extracted headings, snippets, and page structure below before summarizing, citing, or turning ${input.title} into implementation guidance.`,
     "",
     "## Examples",
     "",
