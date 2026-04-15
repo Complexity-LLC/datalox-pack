@@ -48,7 +48,7 @@ link_if_missing "$SKILLS_DIR" "$REPO_ROOT/.cursor/skills" "Cursor"
 link_if_missing "$SKILLS_DIR" "$REPO_ROOT/.windsurf/skills" "Windsurf"
 
 echo
-"$REPO_ROOT/bin/install-default-host-integrations.sh"
+bash "$REPO_ROOT/bin/install-default-host-integrations.sh"
 
 echo
 echo -e "${GREEN}Done.${NC}"

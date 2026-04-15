@@ -132,6 +132,34 @@ function firstNonEmpty(items: Array<string | null | undefined>): string | null {
   return null;
 }
 
+function isFontFamilyValue(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) {
+    return false;
+  }
+  if (/^(var\(|[0-9.]+(px|rem|em|%|vh|vw|ch|ex))/i.test(normalized)) {
+    return false;
+  }
+  if (!/[a-z]/i.test(normalized)) {
+    return false;
+  }
+  return /['"]|,|\bserif\b|\bsans\b|\bmono\b/i.test(normalized);
+}
+
+function isFontFamilyVariable(item: { name: string; value: string }): boolean {
+  const normalizedName = item.name.toLowerCase();
+  if (!/font|type/i.test(normalizedName)) {
+    return false;
+  }
+  if (/size|weight|line|tracking|letter|leading/i.test(normalizedName)) {
+    return false;
+  }
+  if (/family|typeface|display|primary|secondary|body|heading|sans|serif|mono/i.test(normalizedName)) {
+    return isFontFamilyValue(item.value);
+  }
+  return false;
+}
+
 function chooseTitle(input: { explicitTitle?: string; snapshotTitle: string; slug: string }): string {
   return input.explicitTitle?.trim() || input.snapshotTitle.trim() || input.slug;
 }
@@ -165,7 +193,7 @@ function toIndexedRecord(prefix: string, values: string[]): Record<string, strin
 function describeWebTypography(style: NonNullable<SourceBundle["style"]>): string {
   const fonts = take([
     ...style.cssVariables
-      .filter((item) => /font|display/i.test(item.name))
+      .filter(isFontFamilyVariable)
       .map((item) => cleanFontName(item.value)),
     ...style.fonts.map(cleanFontName),
   ], 2);
@@ -304,7 +332,7 @@ function buildDesignTokens(input: {
     throw new Error("Web source bundle was missing style evidence.");
   }
   const colorVariables = style.cssVariables.filter((item) => /(color|bg|background|brand|accent|surface)/i.test(item.name));
-  const fontVariables = style.cssVariables.filter((item) => /font/i.test(item.name));
+  const fontVariables = style.cssVariables.filter(isFontFamilyVariable);
   const radiusVariables = style.cssVariables.filter((item) => /radius/i.test(item.name));
   const shadowVariables = style.cssVariables.filter((item) => /shadow/i.test(item.name));
 

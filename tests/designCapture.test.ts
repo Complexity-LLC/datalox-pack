@@ -27,6 +27,7 @@ async function createSampleSite(rootDir: string): Promise<string> {
         --color-brand: #ff5a36;
         --color-surface: #0f172a;
         --font-display: "Space Grotesk", sans-serif;
+        --font-size-body: 18px;
         --radius-card: 24px;
         --shadow-card: 0 20px 40px rgba(15, 23, 42, 0.18);
       }
@@ -198,6 +199,8 @@ describe("web capture", () => {
     const designDoc = await readFile(path.join(hostDir, payload.artifactPath), "utf8");
     const sourcePage = await readFile(path.join(hostDir, payload.notePath), "utf8");
     const logDoc = await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8");
+    const whenToUseSection = sourcePage.match(/## When to Use\n\n([\s\S]*?)\n## Signal/)?.[1] ?? "";
+    const interpretationSection = sourcePage.match(/## Interpretation\n\n([\s\S]*?)\n## Action/)?.[1] ?? "";
 
     expect(payload.artifactType).toBe("design_doc");
     expect(payload.artifactPath).toContain("designs/web/");
@@ -209,6 +212,8 @@ describe("web capture", () => {
     expect(designDoc).toContain("Built for teams");
     expect(sourcePage).toContain("# Acme Landing");
     expect(sourcePage).toContain("Use this reference when building pages that should borrow Space Grotesk paired with Inter");
+    expect(whenToUseSection).not.toContain("18px");
+    expect(interpretationSection).not.toContain("18px");
     expect(sourcePage).toContain("Lead headline: Launch tasteful product pages faster.");
     expect(sourcePage).toContain("Navigation labels: Product, Pricing, Docs");
     expect(sourcePage).not.toContain("one-off screenshot or chat summary");
@@ -342,6 +347,8 @@ describe("web capture", () => {
     expect(tokens.source.notePath).toBe(payload.notePath);
     expect(tokens.color.variable["color-brand"]).toBe("#ff5a36");
     expect(Object.values(tokens.font.family)).toContain("Inter");
+    expect(Object.values(tokens.font.family)).toContain("Space Grotesk");
+    expect(Object.values(tokens.font.family)).not.toContain("18px");
     expect(Object.values(tokens.radius)).toContain("24px");
   }, 60000);
 

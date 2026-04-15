@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -78,4 +78,46 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(homeDir, ".claude/hooks/datalox-auto-promote.sh"), "utf8")).toContain("datalox-auto-promote.js");
     expect(await readlink(path.join(homeDir, ".datalox/cache/datalox-pack"))).toBe(repoRoot);
   }, 15000);
+
+  it("runs setup-multi-agent.sh from a fresh pack copy without requiring exec permissions on nested scripts", async () => {
+    const packDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-copy-"));
+    const homeDir = await mkdtemp(path.join(tmpdir(), "datalox-setup-home-"));
+    tempDirs.push(packDir, homeDir);
+
+    const trackedFiles = spawnSync("git", ["-C", repoRoot, "ls-files", "-z"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    expect(trackedFiles.status).toBe(0);
+    for (const relativePath of trackedFiles.stdout.split("\0").filter(Boolean)) {
+      const sourcePath = path.join(repoRoot, relativePath);
+      const destinationPath = path.join(packDir, relativePath);
+      await mkdir(path.dirname(destinationPath), { recursive: true });
+      await copyFile(sourcePath, destinationPath);
+    }
+
+    const fakeCodex = path.join(homeDir, "fake-codex");
+    const fakeClaude = path.join(homeDir, "fake-claude");
+    await writeFile(fakeCodex, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+    await writeFile(fakeClaude, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+    await chmod(fakeCodex, 0o755);
+    await chmod(fakeClaude, 0o755);
+
+    const setup = spawnSync("bash", [path.join(packDir, "bin/setup-multi-agent.sh")], {
+      cwd: packDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        DATALOX_REAL_CODEX_BIN: fakeCodex,
+        DATALOX_REAL_CLAUDE_BIN: fakeClaude,
+      },
+    });
+
+    expect(setup.status).toBe(0);
+    expect(await readlink(path.join(homeDir, ".codex/skills/datalox-pack"))).toBe(path.join(packDir, "skills"));
+    expect(await readFile(path.join(homeDir, ".local/bin/codex"), "utf8")).toContain(`PACK_ROOT="${packDir}"`);
+    expect(await readFile(path.join(homeDir, ".local/bin/claude"), "utf8")).toContain(`PACK_ROOT="${packDir}"`);
+    expect(await readFile(path.join(homeDir, ".claude/hooks/datalox-auto-promote.sh"), "utf8")).toContain("datalox-auto-promote.js");
+  }, 20000);
 });
