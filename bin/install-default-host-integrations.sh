@@ -19,6 +19,36 @@ valid_full_pack_root() {
   [ -f "$candidate/package.json" ] && [ -f "$candidate/scripts/lib/agent-pack.mjs" ]
 }
 
+ensure_runtime_ready() {
+  local runtime_root="$1"
+  local entrypoint="$runtime_root/dist/src/cli/main.js"
+  if [ -f "$entrypoint" ]; then
+    return 0
+  fi
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "Datalox runtime is not built and npm is not available: $runtime_root" >&2
+    exit 1
+  fi
+
+  echo "Preparing Datalox runtime in $runtime_root"
+  (
+    cd "$runtime_root"
+    if [ ! -d node_modules ]; then
+      if [ -f package-lock.json ]; then
+        npm ci
+      else
+        npm install
+      fi
+    fi
+    npm run build
+  )
+
+  if [ ! -f "$entrypoint" ]; then
+    echo "Datalox runtime build did not produce $entrypoint" >&2
+    exit 1
+  fi
+}
+
 read_install_stamp_pack_root() {
   local install_stamp="$1"
   if [ ! -f "$install_stamp" ]; then
@@ -62,6 +92,7 @@ resolve_cache_source_root() {
 
 SOURCE_PACK_ROOT="$(resolve_cache_source_root || true)"
 if [ -n "$SOURCE_PACK_ROOT" ]; then
+  ensure_runtime_ready "$SOURCE_PACK_ROOT"
   if [ -L "$PACK_CACHE" ] || [ -e "$PACK_CACHE" ]; then
     if ! valid_full_pack_root "$PACK_CACHE"; then
       rm -rf "$PACK_CACHE"
@@ -70,6 +101,8 @@ if [ -n "$SOURCE_PACK_ROOT" ]; then
   else
     ln -s "$SOURCE_PACK_ROOT" "$PACK_CACHE"
   fi
+elif valid_full_pack_root "$REPO_ROOT"; then
+  ensure_runtime_ready "$REPO_ROOT"
 fi
 
 is_datalox_host_path() {
