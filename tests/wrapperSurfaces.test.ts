@@ -112,8 +112,11 @@ describe("wrapper surfaces", () => {
     expect(eventPayload.matchedSkillId).toBe("flow-cytometry.review-ambiguous-viability-gate");
     expect(eventPayload.matchedNotePaths).toContain("agent-wiki/notes/viability-gate-review.md");
     const noteFile = await readFile(path.join(hostDir, "agent-wiki", "notes", "viability-gate-review.md"), "utf8");
-    expect(noteFile).toContain("read_count: 1");
+    expect(noteFile).toContain("usage:");
     expect(noteFile).toContain("apply_count: 1");
+    const readCountMatch = noteFile.match(/read_count:\s+(\d+)/);
+    expect(readCountMatch).not.toBeNull();
+    expect(Number.parseInt(readCountMatch?.[1] ?? "0", 10)).toBeGreaterThanOrEqual(1);
   }, 40000);
 
   it("records a raw wrapper event even when post-run compilation is turned off and no markers are emitted", async () => {

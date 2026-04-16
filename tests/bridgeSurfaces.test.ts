@@ -614,6 +614,28 @@ function runBuiltCli(tempDir: string, args: string[], envOverrides: Record<strin
 }
 
 function extractStructuredResult(result: unknown) {
+  const envelope = extractStructuredEnvelope(result);
+  if (
+    envelope
+    && typeof envelope === "object"
+    && "result" in envelope
+  ) {
+    return (envelope as { result: unknown }).result;
+  }
+
+  const resolved = (typeof result === "object" && result !== null && "toolResult" in result)
+    ? (result as { toolResult: unknown }).toolResult
+    : result;
+
+  const content = (resolved as { content?: Array<{ type: string; text?: string }> }).content;
+  const text = content?.find((item) => item.type === "text")?.text;
+  if (!text) {
+    throw new Error("No structured MCP result found");
+  }
+  return JSON.parse(text) as unknown;
+}
+
+function extractStructuredEnvelope(result: unknown) {
   const resolved = (typeof result === "object" && result !== null && "toolResult" in result)
     ? (result as { toolResult: unknown }).toolResult
     : result;
@@ -624,17 +646,11 @@ function extractStructuredResult(result: unknown) {
     && "structuredContent" in resolved
     && (resolved as { structuredContent?: unknown }).structuredContent
     && typeof (resolved as { structuredContent?: unknown }).structuredContent === "object"
-    && "result" in ((resolved as { structuredContent: Record<string, unknown> }).structuredContent)
   ) {
-    return ((resolved as { structuredContent: { result: unknown } }).structuredContent).result;
+    return (resolved as { structuredContent: Record<string, unknown> }).structuredContent;
   }
 
-  const content = (resolved as { content?: Array<{ type: string; text?: string }> }).content;
-  const text = content?.find((item) => item.type === "text")?.text;
-  if (!text) {
-    throw new Error("No structured MCP result found");
-  }
-  return JSON.parse(text) as unknown;
+  return null;
 }
 
 describe("bridge surfaces", () => {
@@ -781,8 +797,13 @@ describe("bridge surfaces", () => {
           workflow: "flow_cytometry",
         },
       });
+      const resolveEnvelope = extractStructuredEnvelope(resolveResult) as any;
       const resolved = extractStructuredResult(resolveResult) as any;
       expect(resolved.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
+      expect(resolveEnvelope.loop_pulse.command).toBe("resolve_loop");
+      expect(resolveEnvelope.loop_pulse.repo_path).toBe(tempDir);
+      expect(resolveEnvelope.loop_pulse.recommended_next_tool).toBe("record_turn_result");
+      expect(resolveEnvelope.loop_pulse.has_agent_wiki).toBe(true);
 
       const recordedResult = await client.callTool({
         name: "record_turn_result",

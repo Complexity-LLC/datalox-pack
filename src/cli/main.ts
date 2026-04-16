@@ -4,24 +4,16 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import {
-  adoptPack,
   autoBootstrapIfSafe,
   getDefaultPackUrl,
-  lintLocalPack,
-  patchKnowledge,
   probeBootstrapCandidate,
-  promoteGap,
-  recordTurnResult,
-  resolveLoop,
   syncNoteRetrieval,
 } from "../core/packCore.js";
 import { installHostIntegrations, type InstallHost } from "../core/installCore.js";
-import { capturePdfArtifact } from "../core/pdfCapture.js";
-import { publishWebCapture } from "../core/publishWebCapture.js";
-import { captureDesignFromUrl, captureWebArtifact } from "../core/webCapture.js";
 import { runClaudeWrapper } from "../adapters/claude/run.js";
 import { runCodexWrapper } from "../adapters/codex/run.js";
 import { runGenericWrapper } from "../adapters/generic/run.js";
+import { getSharedCliCommand, parseSharedCliInput } from "../surface/sharedCommands.js";
 import { parseCliArgs, toStringArray } from "./args.js";
 
 function resolveCliPackRoot(): string {
@@ -84,23 +76,6 @@ function parsePositiveInt(value: string | string[] | boolean | undefined): numbe
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function parseWebArtifactType(value: string | undefined): "design_doc" | "design_tokens" | "css_variables" | "tailwind_theme" | "note" | "source_page" {
-  switch (value) {
-    case "source-page":
-      return "source_page";
-    case "design-tokens":
-      return "design_tokens";
-    case "css-variables":
-      return "css_variables";
-    case "tailwind-theme":
-      return "tailwind_theme";
-    case "note":
-      return "note";
-    default:
-      return "design_doc";
-  }
-}
-
 function parseInstallHost(value: string | undefined): InstallHost {
   switch (value) {
     case "codex":
@@ -157,6 +132,13 @@ async function main(): Promise<void> {
   const args = parseCliArgs(process.argv.slice(2));
   const [command, positional, ...rest] = args._;
   const asJson = args.json === true;
+  const sharedCommand = getSharedCliCommand(command);
+
+  if (sharedCommand) {
+    const result = await sharedCommand.run(parseSharedCliInput(sharedCommand, args));
+    writeResult(result, true);
+    return;
+  }
 
   switch (command) {
     case "install": {
@@ -189,18 +171,6 @@ async function main(): Promise<void> {
       writeResult({ install, bootstrap }, true);
       return;
     }
-    case "adopt": {
-      const hostRepoPath = positional;
-      if (!hostRepoPath) {
-        throw new Error("adopt requires <host-repo-path>");
-      }
-      const result = await adoptPack({
-        hostRepoPath,
-        packSource: typeof args["pack-source"] === "string" ? args["pack-source"] : undefined,
-      });
-      writeResult(result, true);
-      return;
-    }
     case "probe-bootstrap": {
       const result = await probeBootstrapCandidate(typeof args.repo === "string" ? args.repo : undefined);
       writeResult(result, true);
@@ -214,161 +184,11 @@ async function main(): Promise<void> {
       writeResult(result, true);
       return;
     }
-    case "capture-web": {
-      if (typeof args.url !== "string") {
-        throw new Error("capture-web requires --url <url>");
-      }
-      const artifactType = parseWebArtifactType(typeof args.artifact === "string" ? args.artifact : "design-doc");
-      const result = await captureWebArtifact({
-        repoPath: typeof args.repo === "string" ? args.repo : undefined,
-        url: args.url,
-        title: typeof args.title === "string" ? args.title : undefined,
-        slug: typeof args.slug === "string" ? args.slug : undefined,
-        artifactType,
-        outputPath: typeof args.output === "string" ? args.output : undefined,
-      });
-      writeResult(result, true);
-      return;
-    }
-    case "capture-pdf": {
-      if (typeof args.path !== "string") {
-        throw new Error("capture-pdf requires --path <pdf-path>");
-      }
-      const result = await capturePdfArtifact({
-        repoPath: typeof args.repo === "string" ? args.repo : undefined,
-        path: args.path,
-        title: typeof args.title === "string" ? args.title : undefined,
-        slug: typeof args.slug === "string" ? args.slug : undefined,
-        sourceUrl: typeof args["source-url"] === "string" ? args["source-url"] : undefined,
-      });
-      writeResult(result, true);
-      return;
-    }
-    case "capture-design": {
-      if (typeof args.url !== "string") {
-        throw new Error("capture-design requires --url <url>");
-      }
-      const result = await captureDesignFromUrl({
-        repoPath: typeof args.repo === "string" ? args.repo : undefined,
-        url: args.url,
-        title: typeof args.title === "string" ? args.title : undefined,
-        slug: typeof args.slug === "string" ? args.slug : undefined,
-        outputPath: typeof args.output === "string" ? args.output : undefined,
-      });
-      writeResult(result, true);
-      return;
-    }
-    case "publish-web-capture": {
-      if (typeof args.capture !== "string") {
-        throw new Error("publish-web-capture requires --capture <slug>");
-      }
-      const result = await publishWebCapture({
-        repoPath: typeof args.repo === "string" ? args.repo : undefined,
-        capture: args.capture,
-        bucket: typeof args.bucket === "string" ? args.bucket : undefined,
-        prefix: typeof args.prefix === "string" ? args.prefix : undefined,
-        publicBaseUrl: typeof args["public-base-url"] === "string" ? args["public-base-url"] : undefined,
-      });
-      writeResult(result, true);
-      return;
-    }
-    case "resolve": {
-      const limit = typeof args.limit === "string" ? Number.parseInt(args.limit, 10) : undefined;
-      const result = await resolveLoop({
-        repoPath: typeof args.repo === "string" ? args.repo : undefined,
-        task: typeof args.task === "string" ? args.task : undefined,
-        workflow: typeof args.workflow === "string" ? args.workflow : undefined,
-        step: typeof args.step === "string" ? args.step : undefined,
-        skill: typeof args.skill === "string" ? args.skill : undefined,
-        limit: Number.isFinite(limit) ? limit : undefined,
-        includeContent: args["include-content"] === true,
-      });
-      writeResult(result, true);
-      return;
-    }
     case "retrieval": {
       if (positional !== "sync") {
         throw new Error("retrieval requires a subcommand; supported: sync");
       }
       const result = await syncNoteRetrieval({
-        repoPath: typeof args.repo === "string" ? args.repo : undefined,
-      });
-      writeResult(result, true);
-      return;
-    }
-    case "record": {
-      const result = await recordTurnResult({
-        repoPath: typeof args.repo === "string" ? args.repo : undefined,
-        task: typeof args.task === "string" ? args.task : undefined,
-        workflow: typeof args.workflow === "string" ? args.workflow : undefined,
-        step: typeof args.step === "string" ? args.step : undefined,
-        skillId: typeof args.skill === "string" ? args.skill : undefined,
-        summary: typeof args.summary === "string" ? args.summary : undefined,
-        observations: toStringArray(args.observation),
-        changedFiles: toStringArray(args["changed-file"]),
-        transcript: typeof args.transcript === "string" ? args.transcript : undefined,
-        tags: toStringArray(args.tag),
-        title: typeof args.title === "string" ? args.title : undefined,
-        signal: typeof args.signal === "string" ? args.signal : undefined,
-        interpretation: typeof args.interpretation === "string" ? args.interpretation : undefined,
-        recommendedAction: typeof args.action === "string" ? args.action : undefined,
-        outcome: typeof args.outcome === "string" ? args.outcome : undefined,
-        eventKind: typeof args["event-kind"] === "string" ? args["event-kind"] : undefined,
-      });
-      writeResult(result, true);
-      return;
-    }
-    case "patch": {
-      const result = await patchKnowledge({
-        repoPath: typeof args.repo === "string" ? args.repo : undefined,
-        task: typeof args.task === "string" ? args.task : undefined,
-        workflow: typeof args.workflow === "string" ? args.workflow : undefined,
-        step: typeof args.step === "string" ? args.step : undefined,
-        skillId: typeof args.skill === "string" ? args.skill : undefined,
-        summary: typeof args.summary === "string" ? args.summary : undefined,
-        observations: toStringArray(args.observation),
-        transcript: typeof args.transcript === "string" ? args.transcript : undefined,
-        tags: toStringArray(args.tag),
-        title: typeof args.title === "string" ? args.title : undefined,
-        signal: typeof args.signal === "string" ? args.signal : undefined,
-        interpretation: typeof args.interpretation === "string" ? args.interpretation : undefined,
-        recommendedAction: typeof args.action === "string" ? args.action : undefined,
-      });
-      writeResult(result, true);
-      return;
-    }
-    case "promote": {
-      const minWikiOccurrences = typeof args["min-wiki-occurrences"] === "string"
-        ? Number.parseInt(args["min-wiki-occurrences"], 10)
-        : undefined;
-      const minSkillOccurrences = typeof args["min-skill-occurrences"] === "string"
-        ? Number.parseInt(args["min-skill-occurrences"], 10)
-        : undefined;
-      const result = await promoteGap({
-        repoPath: typeof args.repo === "string" ? args.repo : undefined,
-        task: typeof args.task === "string" ? args.task : undefined,
-        workflow: typeof args.workflow === "string" ? args.workflow : undefined,
-        step: typeof args.step === "string" ? args.step : undefined,
-        skillId: typeof args.skill === "string" ? args.skill : undefined,
-        summary: typeof args.summary === "string" ? args.summary : undefined,
-        observations: toStringArray(args.observation),
-        changedFiles: toStringArray(args["changed-file"]),
-        transcript: typeof args.transcript === "string" ? args.transcript : undefined,
-        tags: toStringArray(args.tag),
-        title: typeof args.title === "string" ? args.title : undefined,
-        signal: typeof args.signal === "string" ? args.signal : undefined,
-        interpretation: typeof args.interpretation === "string" ? args.interpretation : undefined,
-        recommendedAction: typeof args.action === "string" ? args.action : undefined,
-        outcome: typeof args.outcome === "string" ? args.outcome : undefined,
-        eventKind: typeof args["event-kind"] === "string" ? args["event-kind"] : undefined,
-        minWikiOccurrences: Number.isFinite(minWikiOccurrences) ? minWikiOccurrences : undefined,
-        minSkillOccurrences: Number.isFinite(minSkillOccurrences) ? minSkillOccurrences : undefined,
-      });
-      writeResult(result, true);
-      return;
-    }
-    case "lint": {
-      const result = await lintLocalPack({
         repoPath: typeof args.repo === "string" ? args.repo : undefined,
       });
       writeResult(result, true);
