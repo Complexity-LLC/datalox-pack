@@ -1896,8 +1896,102 @@ function buildNoteText(note) {
     .toLowerCase();
 }
 
+function buildNoteQuerySections(note) {
+  return {
+    primary: [
+      note.title,
+      note.whenToUse,
+      note.signal,
+      ...(note.tags ?? []),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase(),
+    secondary: [
+      note.interpretation,
+      note.action,
+      note.summary,
+      ...(note.examples ?? []),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase(),
+    tertiary: [
+      note.evidence,
+      ...(note.related ?? []),
+      ...(note.sources ?? []),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase(),
+  };
+}
+
+function normalizeNoteStatus(status) {
+  if (typeof status !== "string") {
+    return "active";
+  }
+  return status.trim().toLowerCase() || "active";
+}
+
+function isDirectNoteEligible(note) {
+  return !["archived", "inactive", "disabled", "deprecated"].includes(normalizeNoteStatus(note.status));
+}
+
+function parseUsageCount(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+  }
+  return 0;
+}
+
+function getNoteUsageStats(note) {
+  const usage = isRecord(note.usage) ? note.usage : {};
+  return {
+    readCount: parseUsageCount(usage.read_count ?? usage.readCount),
+    applyCount: parseUsageCount(usage.apply_count ?? usage.applyCount),
+    evidenceCount: Math.max(
+      Array.isArray(note.evidenceLines) ? note.evidenceLines.length : 0,
+      parseUsageCount(usage.evidence_count ?? usage.evidenceCount),
+    ),
+  };
+}
+
+function compareRetrievedNotes(left, right) {
+  if (right.score !== left.score) {
+    return right.score - left.score;
+  }
+  const rightBackendScore = typeof right.backendScore === "number" ? right.backendScore : 0;
+  const leftBackendScore = typeof left.backendScore === "number" ? left.backendScore : 0;
+  if (rightBackendScore !== leftBackendScore) {
+    return rightBackendScore - leftBackendScore;
+  }
+  const rightUsage = getNoteUsageStats(right.noteDoc ?? right.note ?? {});
+  const leftUsage = getNoteUsageStats(left.noteDoc ?? left.note ?? {});
+  if (rightUsage.applyCount !== leftUsage.applyCount) {
+    return rightUsage.applyCount - leftUsage.applyCount;
+  }
+  if (rightUsage.readCount !== leftUsage.readCount) {
+    return rightUsage.readCount - leftUsage.readCount;
+  }
+  if (rightUsage.evidenceCount !== leftUsage.evidenceCount) {
+    return rightUsage.evidenceCount - leftUsage.evidenceCount;
+  }
+  return parseTimestamp((right.noteDoc ?? right.note ?? {}).updatedAt)
+    - parseTimestamp((left.noteDoc ?? left.note ?? {}).updatedAt);
+}
+
 function explainNoteMatch(note, query) {
   const reasons = [];
+
+  if (!isDirectNoteEligible(note)) {
+    reasons.push(`note status filtered: ${normalizeNoteStatus(note.status)}`);
+    return reasons;
+  }
 
   if (query.workflow && note.workflow === query.workflow) {
     reasons.push(`workflow match: ${query.workflow}`);
@@ -1907,22 +2001,52 @@ function explainNoteMatch(note, query) {
     reasons.push(`skill-linked note: ${query.skill}`);
   }
 
+  const taskText = typeof query.task === "string" ? query.task.trim().toLowerCase() : "";
+  const sections = buildNoteQuerySections(note);
+  if (taskText) {
+    if (note.title && (taskText.includes(note.title.toLowerCase()) || note.title.toLowerCase().includes(taskText))) {
+      reasons.push("title match");
+    }
+    if (note.whenToUse && note.whenToUse.toLowerCase().includes(taskText)) {
+      reasons.push("when-to-use match");
+    }
+    if (note.signal && note.signal.toLowerCase().includes(taskText)) {
+      reasons.push("signal match");
+    }
+    if (note.action && note.action.toLowerCase().includes(taskText)) {
+      reasons.push("action match");
+    }
+  }
+
   const queryTokens = tokenize([query.task, query.step].filter(Boolean).join(" "));
-  const noteText = buildNoteText(note);
-  const matchedTokens = unique(queryTokens.filter((token) => noteText.includes(token))).slice(0, 5);
+  const matchedTokens = unique(queryTokens.filter((token) =>
+    sections.primary.includes(token)
+    || sections.secondary.includes(token)
+    || sections.tertiary.includes(token),
+  )).slice(0, 5);
   if (matchedTokens.length > 0) {
     reasons.push(`note overlap: ${matchedTokens.join(", ")}`);
+  }
+
+  const usage = getNoteUsageStats(note);
+  if (usage.applyCount > 0) {
+    reasons.push(`applied before: ${usage.applyCount}`);
   }
 
   return reasons;
 }
 
 function scoreNote(note, query) {
+  if (!isDirectNoteEligible(note)) {
+    return -1;
+  }
+
   if (query.workflow && note.workflow && note.workflow !== query.workflow) {
     return -1;
   }
 
   const text = buildNoteText(note);
+  const sections = buildNoteQuerySections(note);
   let score = 0;
 
   if (query.workflow && note.workflow === query.workflow) {
@@ -1933,16 +2057,43 @@ function scoreNote(note, query) {
     score += 80;
   }
 
-  const tokens = tokenize([query.task, query.step].filter(Boolean).join(" "));
-  for (const token of new Set(tokens)) {
-    if (text.includes(token)) {
-      score += 8;
+  const taskText = typeof query.task === "string" ? query.task.trim().toLowerCase() : "";
+  if (taskText) {
+    if (note.title && note.title.toLowerCase() === taskText) {
+      score += 80;
+    } else if (note.title && (taskText.includes(note.title.toLowerCase()) || note.title.toLowerCase().includes(taskText))) {
+      score += 32;
+    }
+    if (note.whenToUse && note.whenToUse.toLowerCase().includes(taskText)) {
+      score += 24;
+    }
+    if (note.signal && note.signal.toLowerCase().includes(taskText)) {
+      score += 18;
+    }
+    if (note.action && note.action.toLowerCase().includes(taskText)) {
+      score += 16;
     }
   }
 
-  if (query.task && text.includes(query.task.toLowerCase())) {
+  const tokens = tokenize([query.task, query.step].filter(Boolean).join(" "));
+  for (const token of new Set(tokens)) {
+    if (sections.primary.includes(token)) {
+      score += 12;
+    } else if (sections.secondary.includes(token)) {
+      score += 8;
+    } else if (sections.tertiary.includes(token) || text.includes(token)) {
+      score += 4;
+    }
+  }
+
+  if (taskText && text.includes(taskText)) {
     score += 20;
   }
+
+  const usage = getNoteUsageStats(note);
+  score += Math.min(12, usage.applyCount * 3);
+  score += Math.min(6, usage.readCount);
+  score += Math.min(6, usage.evidenceCount * 2);
 
   return score;
 }
@@ -1975,9 +2126,10 @@ async function searchNotesWithNative(config, cwd, sourcePath, query, limit, incl
     .map((item) => ({
       ...item,
       score: scoreNote(item.note, query),
+      backendScore: item.origin === "host" ? 1 : 0,
     }))
     .filter((item) => item.score > 0)
-    .sort((left, right) => right.score - left.score)
+    .sort(compareRetrievedNotes)
     .slice(0, limit)
     .map((item) => ({
       score: item.score,
@@ -2127,7 +2279,7 @@ async function searchNotesWithQmd(config, cwd, sourcePath, query, limit, include
     throw new Error("QMD query output must be a JSON array");
   }
 
-  const candidates = [];
+  const candidates = new Map();
   for (const item of parsed) {
     if (!isRecord(item)) {
       continue;
@@ -2142,20 +2294,31 @@ async function searchNotesWithQmd(config, cwd, sourcePath, query, limit, include
       continue;
     }
     const noteDoc = await loadNoteDoc(cwd, sourcePath, notePath, includeContent);
-    const score = typeof item.score === "number" ? item.score : 0;
-    candidates.push({
+    const backendScore = typeof item.score === "number" ? item.score : 0;
+    const score = scoreNote(noteDoc, query);
+    if (score <= 0) {
+      continue;
+    }
+    const candidate = {
       score,
+      backendScore,
       notePath: noteDoc.path,
       noteOrigin: noteDoc.origin,
       noteDoc,
       whyMatched: unique([
-        `qmd score: ${score.toFixed(2)}`,
+        `qmd candidate score: ${backendScore.toFixed(2)}`,
         ...explainNoteMatch(noteDoc, query),
       ]),
-    });
+    };
+    const existing = candidates.get(noteDoc.path);
+    if (!existing || compareRetrievedNotes(candidate, existing) < 0) {
+      candidates.set(noteDoc.path, candidate);
+    }
   }
 
-  return candidates;
+  return Array.from(candidates.values())
+    .sort(compareRetrievedNotes)
+    .slice(0, limit);
 }
 
 async function retrieveDirectNotes(config, cwd, sourcePath, query, limit, includeContent) {

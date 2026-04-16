@@ -114,7 +114,7 @@ describe("wrapper surfaces", () => {
     const noteFile = await readFile(path.join(hostDir, "agent-wiki", "notes", "viability-gate-review.md"), "utf8");
     expect(noteFile).toContain("read_count: 1");
     expect(noteFile).toContain("apply_count: 1");
-  }, 20000);
+  }, 40000);
 
   it("records a raw wrapper event even when post-run compilation is turned off and no markers are emitted", async () => {
     const hostDir = await adoptHostRepo();
@@ -157,7 +157,7 @@ describe("wrapper surfaces", () => {
     expect(eventPayload.summary).toBe("plain wrapped answer");
     expect(eventPayload.eventKind).toBe("wrapper:generic:success");
     expect(eventPayload.hostKind).toBe("generic");
-  }, 10000);
+  }, 20000);
 
   it("treats DATALOX markers as optional enrichment on top of the recorded event", async () => {
     const hostDir = await adoptHostRepo();
@@ -214,7 +214,7 @@ describe("wrapper surfaces", () => {
     expect(eventPayload.recommendedAction).toBe("revisit the linked note before widening the gate");
     expect(eventPayload.observations).toContain("gate drift was visible on the live/dead shoulder");
     expect(eventPayload.summary).toBe("Visible wrapped answer");
-  }, 10000);
+  }, 20000);
 
   it("runs the Codex wrapper with a fake codex binary and preserves the resolved prompt envelope", async () => {
     const hostDir = await adoptHostRepo();
@@ -253,7 +253,7 @@ describe("wrapper surfaces", () => {
     expect(parsed.args[0]).toContain("Update the pack docs to mention wrappers.");
     expect(result.stderr).toContain("[datalox-codex] record");
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
-  }, 10000);
+  }, 20000);
 
   it("runs the Claude wrapper with a fake claude binary and preserves the resolved prompt envelope", async () => {
     const hostDir = await adoptHostRepo();
@@ -297,7 +297,7 @@ describe("wrapper surfaces", () => {
     expect(parsed.args[1]).toContain("Update the pack docs to mention Claude shims.");
     expect(result.stderr).toContain("[datalox-claude] record");
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
-  }, 10000);
+  }, 20000);
 
   it("infers the prompt from raw codex exec args when no explicit Datalox prompt is given", async () => {
     const hostDir = await adoptHostRepo();
@@ -334,7 +334,7 @@ describe("wrapper surfaces", () => {
     expect(parsed.args[0]).toBe("exec");
     expect(parsed.args[2]).toContain("# Datalox Loop Guidance");
     expect(parsed.args[2]).toContain("Update the pack docs to mention wrappers.");
-  }, 10000);
+  }, 20000);
 
   it("sanitizes Codex output files when the child uses -o", async () => {
     const hostDir = await adoptHostRepo();

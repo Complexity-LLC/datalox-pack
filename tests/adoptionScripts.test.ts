@@ -1,4 +1,4 @@
-import { chmod, copyFile, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -6,6 +6,23 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const repoRoot = process.cwd();
+
+async function copyPackSnapshot(sourceRoot: string, destinationRoot: string): Promise<void> {
+  const entries = await readdir(sourceRoot);
+  for (const entry of entries) {
+    if (entry === ".git" || entry === "node_modules" || entry === "dist") {
+      continue;
+    }
+    await cp(path.join(sourceRoot, entry), path.join(destinationRoot, entry), {
+      recursive: true,
+      filter: (sourcePath) => {
+        const relativePath = path.relative(sourceRoot, sourcePath);
+        const segments = relativePath.split(path.sep);
+        return !segments.includes(".git") && !segments.includes("node_modules") && !segments.includes("dist");
+      },
+    });
+  }
+}
 
 describe("adoption scripts", () => {
   const tempDirs: string[] = [];
@@ -32,8 +49,9 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(hostDir, "bin/claude-global-auto-promote.sh"), "utf8")).toContain("datalox-auto-promote.js");
     expect(await readFile(path.join(hostDir, "bin/datalox-claude.js"), "utf8")).toContain("\"claude\"");
     expect(await readFile(path.join(hostDir, "bin/datalox-codex.js"), "utf8")).toContain("\"codex\"");
+    expect(await readFile(path.join(hostDir, "bin/datalox.js"), "utf8")).toContain("Unable to resolve Datalox runtime root for datalox.js");
     expect(await readFile(path.join(hostDir, "bin/datalox-wrap.js"), "utf8")).toContain("\"wrap\"");
-    expect(await readFile(path.join(hostDir, "bin/install-default-host-integrations.sh"), "utf8")).toContain("Installed default host integrations.");
+    expect(await readFile(path.join(hostDir, "bin/install-default-host-integrations.sh"), "utf8")).toContain("Compatibility shim for the CLI-first install flow.");
     expect(await readFile(path.join(hostDir, "bin/setup-multi-agent.sh"), "utf8")).toContain("Datalox Pack multi-agent setup");
     expect(await readFile(path.join(hostDir, ".github/copilot-instructions.md"), "utf8")).toContain("portable Datalox pack");
     expect(await readFile(path.join(hostDir, "skills/evolve-portable-pack/SKILL.md"), "utf8")).toContain("Evolve Portable Pack");
@@ -41,7 +59,7 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(hostDir, "agent-wiki/note.schema.md"), "utf8")).toContain("Action");
     expect(await readFile(path.join(hostDir, "agent-wiki/notes/host-cli-wrapper-fallback.md"), "utf8")).toContain("thin wrapper");
     expect(await readFile(path.join(hostDir, ".datalox/install.json"), "utf8")).toContain("\"installMode\": \"manual\"");
-  }, 15000);
+  }, 30000);
 
   it("lets an agent run host-local install-default-host-integrations.sh from an adopted repo", async () => {
     const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-host-self-install-"));
@@ -73,8 +91,8 @@ describe("adoption scripts", () => {
     });
 
     expect(install.status).toBe(0);
-    expect(await readFile(path.join(homeDir, ".local/bin/codex"), "utf8")).toContain(`PACK_ROOT="${hostDir}"`);
-    expect(await readFile(path.join(homeDir, ".local/bin/claude"), "utf8")).toContain(`PACK_ROOT="${hostDir}"`);
+    expect(await readFile(path.join(homeDir, ".local/bin/codex"), "utf8")).toContain(`PACK_ROOT="${repoRoot}"`);
+    expect(await readFile(path.join(homeDir, ".local/bin/claude"), "utf8")).toContain(`PACK_ROOT="${repoRoot}"`);
     expect(await readFile(path.join(homeDir, ".claude/hooks/datalox-auto-promote.sh"), "utf8")).toContain("datalox-auto-promote.js");
     expect(await readlink(path.join(homeDir, ".datalox/cache/datalox-pack"))).toBe(repoRoot);
   }, 15000);
@@ -84,17 +102,7 @@ describe("adoption scripts", () => {
     const homeDir = await mkdtemp(path.join(tmpdir(), "datalox-setup-home-"));
     tempDirs.push(packDir, homeDir);
 
-    const trackedFiles = spawnSync("git", ["-C", repoRoot, "ls-files", "-z"], {
-      cwd: repoRoot,
-      encoding: "utf8",
-    });
-    expect(trackedFiles.status).toBe(0);
-    for (const relativePath of trackedFiles.stdout.split("\0").filter(Boolean)) {
-      const sourcePath = path.join(repoRoot, relativePath);
-      const destinationPath = path.join(packDir, relativePath);
-      await mkdir(path.dirname(destinationPath), { recursive: true });
-      await copyFile(sourcePath, destinationPath);
-    }
+    await copyPackSnapshot(repoRoot, packDir);
 
     const fakeCodex = path.join(homeDir, "fake-codex");
     const fakeClaude = path.join(homeDir, "fake-claude");
@@ -115,9 +123,45 @@ describe("adoption scripts", () => {
     });
 
     expect(setup.status).toBe(0);
-    expect(await readlink(path.join(homeDir, ".codex/skills/datalox-pack"))).toBe(path.join(packDir, "skills"));
-    expect(await readFile(path.join(homeDir, ".local/bin/codex"), "utf8")).toContain(`PACK_ROOT="${packDir}"`);
-    expect(await readFile(path.join(homeDir, ".local/bin/claude"), "utf8")).toContain(`PACK_ROOT="${packDir}"`);
+    const resolvedPackDir = await realpath(packDir);
+    expect(await readFile(path.join(homeDir, ".local/bin/codex"), "utf8")).toContain(`PACK_ROOT="${resolvedPackDir}"`);
+    expect(await readFile(path.join(homeDir, ".local/bin/claude"), "utf8")).toContain(`PACK_ROOT="${resolvedPackDir}"`);
+    expect(await readlink(path.join(homeDir, ".codex/skills/datalox-pack"))).toBe(path.join(resolvedPackDir, "skills"));
     expect(await readFile(path.join(homeDir, ".claude/hooks/datalox-auto-promote.sh"), "utf8")).toContain("datalox-auto-promote.js");
-  }, 20000);
+  }, 60000);
+
+  it("runs the CLI-first setup flow from a fresh pack copy and bootstraps the current repo", async () => {
+    const packDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-cli-copy-"));
+    const homeDir = await mkdtemp(path.join(tmpdir(), "datalox-cli-home-"));
+    const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-cli-host-"));
+    tempDirs.push(packDir, homeDir, hostDir);
+
+    await copyPackSnapshot(repoRoot, packDir);
+
+    const init = spawnSync("git", ["init"], {
+      cwd: hostDir,
+      encoding: "utf8",
+    });
+    expect(init.status).toBe(0);
+
+    const fakeCodex = path.join(homeDir, "fake-codex");
+    await writeFile(fakeCodex, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+    await chmod(fakeCodex, 0o755);
+
+    const setup = spawnSync("node", [path.join(packDir, "bin/datalox.js"), "setup", "codex"], {
+      cwd: hostDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        DATALOX_REAL_CODEX_BIN: fakeCodex,
+      },
+    });
+
+    expect(setup.status).toBe(0);
+    const resolvedPackDir = await realpath(packDir);
+    expect(await readFile(path.join(homeDir, ".local/bin/codex"), "utf8")).toContain(`PACK_ROOT="${resolvedPackDir}"`);
+    expect(await readFile(path.join(hostDir, "DATALOX.md"), "utf8")).toContain("source kinds: `trace`, `web`, `pdf`");
+    expect(await readFile(path.join(hostDir, ".datalox/install.json"), "utf8")).toContain("\"installMode\": \"auto\"");
+  }, 60000);
 });

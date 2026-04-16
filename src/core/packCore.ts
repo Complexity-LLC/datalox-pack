@@ -184,6 +184,8 @@ const SINGLE_FILE_ADOPTION_PATHS = [
   "bin/datalox-auto-promote.js",
   "bin/datalox-claude.js",
   "bin/datalox-codex.js",
+  "bin/datalox-mcp.js",
+  "bin/datalox.js",
   "bin/datalox-wrap.js",
   "bin/install-default-host-integrations.sh",
   "bin/setup-multi-agent.sh",

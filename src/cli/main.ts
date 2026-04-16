@@ -1,4 +1,7 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import {
   adoptPack,
@@ -12,6 +15,7 @@ import {
   resolveLoop,
   syncNoteRetrieval,
 } from "../core/packCore.js";
+import { installHostIntegrations, type InstallHost } from "../core/installCore.js";
 import { capturePdfArtifact } from "../core/pdfCapture.js";
 import { publishWebCapture } from "../core/publishWebCapture.js";
 import { captureDesignFromUrl, captureWebArtifact } from "../core/webCapture.js";
@@ -20,9 +24,30 @@ import { runCodexWrapper } from "../adapters/codex/run.js";
 import { runGenericWrapper } from "../adapters/generic/run.js";
 import { parseCliArgs, toStringArray } from "./args.js";
 
+function resolveCliPackRoot(): string {
+  const candidates = [
+    fileURLToPath(new URL("../../", import.meta.url)),
+    fileURLToPath(new URL("../../../", import.meta.url)),
+  ];
+
+  for (const candidate of candidates) {
+    if (
+      existsSync(path.join(candidate, "package.json"))
+      && existsSync(path.join(candidate, "scripts", "lib", "agent-pack.mjs"))
+    ) {
+      return candidate;
+    }
+  }
+
+  return candidates[candidates.length - 1];
+}
+
 function usage(): string {
   return [
     "Usage:",
+    "  datalox install [all|codex|claude] [--json]",
+    "  datalox bootstrap [--repo <path>] [--pack-source <path-or-git-url>] [--json]",
+    "  datalox setup [all|codex|claude] [--repo <path>] [--pack-source <path-or-git-url>] [--json]",
     "  datalox adopt <host-repo-path> [--pack-source <path-or-git-url>] [--json]",
     "  datalox probe-bootstrap [--repo <path>] [--json]",
     "  datalox auto-bootstrap [--repo <path>] [--pack-source <path-or-git-url>] [--json]",
@@ -76,6 +101,33 @@ function parseWebArtifactType(value: string | undefined): "design_doc" | "design
   }
 }
 
+function parseInstallHost(value: string | undefined): InstallHost {
+  switch (value) {
+    case "codex":
+    case "claude":
+      return value;
+    default:
+      return "all";
+  }
+}
+
+async function bootstrapRepo(repoPath?: string, packSource?: string) {
+  const probeBefore = await probeBootstrapCandidate(repoPath);
+  if (probeBefore.status === "ready" || !probeBefore.canAutoBootstrap) {
+    return {
+      repoPath: probeBefore.repoPath,
+      probeBefore,
+      action: "none" as const,
+      adoption: null,
+      probeAfter: probeBefore,
+    };
+  }
+  return autoBootstrapIfSafe({
+    repoPath,
+    packSource,
+  });
+}
+
 function writePostRunSummary(prefix: string, postRun: unknown): void {
   if (!postRun || typeof postRun !== "object") {
     return;
@@ -107,6 +159,36 @@ async function main(): Promise<void> {
   const asJson = args.json === true;
 
   switch (command) {
+    case "install": {
+      const host = parseInstallHost(positional);
+      const result = await installHostIntegrations({
+        host,
+        packRootPath: resolveCliPackRoot(),
+      });
+      writeResult(result, true);
+      return;
+    }
+    case "bootstrap": {
+      const result = await bootstrapRepo(
+        typeof args.repo === "string" ? args.repo : undefined,
+        typeof args["pack-source"] === "string" ? args["pack-source"] : undefined,
+      );
+      writeResult(result, true);
+      return;
+    }
+    case "setup": {
+      const host = parseInstallHost(positional);
+      const install = await installHostIntegrations({
+        host,
+        packRootPath: resolveCliPackRoot(),
+      });
+      const bootstrap = await bootstrapRepo(
+        typeof args.repo === "string" ? args.repo : undefined,
+        typeof args["pack-source"] === "string" ? args["pack-source"] : undefined,
+      );
+      writeResult({ install, bootstrap }, true);
+      return;
+    }
     case "adopt": {
       const hostRepoPath = positional;
       if (!hostRepoPath) {

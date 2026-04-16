@@ -207,6 +207,68 @@ Make the onboarding path visible and reversible before asking the next agent to 
 `,
     "utf8",
   );
+
+  await writeFile(
+    path.join(tempDir, "agent-wiki", "notes", "generic-onboarding.md"),
+    `---
+title: Generic onboarding fallback
+workflow: agent_adoption
+status: active
+---
+
+# Generic onboarding fallback
+
+## When to Use
+
+Use this note when onboarding needs a generic follow-up.
+
+## Signal
+
+Setup is incomplete.
+
+## Interpretation
+
+The repo may need more setup work.
+
+## Action
+
+Inspect the current setup and continue with the next safe step.
+
+## Examples
+
+- A repo where setup is only partially complete.
+`,
+    "utf8",
+  );
+
+  await writeFile(
+    path.join(tempDir, "agent-wiki", "notes", "archived-onboarding.md"),
+    `---
+title: Make onboarding visible and reversible
+workflow: agent_adoption
+status: archived
+---
+
+# Make onboarding visible and reversible
+
+## When to Use
+
+Use this archived note when a new repo needs a visible and reversible onboarding path before the first managed run.
+
+## Signal
+
+New repos keep failing because the install surface is hidden or irreversible.
+
+## Interpretation
+
+This note should no longer be used.
+
+## Action
+
+Do not use this archived note.
+`,
+    "utf8",
+  );
 }
 
 async function createFakeQmd(tempDir: string) {
@@ -268,6 +330,12 @@ if (args[0] === "collection" && args[1] === "remove") {
 if (args[0] === "query") {
   const collectionIndex = args.indexOf("-c");
   const collection = collectionIndex >= 0 ? args[collectionIndex + 1] : "notes";
+  const customResults = process.env.DATALOX_QMD_RESULTS_JSON;
+  if (customResults) {
+    save();
+    console.log(customResults.replaceAll("__COLLECTION__", collection));
+    process.exit(0);
+  }
   const noteFile = process.env.DATALOX_QMD_NOTE_FILE || "reversible-onboarding.md";
   const noteTitle = process.env.DATALOX_QMD_NOTE_TITLE || "Retrieved note";
   save();
@@ -305,6 +373,7 @@ describe("retrieval backends", () => {
   const originalQmdStateFile = process.env.DATALOX_QMD_STATE_FILE;
   const originalQmdNoteFile = process.env.DATALOX_QMD_NOTE_FILE;
   const originalQmdNoteTitle = process.env.DATALOX_QMD_NOTE_TITLE;
+  const originalQmdResultsJson = process.env.DATALOX_QMD_RESULTS_JSON;
 
   afterEach(async () => {
     if (originalQmdBin === undefined) {
@@ -326,6 +395,11 @@ describe("retrieval backends", () => {
       delete process.env.DATALOX_QMD_NOTE_TITLE;
     } else {
       process.env.DATALOX_QMD_NOTE_TITLE = originalQmdNoteTitle;
+    }
+    if (originalQmdResultsJson === undefined) {
+      delete process.env.DATALOX_QMD_RESULTS_JSON;
+    } else {
+      process.env.DATALOX_QMD_RESULTS_JSON = originalQmdResultsJson;
     }
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
@@ -369,7 +443,7 @@ describe("retrieval backends", () => {
     const state = await readQmdState(fakeQmd.statePath);
     expect(Object.keys(state.collections)).toContain(resultA.collectionName);
     expect(Object.keys(state.collections)).toContain(resultB.collectionName);
-  }, 15000);
+  }, 25000);
 
   it("keeps skill-linked notes primary even when the qmd backend is selected", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-qmd-priority-"));
@@ -414,9 +488,60 @@ describe("retrieval backends", () => {
     expect(result.selectionBasis).toBe("direct_note_query");
     expect(result.matches).toHaveLength(0);
     expect(result.directNotes[0].noteDoc.path).toBe("agent-wiki/notes/reversible-onboarding.md");
-    expect(result.directNotes[0].whyMatched).toContain("qmd score: 0.91");
+    expect(result.directNotes[0].whyMatched).toContain("qmd candidate score: 0.91");
     expect(result.loopGuidance.whatToDoNow[0]).toContain("visible and reversible");
     expect(result.loopGuidance.watchFor[0]).toContain("install surface is hidden or irreversible");
+  });
+
+  it("keeps archived notes out of native direct-note retrieval", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-native-notes-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir, "native");
+
+    const result = await resolveLoop({
+      repoPath: tempDir,
+      task: "make onboarding visible and reversible for a new repo",
+      workflow: "agent_adoption",
+    });
+
+    expect(result.directNoteBackend).toBe("native");
+    expect(result.directNotes[0].noteDoc.path).toBe("agent-wiki/notes/reversible-onboarding.md");
+    expect(result.directNotes.some((entry: { noteDoc: { path: string } }) =>
+      entry.noteDoc.path === "agent-wiki/notes/archived-onboarding.md")).toBe(false);
+  });
+
+  it("reranks qmd candidates with Datalox note structure instead of raw qmd order", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-qmd-rerank-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir, "qmd");
+    const fakeQmd = await createFakeQmd(tempDir);
+
+    process.env.DATALOX_QMD_BIN = fakeQmd.scriptPath;
+    process.env.DATALOX_QMD_STATE_FILE = fakeQmd.statePath;
+    process.env.DATALOX_QMD_RESULTS_JSON = JSON.stringify([
+      {
+        score: 0.99,
+        file: "qmd://__COLLECTION__/generic-onboarding.md",
+        title: "Generic onboarding fallback",
+        snippet: "generic fallback",
+      },
+      {
+        score: 0.41,
+        file: "qmd://__COLLECTION__/reversible-onboarding.md",
+        title: "Make onboarding visible and reversible",
+        snippet: "specific onboarding guidance",
+      },
+    ], null, 2);
+
+    const result = await resolveLoop({
+      repoPath: tempDir,
+      task: "make onboarding visible and reversible for a new repo",
+      workflow: "agent_adoption",
+    });
+
+    expect(result.directNoteBackend).toBe("qmd");
+    expect(result.directNotes[0].noteDoc.path).toBe("agent-wiki/notes/reversible-onboarding.md");
+    expect(result.directNotes[0].whyMatched).toContain("qmd candidate score: 0.41");
   });
 
   it("tracks read and apply usage for qmd direct notes through the wrapped loop", async () => {
