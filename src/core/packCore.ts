@@ -1098,6 +1098,18 @@ export function getDefaultPackUrl(): string {
   return DEFAULT_PACK_URL;
 }
 
+export interface PromoteNoteInput {
+  repoPath?: string;
+  notePath: string;
+  to: string;
+}
+
+export async function promoteNote(input: PromoteNoteInput): Promise<{ sourcePath: string; destPath: string; target: string }> {
+  const repoPath = resolveRepoPath(input.repoPath);
+  const legacy = await loadLegacyPackModule();
+  return legacy.promoteNote({ notePath: input.notePath, to: input.to }, repoPath);
+}
+
 export async function recordLoopApplication(input: RecordLoopApplicationInput): Promise<{ updatedNotes: string[] }> {
   const repoPath = resolveRepoPath(input.repoPath);
   const timestamp = new Date().toISOString();
