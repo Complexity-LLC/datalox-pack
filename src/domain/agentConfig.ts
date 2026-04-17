@@ -21,6 +21,7 @@ export type AgentInterface = (typeof AGENT_INTERFACES)[number];
 
 export const SOURCE_KINDS = [
   "local_repo",
+  "runtime_retrieval",
 ] as const;
 
 export type SourceKind = (typeof SOURCE_KINDS)[number];
@@ -60,6 +61,12 @@ export interface AgentConfig {
     requestTimeoutMs: number;
     endpoints: {
       compile: string;
+      guidance: string;
+      publish: string;
+      search: string;
+      install: string;
+      ingest: string;
+      register: string;
     };
   };
   auth: {

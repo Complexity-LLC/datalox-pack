@@ -203,6 +203,12 @@ function validateAgentConfig(raw: JsonObject): AgentConfig {
       requestTimeoutMs: expectPositiveInteger(runtime.requestTimeoutMs, "runtime.requestTimeoutMs"),
       endpoints: {
         compile: expectString(endpoints.compile, "runtime.endpoints.compile"),
+        guidance: expectString(endpoints.guidance, "runtime.endpoints.guidance"),
+        publish: expectString(endpoints.publish, "runtime.endpoints.publish"),
+        search: expectString(endpoints.search, "runtime.endpoints.search"),
+        install: expectString(endpoints.install, "runtime.endpoints.install"),
+        ingest: expectString(endpoints.ingest, "runtime.endpoints.ingest"),
+        register: expectString(endpoints.register, "runtime.endpoints.register"),
       },
     },
     auth: {

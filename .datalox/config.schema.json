@@ -59,7 +59,8 @@
           "kind": {
             "type": "string",
             "enum": [
-              "local_repo"
+              "local_repo",
+              "runtime_retrieval"
             ]
           },
           "name": {
@@ -213,10 +214,34 @@
         "endpoints": {
           "type": "object",
           "required": [
-            "compile"
+            "compile",
+            "guidance",
+            "publish",
+            "search",
+            "install",
+            "ingest",
+            "register"
           ],
           "properties": {
             "compile": {
+              "type": "string"
+            },
+            "guidance": {
+              "type": "string"
+            },
+            "publish": {
+              "type": "string"
+            },
+            "search": {
+              "type": "string"
+            },
+            "install": {
+              "type": "string"
+            },
+            "ingest": {
+              "type": "string"
+            },
+            "register": {
               "type": "string"
             }
           },

@@ -16,6 +16,12 @@ related:
 sources:
   - agent-wiki/sources/portable-pack-design-notes.md
 author: yifanjin
+usage:
+  read_count: 3
+  last_read_at: 2026-04-17T07:33:42.514Z
+  apply_count: 0
+  last_applied_at: 
+  evidence_count: 0
 updated: 2026-04-12T10:31:16.852Z
 review_after: 2026-07-12
 ---
