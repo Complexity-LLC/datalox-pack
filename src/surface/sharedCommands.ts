@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   adoptPack,
+  listGlobalNotes,
   lintLocalPack,
   patchKnowledge,
   promoteGap,
@@ -688,6 +689,25 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
     async run(input) {
       return lintLocalPack({
         repoPath: maybeString(input.repoPath),
+      });
+    },
+  },
+  {
+    cliCommand: "list-global",
+    mcpTool: "list_global_notes",
+    description: "List notes in the global knowledge layers (researcher and/or domain). Use --layer researcher, --layer domain:<name>, or omit for all.",
+    args: [
+      {
+        key: "layer",
+        description: "Filter by layer: 'researcher', 'domain:<name>', or omit for all global layers.",
+        kind: "string",
+        cliFlag: "layer",
+        mcpKey: "layer",
+      },
+    ],
+    async run(input) {
+      return listGlobalNotes({
+        layer: maybeString(input.layer),
       });
     },
   },

@@ -1098,13 +1098,22 @@ export function getDefaultPackUrl(): string {
   return DEFAULT_PACK_URL;
 }
 
+export interface ListGlobalNotesInput {
+  layer?: string;
+}
+
 export interface PromoteNoteInput {
   repoPath?: string;
   notePath: string;
   to: string;
 }
 
-export async function promoteNote(input: PromoteNoteInput): Promise<{ sourcePath: string; destPath: string; target: string }> {
+export async function listGlobalNotes(input: ListGlobalNotesInput): Promise<{ notes: unknown[]; total: number }> {
+  const legacy = await loadLegacyPackModule();
+  return legacy.listGlobalNotes({ layer: input.layer });
+}
+
+export async function promoteNote(input: PromoteNoteInput): Promise<{ sourcePath: string; destPath: string; target: string; linked: boolean }> {
   const repoPath = resolveRepoPath(input.repoPath);
   const legacy = await loadLegacyPackModule();
   return legacy.promoteNote({ notePath: input.notePath, to: input.to }, repoPath);

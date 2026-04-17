@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -932,10 +932,10 @@ async function listDomainNotesDirs(domainsRoot, workflow) {
   }));
 }
 
-async function listWikiEntries(config, cwd = process.cwd(), sourcePath) {
+async function listWikiEntries(config, cwd = process.cwd(), sourcePath, queryWorkflow) {
   const paths = resolvePackPaths(config, { cwd, sourcePath });
   const merged = new Map();
-  const workflow = config.runtime?.defaultWorkflow;
+  const workflow = queryWorkflow ?? config.runtime?.defaultWorkflow;
   const dirSpecs = [
     {
       pageType: "note",
@@ -996,11 +996,22 @@ async function listWikiEntries(config, cwd = process.cwd(), sourcePath) {
       });
     }
 
-    // Tier 2: domain (only for notes, filtered by workflow)
+    // Tier 2: domain (only for notes, filtered by workflow frontmatter + directory name)
     if (spec.pageType === "note") {
       for (const { domain, notesDir } of domainDirs) {
         const domainEntries = await readDirMarkdown(notesDir);
         for (const filePath of domainEntries) {
+          // Authoritative filter: check workflow frontmatter if a query workflow is set
+          if (workflow) {
+            const raw = await readFile(filePath, "utf8").catch(() => null);
+            if (raw) {
+              const { frontmatter } = splitFrontmatter(raw);
+              const noteWorkflow = frontmatter.workflow ?? null;
+              if (noteWorkflow && noteWorkflow !== workflow) {
+                continue;
+              }
+            }
+          }
           const relativePath = normalizePath(`${domain}/${path.basename(filePath)}`);
           merged.set(`domain:${relativePath}`, {
             filePath,
@@ -2155,6 +2166,13 @@ function scoreNote(note, query) {
   score += Math.min(6, usage.readCount);
   score += Math.min(6, usage.evidenceCount * 2);
 
+  const confidence = note.confidence?.toLowerCase();
+  if (confidence === "high") {
+    score += 15;
+  } else if (confidence === "low") {
+    score -= 10;
+  }
+
   return score;
 }
 
@@ -2168,8 +2186,8 @@ function buildDirectNoteQueryText(query) {
     .join("\n");
 }
 
-async function listParsedNoteEntries(config, cwd, sourcePath, includeContent) {
-  const wikiEntries = await listWikiEntries(config, cwd, sourcePath);
+async function listParsedNoteEntries(config, cwd, sourcePath, includeContent, queryWorkflow) {
+  const wikiEntries = await listWikiEntries(config, cwd, sourcePath, queryWorkflow);
   const noteEntries = wikiEntries.filter((entry) => entry.pageType === "note");
   return Promise.all(
     noteEntries.map(async (entry) => ({
@@ -2181,7 +2199,7 @@ async function listParsedNoteEntries(config, cwd, sourcePath, includeContent) {
 }
 
 async function searchNotesWithNative(config, cwd, sourcePath, query, limit, includeContent) {
-  const parsedNotes = await listParsedNoteEntries(config, cwd, sourcePath, includeContent);
+  const parsedNotes = await listParsedNoteEntries(config, cwd, sourcePath, includeContent, query.workflow);
   return parsedNotes
     .map((item) => ({
       ...item,
@@ -3527,6 +3545,45 @@ export async function learnFromInteraction(
   };
 }
 
+export async function listGlobalNotes({ layer } = {}) {
+  const results = [];
+
+  if (!layer || layer === "researcher") {
+    const files = await readDirMarkdown(RESEARCHER_NOTES_DIR);
+    for (const filePath of files) {
+      results.push({
+        layer: "researcher",
+        filePath,
+        name: path.basename(filePath),
+      });
+    }
+  }
+
+  if (!layer || layer === "domains" || (layer && layer.startsWith("domain:"))) {
+    const domainFilter = layer?.startsWith("domain:") ? layer.slice("domain:".length) : null;
+    if (await fileExists(DOMAINS_ROOT)) {
+      const domainEntries = await readdir(DOMAINS_ROOT, { withFileTypes: true });
+      for (const entry of domainEntries.filter((e) => e.isDirectory())) {
+        if (domainFilter && entry.name !== domainFilter) {
+          continue;
+        }
+        const notesDir = path.join(DOMAINS_ROOT, entry.name, "notes");
+        const files = await readDirMarkdown(notesDir);
+        for (const filePath of files) {
+          results.push({
+            layer: `domain:${entry.name}`,
+            domain: entry.name,
+            filePath,
+            name: path.basename(filePath),
+          });
+        }
+      }
+    }
+  }
+
+  return { notes: results, total: results.length };
+}
+
 export async function promoteNote({ notePath, to }, cwd = process.cwd()) {
   if (!notePath || !to) {
     throw new Error("promoteNote requires notePath and to (researcher | domain:<name>)");
@@ -3555,12 +3612,25 @@ export async function promoteNote({ notePath, to }, cwd = process.cwd()) {
 
   await mkdir(destDir, { recursive: true });
   const destPath = path.join(destDir, path.basename(absNotePath));
-  await cp(absNotePath, destPath);
+
+  // Use a symlink so the global layer always reflects the project copy.
+  // Fall back to a plain copy on systems where symlinks are not supported.
+  const existingDest = await fileExists(destPath);
+  if (existingDest) {
+    await rm(destPath, { force: true });
+  }
+  try {
+    const { symlink } = await import("node:fs/promises");
+    await symlink(absNotePath, destPath);
+  } catch {
+    await cp(absNotePath, destPath);
+  }
 
   return {
     sourcePath: absNotePath,
     destPath,
     target: to,
+    linked: true,
   };
 }
 
