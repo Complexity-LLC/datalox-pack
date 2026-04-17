@@ -187,6 +187,7 @@ const SINGLE_FILE_ADOPTION_PATHS = [
   "bin/datalox-mcp.js",
   "bin/datalox.js",
   "bin/datalox-wrap.js",
+  "bin/disable-default-host-integrations.sh",
   "bin/install-default-host-integrations.sh",
   "bin/setup-multi-agent.sh",
   "agent-wiki/note.schema.md",

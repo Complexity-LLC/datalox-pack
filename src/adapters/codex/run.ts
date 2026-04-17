@@ -8,12 +8,15 @@ import {
   stripDataloxMarkers,
   sanitizeWrappedCommandResult,
   type LoopEnvelopeInput,
+  type LoopEnvelope,
+  type WrapperReviewRunner,
   type WrapperPostRunInput,
 } from "../shared.js";
 
 export interface CodexWrapperInput extends LoopEnvelopeInput, WrapperPostRunInput {
   codexBin?: string;
   codexArgs?: string[];
+  reviewModel?: string;
 }
 
 const CODEX_OPTIONS_WITH_VALUES = new Set([
@@ -116,6 +119,30 @@ async function sanitizeCodexOutputFile(repoPath: string, outputPath: string | un
   }
 }
 
+function buildCodexReviewer(
+  codexBin: string,
+  reviewModel: string | undefined,
+): WrapperReviewRunner {
+  return {
+    kind: "codex",
+    model: reviewModel ?? null,
+    run(prompt: string, envelope: LoopEnvelope) {
+      const reviewArgs = [
+        "exec",
+        "--skip-git-repo-check",
+        ...(reviewModel ? ["-m", reviewModel] : []),
+        prompt,
+      ];
+      return runWrappedCommand(codexBin, reviewArgs, envelope, {
+        cwd: envelope.repoPath,
+        env: {
+          DATALOX_REVIEW_PASS: "1",
+        },
+      });
+    },
+  };
+}
+
 export async function runCodexWrapper(input: CodexWrapperInput) {
   const codexBin = input.codexBin ?? process.env.DATALOX_CODEX_BIN ?? "codex";
   const codexArgs = input.codexArgs && input.codexArgs.length > 0
@@ -161,6 +188,8 @@ export async function runCodexWrapper(input: CodexWrapperInput) {
       postRunMode: input.postRunMode,
       minWikiOccurrences: input.minWikiOccurrences,
       minSkillOccurrences: input.minSkillOccurrences,
+      reviewModel: input.reviewModel,
+      reviewer: buildCodexReviewer(codexBin, input.reviewModel),
     }),
   };
 }

@@ -103,6 +103,8 @@ Treat Tailwind output as derived from those tokens, not the source of truth.
 
 Use PDF capture when a binary document should become repo-local knowledge.
 
+When a wrapped host prompt references a concrete PDF file path, capture that PDF into `agent-wiki/notes/pdf/` before falling back to generic repo-context skill matching.
+
 Command:
 
 - `datalox capture-pdf --repo . --path <pdf-path>`
@@ -162,3 +164,44 @@ Supported default paths:
 
 After machine-level install, a clean writable git repo can auto-bootstrap on first use.
 If a repo is already partially adopted or conflicting, do not mutate it blindly. Repair or adopt it explicitly.
+
+## Agent-Run Machine Setup
+
+One-time machine setup can be delegated to the user's agent.
+
+Preferred commands:
+
+- install all default host integrations:
+  `bash bin/setup-multi-agent.sh`
+- install one host only:
+  `node bin/datalox.js install codex --json`
+  `node bin/datalox.js install claude --json`
+
+After setup, the user should keep using the host normally:
+
+- `codex exec "<prompt>"`
+- `claude --print "<prompt>"`
+
+The installed shims infer the repo from the current working directory and default post-run review to `review` with `gpt-5.4-mini`.
+
+Only run machine-level setup when the user allows writes under `HOME` such as `~/.local/bin`, `~/.claude`, or `~/.codex`.
+
+## Stop Or Disable
+
+To stop machine-level host interception, run one of:
+
+- disable all default host integrations:
+  `bash bin/disable-default-host-integrations.sh`
+- disable one host only:
+  `node bin/datalox.js disable codex --json`
+  `node bin/datalox.js disable claude --json`
+
+`disable` removes Datalox-managed local shims, matching stable symlinks, the Claude auto-promote hook, and matching skill links that were installed by Datalox.
+
+If you only want to keep the wrapper but stop autonomous post-run review, set:
+
+- `DATALOX_DEFAULT_POST_RUN_MODE=off`
+
+or pass:
+
+- `--post-run-mode off`

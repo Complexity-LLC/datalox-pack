@@ -30,12 +30,22 @@ async function createGitRepo(): Promise<string> {
   return hostDir;
 }
 
-async function createSamplePdf(rootDir: string): Promise<string> {
+async function createSamplePdf(
+  rootDir: string,
+  options: {
+    filename?: string;
+    metadataTitle?: string;
+    firstPageTitle?: string;
+  } = {},
+): Promise<string> {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
+  if (typeof options.metadataTitle === "string") {
+    pdf.setTitle(options.metadataTitle);
+  }
 
   const first = pdf.addPage([612, 792]);
-  first.drawText("Example PDF", { x: 48, y: 740, size: 24, font });
+  first.drawText(options.firstPageTitle ?? "Example PDF", { x: 48, y: 740, size: 24, font });
   first.drawText("Introduction to the method.", { x: 48, y: 700, size: 12, font });
   first.drawText("Key result one.", { x: 48, y: 680, size: 12, font });
 
@@ -44,7 +54,7 @@ async function createSamplePdf(rootDir: string): Promise<string> {
   second.drawText("Key result two.", { x: 48, y: 700, size: 12, font });
   second.drawText("Conclusion.", { x: 48, y: 680, size: 12, font });
 
-  const pdfPath = path.join(rootDir, "example.pdf");
+  const pdfPath = path.join(rootDir, options.filename ?? "example.pdf");
   await writeFile(pdfPath, await pdf.save());
   return pdfPath;
 }
@@ -124,5 +134,42 @@ describe("pdf capture", () => {
     } finally {
       await client.close();
     }
+  }, 60000);
+
+  it("falls back to a later title candidate when the first slug candidate normalizes to empty", async () => {
+    const hostDir = await createGitRepo();
+    const pdfPath = await createSamplePdf(hostDir, {
+      filename: "blank-metadata-title.pdf",
+      metadataTitle: "   ",
+      firstPageTitle: "Recovered English Title",
+    });
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "capture-pdf",
+        "--repo",
+        hostDir,
+        "--path",
+        pdfPath,
+        "--json",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      notePath: string;
+      metadataPath: string;
+      capture: { title: string };
+    };
+
+    expect(payload.capture.title).toBe("Recovered English Title");
+    expect(payload.notePath).toBe("agent-wiki/notes/pdf/recovered-english-title.md");
+    expect(payload.metadataPath).toBe("agent-wiki/notes/pdf/recovered-english-title.capture.json");
   }, 60000);
 });

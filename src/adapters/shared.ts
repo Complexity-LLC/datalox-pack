@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   autoBootstrapIfSafe,
   compileRecordedEvent,
+  patchKnowledge,
   recordLoopApplication,
   recordTurnResult,
   resolveLoop,
@@ -11,6 +12,7 @@ import {
   type RecordTurnResultInput,
   type ResolveLoopInput,
 } from "../core/packCore.js";
+import { resolveSourceRoute } from "./sourceRoutes.js";
 
 export interface LoopEnvelopeInput extends ResolveLoopInput {
   prompt?: string;
@@ -61,16 +63,38 @@ export interface WrapperPostRunInput {
   summary?: string;
   tags?: string[];
   eventKind?: string;
-  postRunMode?: "off" | "record" | "auto" | "promote";
+  postRunMode?: "off" | "record" | "auto" | "promote" | "review";
   minWikiOccurrences?: number;
   minSkillOccurrences?: number;
   sessionId?: string;
+  reviewModel?: string;
+}
+
+export interface WrapperReviewDecision {
+  action: "noop" | "persist";
+  reason: string;
+  summary?: string;
+  title?: string;
+  signal?: string;
+  interpretation?: string;
+  recommendedAction?: string;
+  observations: string[];
+  tags: string[];
+}
+
+export interface WrapperReviewResult {
+  status: "skipped" | "completed" | "failed";
+  model: string | null;
+  decision: WrapperReviewDecision | null;
+  persisted: Awaited<ReturnType<typeof patchKnowledge>> | null;
+  error?: string;
 }
 
 export interface WrapperPostRunResult {
-  mode: "off" | "record" | "promote";
+  mode: "off" | "record" | "promote" | "review";
   trigger: "disabled" | "record_only" | "explicit_signal" | "failure_exit";
   result: Awaited<ReturnType<typeof recordTurnResult>> | Awaited<ReturnType<typeof compileRecordedEvent>> | null;
+  review: WrapperReviewResult | null;
 }
 
 export interface WrappedLoopResult {
@@ -91,8 +115,32 @@ interface ParsedMarkers {
   tags: string[];
 }
 
+export interface WrapperReviewRunner {
+  kind: string;
+  model: string | null;
+  run(prompt: string, envelope: LoopEnvelope): WrappedCommandResult;
+}
+
+const CONTROL_TEXT_PATTERN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+const STORED_TRANSCRIPT_LIMITS = {
+  wrappedPrompt: 6000,
+  command: 3000,
+  stdout: 12000,
+  stderr: 12000,
+} as const;
+const REVIEW_TRANSCRIPT_LIMITS = {
+  wrappedPrompt: 4000,
+  command: 2000,
+  stdout: 6000,
+  stderr: 6000,
+} as const;
+
+function sanitizeWrappedText(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(CONTROL_TEXT_PATTERN, "");
+}
+
 export function stripDataloxMarkers(text: string): string {
-  return extractMarkers(text).cleanedText;
+  return extractMarkers(sanitizeWrappedText(text)).cleanedText;
 }
 
 function toPrompt(input: LoopEnvelopeInput): string {
@@ -251,8 +299,18 @@ export function renderWrappedPrompt(envelope: LoopEnvelope): string {
 
 export async function buildLoopEnvelope(input: LoopEnvelopeInput): Promise<LoopEnvelope> {
   const repoPath = path.resolve(input.repoPath ?? process.cwd());
+  const originalPrompt = toPrompt(input);
   const bootstrap = await autoBootstrapIfSafe({ repoPath });
+  const sourceRoute = bootstrap.probeAfter.status === "ready"
+    && !input.skill
+    && originalPrompt.trim().length > 0
+    ? await resolveSourceRoute({
+      repoPath,
+      prompt: originalPrompt,
+    })
+    : null;
   const resolution = bootstrap.probeAfter.status === "ready"
+    && !sourceRoute
     ? await resolveLoop({
       repoPath,
       task: input.task,
@@ -263,12 +321,11 @@ export async function buildLoopEnvelope(input: LoopEnvelopeInput): Promise<LoopE
       includeContent: input.includeContent,
     })
     : null;
-  const originalPrompt = toPrompt(input);
-  const guidance = summarizeResolution(resolution, input.workflow);
+  const guidance = sourceRoute?.guidance ?? summarizeResolution(resolution, input.workflow);
   const baseEnvelope = {
     repoPath,
     sessionId: input.sessionId ?? null,
-    active: resolution !== null,
+    active: sourceRoute !== null || resolution !== null,
     originalPrompt,
     resolution,
     bootstrap,
@@ -425,8 +482,8 @@ export function sanitizeWrappedCommandResult(result: WrappedCommandResult): {
   child: WrappedCommandResult;
   markers: ParsedMarkers;
 } {
-  const stdoutMarkers = extractMarkers(result.stdout);
-  const stderrMarkers = extractMarkers(result.stderr);
+  const stdoutMarkers = extractMarkers(sanitizeWrappedText(result.stdout));
+  const stderrMarkers = extractMarkers(sanitizeWrappedText(result.stderr));
   return {
     child: {
       ...result,
@@ -437,26 +494,48 @@ export function sanitizeWrappedCommandResult(result: WrappedCommandResult): {
   };
 }
 
-function buildTranscript(envelope: LoopEnvelope, child: WrappedCommandResult | null): string | undefined {
+function truncateTranscriptSection(text: string, maxChars?: number): string {
+  const sanitized = sanitizeWrappedText(text).trim();
+  if (!sanitized) {
+    return "(empty)";
+  }
+  if (!maxChars || sanitized.length <= maxChars) {
+    return sanitized;
+  }
+  const remaining = sanitized.length - maxChars;
+  return `${sanitized.slice(0, maxChars).trimEnd()}\n[truncated ${remaining} chars]`;
+}
+
+function buildTranscript(
+  envelope: LoopEnvelope,
+  child: WrappedCommandResult | null,
+  options: {
+    wrappedPrompt?: number;
+    command?: number;
+    stdout?: number;
+    stderr?: number;
+  } = {},
+): string | undefined {
   if (!child) {
-    return envelope.wrappedPrompt || undefined;
+    const wrappedPrompt = truncateTranscriptSection(envelope.wrappedPrompt, options.wrappedPrompt);
+    return wrappedPrompt === "(empty)" ? undefined : wrappedPrompt;
   }
 
   const parts = [
     "# Wrapped Prompt",
-    envelope.wrappedPrompt,
+    truncateTranscriptSection(envelope.wrappedPrompt, options.wrappedPrompt),
     "",
     "# Child Command",
-    [child.command, ...child.args].join(" "),
+    truncateTranscriptSection([child.command, ...child.args].join(" "), options.command),
     "",
     "# Exit Code",
     String(child.exitCode),
     "",
     "# Stdout",
-    child.stdout || "(empty)",
+    truncateTranscriptSection(child.stdout, options.stdout),
     "",
     "# Stderr",
-    child.stderr || "(empty)",
+    truncateTranscriptSection(child.stderr, options.stderr),
   ];
   return parts.join("\n").trim();
 }
@@ -483,10 +562,254 @@ function hasExplicitPromotionSignal(markers: ParsedMarkers): boolean {
   );
 }
 
+function collectChangedFiles(repoPath: string): string[] {
+  const status = spawnSync("git", ["status", "--short"], {
+    cwd: repoPath,
+    encoding: "utf8",
+  });
+  if (status.status !== 0) {
+    return [];
+  }
+
+  return status.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.slice(3).trim())
+    .filter(Boolean)
+    .slice(0, 25);
+}
+
+function renderReviewNotes(notes: LoopEnvelope["guidance"]["supportingNotes"]): string {
+  if (notes.length === 0) {
+    return "- none";
+  }
+
+  return notes.map((note) => {
+    const parts = [`- ${note.title} (${note.path})`];
+    if (note.action) {
+      parts.push(`  action: ${note.action}`);
+    }
+    if (note.signal) {
+      parts.push(`  signal: ${note.signal}`);
+    }
+    return parts.join("\n");
+  }).join("\n");
+}
+
+function buildReviewPrompt(
+  envelope: LoopEnvelope,
+  child: WrappedCommandResult,
+  payloadBase: RecordTurnResultInput,
+  changedFiles: string[],
+): string {
+  const transcript = buildTranscript(envelope, child, REVIEW_TRANSCRIPT_LIMITS) ?? "(empty)";
+  const observations = payloadBase.observations?.length
+    ? payloadBase.observations.map((item) => `- ${item}`).join("\n")
+    : "- none";
+  const tags = payloadBase.tags?.length
+    ? payloadBase.tags.map((item) => `- ${item}`).join("\n")
+    : "- none";
+  const changed = changedFiles.length > 0
+    ? changedFiles.map((item) => `- ${item}`).join("\n")
+    : "- none";
+
+  return [
+    "# Datalox Post-Run Review",
+    "You are a second-pass reviewer deciding whether this wrapped run produced reusable repo-local knowledge.",
+    "Persist only when the run revealed a grounded, reusable workflow, correction, or pitfall that future agents should follow.",
+    "Return action=\"noop\" for one-off work, generic success/failure logging, or guidance already covered by the matched skill/notes.",
+    "Prefer caution. Bad saves are worse than missed saves.",
+    "",
+    "Return JSON only. No markdown fences.",
+    "",
+    "{",
+    "  \"action\": \"noop\" | \"persist\",",
+    "  \"reason\": \"short reason\",",
+    "  \"summary\": \"required when action=persist\",",
+    "  \"title\": \"required when action=persist\",",
+    "  \"signal\": \"required when action=persist\",",
+    "  \"interpretation\": \"required when action=persist\",",
+    "  \"recommendedAction\": \"required when action=persist\",",
+    "  \"observations\": [\"optional concrete observations\"],",
+    "  \"tags\": [\"optional tags\"]",
+    "}",
+    "",
+    "## Current Loop Context",
+    `Task: ${payloadBase.task ?? "(missing)"}`,
+    `Workflow: ${payloadBase.workflow ?? "(missing)"}`,
+    `Matched skill: ${payloadBase.skillId ?? "none"}`,
+    `Trigger: ${child.exitCode === 0 ? "success" : "failure"}`,
+    `Exit code: ${child.exitCode}`,
+    `Selection basis: ${envelope.guidance.selectionBasis}`,
+    "",
+    "## Existing Guidance",
+    `What to do now: ${envelope.guidance.whatToDoNow.join(" | ") || "none"}`,
+    `Watch for: ${envelope.guidance.watchFor.join(" | ") || "none"}`,
+    "Supporting notes:",
+    renderReviewNotes(envelope.guidance.supportingNotes),
+    "",
+    "## Grounded Evidence",
+    "Observations:",
+    observations,
+    "Tags:",
+    tags,
+    "Changed files:",
+    changed,
+    "",
+    "## Wrapped Transcript",
+    transcript,
+  ].join("\n");
+}
+
+function tryParseJsonBlock(text: string): unknown {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Reviewer returned empty output.");
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // fall through
+  }
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    return JSON.parse(fenced[1].trim());
+  }
+
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start !== -1 && end !== -1 && end > start) {
+    return JSON.parse(trimmed.slice(start, end + 1));
+  }
+
+  throw new Error("Reviewer output did not contain a JSON object.");
+}
+
+function maybeNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function maybeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function parseReviewDecision(raw: unknown): WrapperReviewDecision {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Reviewer JSON must be an object.");
+  }
+
+  const action = (raw as { action?: unknown }).action;
+  if (action !== "noop" && action !== "persist") {
+    throw new Error("Reviewer action must be 'noop' or 'persist'.");
+  }
+
+  const reason = maybeNonEmptyString((raw as { reason?: unknown }).reason);
+  if (!reason) {
+    throw new Error("Reviewer reason is required.");
+  }
+
+  const decision: WrapperReviewDecision = {
+    action,
+    reason,
+    summary: maybeNonEmptyString((raw as { summary?: unknown }).summary),
+    title: maybeNonEmptyString((raw as { title?: unknown }).title),
+    signal: maybeNonEmptyString((raw as { signal?: unknown }).signal),
+    interpretation: maybeNonEmptyString((raw as { interpretation?: unknown }).interpretation),
+    recommendedAction: maybeNonEmptyString((raw as { recommendedAction?: unknown }).recommendedAction),
+    observations: maybeStringArray((raw as { observations?: unknown }).observations),
+    tags: maybeStringArray((raw as { tags?: unknown }).tags),
+  };
+
+  if (decision.action === "persist") {
+    if (!decision.summary || !decision.title || !decision.signal || !decision.interpretation || !decision.recommendedAction) {
+      throw new Error("Persist decisions must include summary, title, signal, interpretation, and recommendedAction.");
+    }
+  }
+
+  return decision;
+}
+
+async function runSecondPassReview(
+  envelope: LoopEnvelope,
+  child: WrappedCommandResult,
+  payloadBase: RecordTurnResultInput,
+  reviewer: WrapperReviewRunner | null | undefined,
+  changedFiles: string[],
+): Promise<WrapperReviewResult> {
+  if (!reviewer) {
+    return {
+      status: "skipped",
+      model: null,
+      decision: null,
+      persisted: null,
+      error: "No autonomous reviewer is configured for this wrapper path.",
+    };
+  }
+
+  try {
+    const prompt = buildReviewPrompt(envelope, child, payloadBase, changedFiles);
+    const reviewRun = reviewer.run(prompt, envelope);
+    if (reviewRun.exitCode !== 0) {
+      return {
+        status: "failed",
+        model: reviewer.model,
+        decision: null,
+        persisted: null,
+        error: reviewRun.stderr.trim() || `Reviewer exited with code ${reviewRun.exitCode}.`,
+      };
+    }
+
+    const decision = parseReviewDecision(tryParseJsonBlock(reviewRun.stdout));
+    const persisted = decision.action === "persist"
+      ? await patchKnowledge({
+        repoPath: envelope.repoPath,
+        task: payloadBase.task,
+        workflow: payloadBase.workflow,
+        step: payloadBase.step,
+        skillId: payloadBase.skillId,
+        summary: decision.summary,
+        observations: decision.observations,
+        transcript: payloadBase.transcript,
+        tags: [...(payloadBase.tags ?? []), ...decision.tags],
+        title: decision.title,
+        signal: decision.signal,
+        interpretation: decision.interpretation,
+        recommendedAction: decision.recommendedAction,
+      })
+      : null;
+
+    return {
+      status: "completed",
+      model: reviewer.model,
+      decision,
+      persisted,
+    };
+  } catch (error) {
+    return {
+      status: "failed",
+      model: reviewer.model,
+      decision: null,
+      persisted: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export async function finalizeWrappedRun(
   envelope: LoopEnvelope,
   child: WrappedCommandResult | null,
-  input: WrapperPostRunInput & { hostKind: string },
+  input: WrapperPostRunInput & { hostKind: string; reviewer?: WrapperReviewRunner | null },
 ): Promise<WrapperPostRunResult> {
   const postRunMode = input.postRunMode ?? "auto";
   if (!child || !envelope.active) {
@@ -494,11 +817,13 @@ export async function finalizeWrappedRun(
       mode: "off",
       trigger: "disabled",
       result: null,
+      review: null,
     };
   }
 
   const sanitized = sanitizeWrappedCommandResult(child);
   const markers = sanitized.markers;
+  const changedFiles = collectChangedFiles(envelope.repoPath);
   const trigger = hasExplicitPromotionSignal(markers)
     ? "explicit_signal"
     : sanitized.child.exitCode !== 0
@@ -524,7 +849,8 @@ export async function finalizeWrappedRun(
         firstNonEmptyLine(sanitized.child.stdout),
       ]),
     observations,
-    transcript: buildTranscript(envelope, sanitized.child),
+    transcript: buildTranscript(envelope, sanitized.child, STORED_TRANSCRIPT_LIMITS),
+    changedFiles,
     matchedNotePaths: envelope.guidance.supportingNotes.map((note) => note.path),
     tags: [
       ...(input.tags ?? []),
@@ -558,6 +884,21 @@ export async function finalizeWrappedRun(
     });
   }
 
+  if (postRunMode === "review") {
+    return {
+      mode: "review",
+      trigger,
+      result: recorded,
+      review: await runSecondPassReview(
+        envelope,
+        sanitized.child,
+        payloadBase,
+        input.reviewer,
+        changedFiles,
+      ),
+    };
+  }
+
   const shouldCompile = postRunMode !== "off" && postRunMode !== "record";
   const result = shouldCompile
     ? await compileRecordedEvent({
@@ -572,5 +913,6 @@ export async function finalizeWrappedRun(
     mode: shouldCompile ? "promote" : "record",
     trigger,
     result,
+    review: null,
   };
 }

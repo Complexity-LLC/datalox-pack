@@ -4,12 +4,15 @@ import {
   runWrappedCommand,
   sanitizeWrappedCommandResult,
   type LoopEnvelopeInput,
+  type LoopEnvelope,
+  type WrapperReviewRunner,
   type WrapperPostRunInput,
 } from "../shared.js";
 
 export interface ClaudeWrapperInput extends LoopEnvelopeInput, WrapperPostRunInput {
   claudeBin?: string;
   claudeArgs?: string[];
+  reviewModel?: string;
 }
 
 const CLAUDE_OPTIONS_WITH_VALUES = new Set([
@@ -85,6 +88,29 @@ function inferPromptFromClaudeArgs(args: string[]): string | undefined {
   return promptIndex === -1 ? undefined : args[promptIndex];
 }
 
+function buildClaudeReviewer(
+  claudeBin: string,
+  reviewModel: string | undefined,
+): WrapperReviewRunner {
+  return {
+    kind: "claude",
+    model: reviewModel ?? null,
+    run(prompt: string, envelope: LoopEnvelope) {
+      const reviewArgs = [
+        ...(reviewModel ? ["--model", reviewModel] : []),
+        "--print",
+        prompt,
+      ];
+      return runWrappedCommand(claudeBin, reviewArgs, envelope, {
+        cwd: envelope.repoPath,
+        env: {
+          DATALOX_REVIEW_PASS: "1",
+        },
+      });
+    },
+  };
+}
+
 export async function runClaudeWrapper(input: ClaudeWrapperInput) {
   const claudeBin = input.claudeBin ?? process.env.DATALOX_CLAUDE_BIN ?? "claude";
   const claudeArgs = input.claudeArgs && input.claudeArgs.length > 0
@@ -127,6 +153,8 @@ export async function runClaudeWrapper(input: ClaudeWrapperInput) {
       postRunMode: input.postRunMode,
       minWikiOccurrences: input.minWikiOccurrences,
       minSkillOccurrences: input.minSkillOccurrences,
+      reviewModel: input.reviewModel,
+      reviewer: buildClaudeReviewer(claudeBin, input.reviewModel),
     }),
   };
 }

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 
 const repoRoot = process.cwd();
 const builtCliPath = path.join(repoRoot, "dist", "src", "cli", "main.js");
@@ -32,6 +33,23 @@ describe("wrapper surfaces", () => {
       encoding: "utf8",
     });
     expect(result.status).toBe(0);
+  }
+
+  async function createSamplePdf(rootDir: string, title: string): Promise<string> {
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const first = pdf.addPage([612, 792]);
+    first.drawText(title, { x: 48, y: 740, size: 24, font });
+    first.drawText("Key finding one.", { x: 48, y: 700, size: 12, font });
+    first.drawText("Key finding two.", { x: 48, y: 680, size: 12, font });
+
+    const second = pdf.addPage([612, 792]);
+    second.drawText("Method", { x: 48, y: 740, size: 24, font });
+    second.drawText("Evidence stays grounded in the document.", { x: 48, y: 700, size: 12, font });
+
+    const pdfPath = path.join(rootDir, `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`);
+    await writeFile(pdfPath, await pdf.save());
+    return pdfPath;
   }
 
   it("builds a wrapped prompt for fallback CLI hosts", async () => {
@@ -339,6 +357,63 @@ describe("wrapper surfaces", () => {
     expect(parsed.args[2]).toContain("Update the pack docs to mention wrappers.");
   }, 20000);
 
+  it("routes concrete PDF paths through repo-local PDF capture before generic skill resolution", async () => {
+    const hostDir = await adoptHostRepo();
+    const externalDir = await mkdtemp(path.join(tmpdir(), "datalox-wrapper-pdf-source-"));
+    tempDirs.push(externalDir);
+    const pdfPath = await createSamplePdf(externalDir, "Wrapped Source PDF");
+    const fakeCodexPath = path.join(hostDir, "fake-codex-pdf.sh");
+    await writeFile(
+      fakeCodexPath,
+      "#!/usr/bin/env bash\nnode -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL, workflow: process.env.DATALOX_WORKFLOW, selectionBasis: process.env.DATALOX_SELECTION_BASIS}))' \"$@\"\n",
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--codex-bin",
+        fakeCodexPath,
+        "--",
+        "exec",
+        `Please read ${pdfPath} and give me a short summary.`,
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    const wrappedPrompt = parsed.args.join("\n");
+    expect(parsed.skill).toBe("");
+    expect(parsed.workflow).toBe("pdf_capture");
+    expect(parsed.selectionBasis).toBe("source_kind_pdf");
+    expect(wrappedPrompt).toContain("Workflow: pdf_capture");
+    expect(wrappedPrompt).toContain("agent-wiki/notes/pdf/wrapped-source-pdf.md");
+
+    const capturedNotePath = path.join(hostDir, "agent-wiki", "notes", "pdf", "wrapped-source-pdf.md");
+    const capturedNote = await readFile(capturedNotePath, "utf8");
+    expect(capturedNote).toContain("# Wrapped Source PDF");
+    expect(capturedNote).toContain("## Evidence");
+
+    const eventFiles = await readdir(path.join(hostDir, "agent-wiki", "events"));
+    expect(eventFiles.length).toBe(1);
+    const eventPayload = JSON.parse(
+      await readFile(path.join(hostDir, "agent-wiki", "events", eventFiles[0]), "utf8"),
+    );
+    expect(eventPayload.workflow).toBe("pdf_capture");
+    expect(eventPayload.matchedSkillId).toBeNull();
+    expect(eventPayload.matchedNotePaths).toContain("agent-wiki/notes/pdf/wrapped-source-pdf.md");
+    expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("capture_pdf_artifact");
+  }, 60000);
+
   it("sanitizes Codex output files when the child uses -o", async () => {
     const hostDir = await adoptHostRepo();
     const fakeCodexPath = path.join(hostDir, "fake-codex-output.sh");
@@ -528,6 +603,245 @@ EOF
     expect(logFile).toContain("update_skill");
     expect(patchedSkill).toContain("agent-wiki/notes/");
   }, 60000);
+
+  it("runs a second-pass Codex reviewer and persists reusable knowledge when review mode is enabled", async () => {
+    const hostDir = await adoptHostRepo();
+    const fakeCodexPath = path.join(hostDir, "fake-codex-review.sh");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env bash
+node - <<'EOF' "$@"
+const args = process.argv.slice(2);
+const prompt = args[args.length - 1] || "";
+if (process.env.DATALOX_REVIEW_PASS === "1" || prompt.includes("# Datalox Post-Run Review")) {
+  process.stdout.write(JSON.stringify({
+    action: "persist",
+    reason: "the wrapped run discovered a reusable onboarding correction",
+    summary: "Codex wrapper runs should expose a committed onboarding bootstrap path",
+    title: "Committed onboarding bootstrap path",
+    signal: "the repo relied on hidden setup instead of a committed bootstrap step",
+    interpretation: "future agents will repeat the same onboarding mistake unless the workflow is written down",
+    recommendedAction: "add the committed bootstrap command to the repo guidance before autonomous edits",
+    observations: ["wrapped coding run had to reconstruct onboarding from scratch"],
+    tags: ["reviewed", "autonomous_review"]
+  }));
+} else {
+  process.stdout.write("Updated the onboarding docs and bootstrap guidance.");
+}
+EOF
+`,
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--task",
+        "change portable pack loop bridge",
+        "--workflow",
+        "repo_engineering",
+        "--post-run-mode",
+        "review",
+        "--review-model",
+        "gpt-5.4-mini",
+        "--codex-bin",
+        fakeCodexPath,
+        "--json",
+        "--",
+        "exec",
+        "Update the onboarding docs and bootstrap guidance.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.child.stdout).toBe("Updated the onboarding docs and bootstrap guidance.");
+    expect(parsed.postRun.mode).toBe("review");
+    expect(parsed.postRun.review.status).toBe("completed");
+    expect(parsed.postRun.review.model).toBe("gpt-5.4-mini");
+    expect(parsed.postRun.review.decision.action).toBe("persist");
+    expect(parsed.postRun.review.persisted.skill.operation).toBe("update_skill");
+    expect(parsed.postRun.review.persisted.note.relativePath).toContain("agent-wiki/notes/");
+    const logFile = await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8");
+    expect(logFile).toContain("record_event");
+    expect(logFile).toContain("update_skill");
+  }, 30000);
+
+  it("sanitizes wrapped transcripts before recording and review so null-byte stderr cannot break the reviewer", async () => {
+    const hostDir = await adoptHostRepo();
+    const fakeCodexPath = path.join(hostDir, "fake-codex-sanitized-review.sh");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env bash
+node - <<'EOF' "$@"
+const args = process.argv.slice(2);
+const prompt = args[args.length - 1] || "";
+if (process.env.DATALOX_REVIEW_PASS === "1" || prompt.includes("# Datalox Post-Run Review")) {
+  process.stdout.write(JSON.stringify({
+    action: "noop",
+    reason: "sanitized transcript remained safe for reviewer input"
+  }));
+} else {
+  process.stdout.write("Visible wrapped answer");
+  process.stderr.write("binary prefix \\u0000 survives raw output\\n" + "E".repeat(15000));
+}
+EOF
+`,
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--post-run-mode",
+        "review",
+        "--review-model",
+        "gpt-5.4-mini",
+        "--codex-bin",
+        fakeCodexPath,
+        "--json",
+        "--",
+        "exec",
+        "Inspect the wrapped output and keep the reviewer alive.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.child.stdout).toBe("Visible wrapped answer");
+    expect(parsed.child.stderr).not.toContain("\u0000");
+    expect(parsed.postRun.mode).toBe("review");
+    expect(parsed.postRun.review.status).toBe("completed");
+    expect(parsed.postRun.review.decision.action).toBe("noop");
+
+    const eventFiles = await readdir(path.join(hostDir, "agent-wiki", "events"));
+    expect(eventFiles.length).toBe(1);
+    const eventPayload = JSON.parse(
+      await readFile(path.join(hostDir, "agent-wiki", "events", eventFiles[0]), "utf8"),
+    );
+    expect(eventPayload.transcript).not.toContain("\u0000");
+    expect(eventPayload.transcript).toContain("[truncated ");
+  }, 30000);
+
+  it("reports review mode as unavailable for generic wrapped commands", async () => {
+    const hostDir = await adoptHostRepo();
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "wrap",
+        "command",
+        "--repo",
+        hostDir,
+        "--task",
+        "review ambiguous live dead gate",
+        "--workflow",
+        "flow_cytometry",
+        "--post-run-mode",
+        "review",
+        "--json",
+        "--",
+        "node",
+        "-e",
+        "process.stdout.write('plain wrapped answer')",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.postRun.mode).toBe("review");
+    expect(parsed.postRun.review.status).toBe("skipped");
+    expect(parsed.postRun.review.error).toContain("No autonomous reviewer is configured");
+  }, 20000);
+
+  it("uses environment defaults so wrapped Codex runs do not need explicit review flags", async () => {
+    const hostDir = await adoptHostRepo();
+    const fakeCodexPath = path.join(hostDir, "fake-codex-env-review.sh");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env bash
+node - <<'EOF' "$@"
+const args = process.argv.slice(2);
+const prompt = args[args.length - 1] || "";
+if (process.env.DATALOX_REVIEW_PASS === "1" || prompt.includes("# Datalox Post-Run Review")) {
+  process.stdout.write(JSON.stringify({
+    action: "persist",
+    reason: "the wrapped run exposed a reusable docs correction",
+    summary: "Document the committed bootstrap path before agent edits",
+    title: "Document committed bootstrap path",
+    signal: "agents had to infer bootstrap state from repo history",
+    interpretation: "future runs will repeat the same onboarding mistake unless the path is written down",
+    recommendedAction: "record the committed bootstrap command in repo guidance",
+    observations: ["wrapped codex run reconstructed bootstrap from scratch"],
+    tags: ["reviewed", "env_default"]
+  }));
+} else {
+  process.stdout.write("Updated onboarding guidance.");
+}
+EOF
+`,
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--task",
+        "change portable pack loop bridge",
+        "--workflow",
+        "repo_engineering",
+        "--codex-bin",
+        fakeCodexPath,
+        "--json",
+        "--",
+        "exec",
+        "Update onboarding guidance.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          DATALOX_DEFAULT_POST_RUN_MODE: "review",
+          DATALOX_DEFAULT_REVIEW_MODEL: "gpt-5.4-mini",
+        },
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.postRun.mode).toBe("review");
+    expect(parsed.postRun.review.status).toBe("completed");
+    expect(parsed.postRun.review.model).toBe("gpt-5.4-mini");
+    expect(parsed.postRun.review.decision.action).toBe("persist");
+  }, 30000);
 
   it("copies wrapper entrypoints and skills into adopted host repos", async () => {
     const hostDir = await adoptHostRepo();

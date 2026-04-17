@@ -54,6 +54,8 @@ export async function runGenericWrapper(input: GenericWrapInput): Promise<Generi
       postRunMode: input.postRunMode,
       minWikiOccurrences: input.minWikiOccurrences,
       minSkillOccurrences: input.minSkillOccurrences,
+      reviewModel: input.reviewModel,
+      reviewer: null,
     }),
   };
 }

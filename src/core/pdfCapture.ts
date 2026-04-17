@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { PDFParse } from "pdf-parse";
@@ -39,19 +39,47 @@ export interface CapturePdfResult {
     title: string;
     pageCount: number;
     headings: string[];
+    textSnippets: string[];
   };
 }
+
+export interface PdfCaptureNoteSummary {
+  title: string;
+  notePath: string;
+  whenToUse: string;
+  signal: string;
+  interpretation: string;
+  action: string;
+  examples: string[];
+}
+
+const CONTROL_TEXT_PATTERN = /[\u0000-\u001F\u007F]/g;
 
 function resolveRepoPath(repoPath?: string): string {
   return path.resolve(repoPath ?? process.cwd());
 }
 
 function slugify(value: string): string {
-  return value
+  const normalized = normalizeTitleCandidate(value);
+  if (!normalized) {
+    return "";
+  }
+  return normalized
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
+}
+
+function normalizeTitleCandidate(value?: string | null): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value
+    .replace(CONTROL_TEXT_PATTERN, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized.length > 0 ? normalized : null;
 }
 
 function chooseTitle(input: {
@@ -61,10 +89,10 @@ function chooseTitle(input: {
   sourcePath: string;
   slug: string;
 }): string {
-  return input.explicitTitle?.trim()
-    || input.parsedTitle?.trim()
-    || input.extractedTitle?.trim()
-    || path.basename(input.sourcePath, path.extname(input.sourcePath))
+  return normalizeTitleCandidate(input.explicitTitle)
+    || normalizeTitleCandidate(input.parsedTitle)
+    || normalizeTitleCandidate(input.extractedTitle)
+    || normalizeTitleCandidate(path.basename(input.sourcePath, path.extname(input.sourcePath)))
     || input.slug;
 }
 
@@ -99,12 +127,38 @@ function readableList(items: string[]): string {
 
 function firstNonEmptyLine(value: string): string | null {
   for (const line of value.split(/\r?\n/)) {
-    const normalized = line.replace(/\s+/g, " ").trim();
+    const normalized = normalizeTitleCandidate(line);
     if (normalized) {
       return normalized;
     }
   }
   return null;
+}
+
+function chooseSlug(input: {
+  explicitSlug?: string;
+  explicitTitle?: string;
+  parsedTitle?: string | null;
+  extractedTitle?: string | null;
+  sourcePath: string;
+}): string {
+  const candidates = [
+    input.explicitSlug,
+    input.explicitTitle,
+    input.parsedTitle,
+    input.extractedTitle,
+    path.basename(input.sourcePath, path.extname(input.sourcePath)),
+  ]
+    .map((value) => normalizeTitleCandidate(value))
+    .filter((value): value is string => value !== null);
+
+  for (const candidate of candidates) {
+    const slug = slugify(candidate);
+    if (slug) {
+      return slug;
+    }
+  }
+  return "document";
 }
 
 async function ensurePackReady(repoPath: string): Promise<void> {
@@ -131,12 +185,7 @@ function renderPdfNote(input: {
   sections: Array<{ title: string; text: string }>;
   textSnippets: string[];
 }): string {
-  const keyHeadings = input.headings.slice(0, 3);
-  const keySnippets = input.textSnippets.slice(0, 3);
-  const headingPhrase = keyHeadings.length > 0
-    ? readableList(keyHeadings)
-    : `${input.pageCount} extracted PDF page${input.pageCount === 1 ? "" : "s"}`;
-  const sourceDescriptor = input.sourceUrl ?? input.sourcePath;
+  const summary = buildPdfCaptureNoteSummary(input);
 
   return [
     "---",
@@ -155,25 +204,23 @@ function renderPdfNote(input: {
     "",
     "## When to Use",
     "",
-    `Use this note when the task depends on claims, terminology, or structure from ${input.title}.`,
+    summary.whenToUse,
     "",
     "## Signal",
     "",
-    `Captured ${input.pageCount} page(s) from ${sourceDescriptor}, centered on ${headingPhrase}.`,
+    summary.signal,
     "",
     "## Interpretation",
     "",
-    keySnippets.length > 0
-      ? `The document's reusable value is concentrated in ${headingPhrase}, with concrete excerpts such as "${keySnippets[0]}".`
-      : `The document's reusable value is concentrated in ${headingPhrase}.`,
+    summary.interpretation,
     "",
     "## Action",
     "",
-    `Use the extracted headings, snippets, and page structure below before summarizing, citing, or turning ${input.title} into implementation guidance.`,
+    summary.action,
     "",
     "## Examples",
     "",
-    ...formatList(input.textSnippets.slice(0, 5), "No extracted examples."),
+    ...formatList(summary.examples, "No extracted examples."),
     "",
     "## Evidence",
     "",
@@ -197,10 +244,137 @@ function renderPdfNote(input: {
   ].join("\n");
 }
 
-export async function capturePdfArtifact(input: CapturePdfInput): Promise<CapturePdfResult> {
-  const repoPath = resolveRepoPath(input.repoPath);
-  await ensurePackReady(repoPath);
+function buildPdfCaptureNoteSummary(input: {
+  title: string;
+  sourcePath: string;
+  sourceUrl: string | null;
+  notePath: string;
+  pageCount: number;
+  headings: string[];
+  textSnippets: string[];
+}): PdfCaptureNoteSummary {
+  const keyHeadings = input.headings.slice(0, 3);
+  const keySnippets = input.textSnippets.slice(0, 3);
+  const headingPhrase = keyHeadings.length > 0
+    ? readableList(keyHeadings)
+    : `${input.pageCount} extracted PDF page${input.pageCount === 1 ? "" : "s"}`;
+  const sourceDescriptor = input.sourceUrl ?? input.sourcePath;
 
+  return {
+    title: input.title,
+    notePath: input.notePath,
+    whenToUse: `Use this note when the task depends on claims, terminology, or structure from ${input.title}.`,
+    signal: `Captured ${input.pageCount} page(s) from ${sourceDescriptor}, centered on ${headingPhrase}.`,
+    interpretation: keySnippets.length > 0
+      ? `The document's reusable value is concentrated in ${headingPhrase}, with concrete excerpts such as "${keySnippets[0]}".`
+      : `The document's reusable value is concentrated in ${headingPhrase}.`,
+    action: `Use the extracted headings, snippets, and page structure below before summarizing, citing, or turning ${input.title} into implementation guidance.`,
+    examples: input.textSnippets.slice(0, 5),
+  };
+}
+
+export function describeCapturedPdfNote(input: CapturePdfResult): PdfCaptureNoteSummary {
+  return buildPdfCaptureNoteSummary({
+    title: input.capture.title,
+    sourcePath: input.sourcePath,
+    sourceUrl: input.sourceUrl,
+    notePath: input.notePath,
+    pageCount: input.capture.pageCount,
+    headings: input.capture.headings,
+    textSnippets: input.capture.textSnippets,
+  });
+}
+
+interface StoredPdfCapture {
+  relativeMetadataPath: string;
+  absoluteMetadataPath: string;
+  metadata: PdfCaptureMetadata;
+}
+
+async function readStoredPdfCaptures(repoPath: string): Promise<StoredPdfCapture[]> {
+  const noteDir = path.join(repoPath, "agent-wiki", "notes", "pdf");
+  try {
+    const entries = await readdir(noteDir);
+    const loaded = await Promise.all(
+      entries
+        .filter((entry) => entry.endsWith(".capture.json"))
+        .map(async (entry) => {
+          const absoluteMetadataPath = path.join(noteDir, entry);
+          try {
+            const parsed = JSON.parse(await readFile(absoluteMetadataPath, "utf8")) as Partial<PdfCaptureMetadata>;
+            if (
+              parsed.version !== 1
+              || typeof parsed.sourcePath !== "string"
+              || typeof parsed.notePath !== "string"
+              || typeof parsed.title !== "string"
+              || typeof parsed.pageCount !== "number"
+              || !Array.isArray(parsed.headings)
+              || !Array.isArray(parsed.textSnippets)
+            ) {
+              return null;
+            }
+            return {
+              relativeMetadataPath: path.relative(repoPath, absoluteMetadataPath) || absoluteMetadataPath,
+              absoluteMetadataPath,
+              metadata: parsed as PdfCaptureMetadata,
+            };
+          } catch {
+            return null;
+          }
+        }),
+    );
+    return loaded.filter((entry): entry is StoredPdfCapture => entry !== null);
+  } catch {
+    return [];
+  }
+}
+
+async function isStoredPdfCaptureFresh(
+  absolutePdfPath: string,
+  absoluteMetadataPath: string,
+  absoluteNotePath: string,
+): Promise<boolean> {
+  try {
+    const [sourceStats, metadataStats, noteStats] = await Promise.all([
+      stat(absolutePdfPath),
+      stat(absoluteMetadataPath),
+      stat(absoluteNotePath),
+    ]);
+    return metadataStats.mtimeMs >= sourceStats.mtimeMs && noteStats.mtimeMs >= sourceStats.mtimeMs;
+  } catch {
+    return false;
+  }
+}
+
+async function findStoredPdfCapture(repoPath: string, absolutePdfPath: string): Promise<CapturePdfResult | null> {
+  const normalizedSourcePath = normalizeRepoPath(repoPath, absolutePdfPath);
+  const storedCaptures = await readStoredPdfCaptures(repoPath);
+  for (const entry of storedCaptures) {
+    if (entry.metadata.sourcePath !== normalizedSourcePath) {
+      continue;
+    }
+    const absoluteNotePath = path.resolve(repoPath, entry.metadata.notePath);
+    if (!await isStoredPdfCaptureFresh(absolutePdfPath, entry.absoluteMetadataPath, absoluteNotePath)) {
+      continue;
+    }
+    return {
+      repoPath,
+      sourcePath: entry.metadata.sourcePath,
+      sourceUrl: entry.metadata.sourceUrl ?? null,
+      notePath: entry.metadata.notePath,
+      metadataPath: entry.relativeMetadataPath,
+      capture: {
+        title: entry.metadata.title,
+        pageCount: entry.metadata.pageCount,
+        headings: entry.metadata.headings,
+        textSnippets: entry.metadata.textSnippets,
+      },
+    };
+  }
+  return null;
+}
+
+async function capturePdfArtifactPrepared(repoPath: string, input: CapturePdfInput): Promise<CapturePdfResult> {
   const absolutePdfPath = path.resolve(input.path);
   const pdfBuffer = await readFile(absolutePdfPath);
   const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) });
@@ -213,13 +387,13 @@ export async function capturePdfArtifact(input: CapturePdfInput): Promise<Captur
       .map((page) => firstNonEmptyLine(page.text))
       .find(Boolean) ?? null;
 
-    const sourceSlug = slugify(
-      input.slug
-        ?? input.title
-        ?? infoResult.info?.Title
-        ?? extractedTitle
-        ?? path.basename(absolutePdfPath, path.extname(absolutePdfPath)),
-    );
+    const sourceSlug = chooseSlug({
+      explicitSlug: input.slug,
+      explicitTitle: input.title,
+      parsedTitle: infoResult.info?.Title,
+      extractedTitle,
+      sourcePath: absolutePdfPath,
+    });
     const title = chooseTitle({
       explicitTitle: input.title,
       parsedTitle: infoResult.info?.Title,
@@ -301,9 +475,27 @@ export async function capturePdfArtifact(input: CapturePdfInput): Promise<Captur
         title,
         pageCount: textResult.total,
         headings: bundle.structure.headings,
+        textSnippets: bundle.evidence.textSnippets,
       },
     };
   } finally {
     await parser.destroy();
   }
+}
+
+export async function capturePdfArtifact(input: CapturePdfInput): Promise<CapturePdfResult> {
+  const repoPath = resolveRepoPath(input.repoPath);
+  await ensurePackReady(repoPath);
+  return capturePdfArtifactPrepared(repoPath, input);
+}
+
+export async function ensurePdfArtifact(input: CapturePdfInput): Promise<CapturePdfResult> {
+  const repoPath = resolveRepoPath(input.repoPath);
+  await ensurePackReady(repoPath);
+  const absolutePdfPath = path.resolve(input.path);
+  const existing = await findStoredPdfCapture(repoPath, absolutePdfPath);
+  if (existing) {
+    return existing;
+  }
+  return capturePdfArtifactPrepared(repoPath, input);
 }
