@@ -5,7 +5,6 @@ import {
   lintLocalPack,
   patchKnowledge,
   promoteGap,
-  promoteNote,
   recordTurnResult,
   resolveLoop,
 } from "../core/packCore.js";
@@ -688,39 +687,6 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
     async run(input) {
       return lintLocalPack({
         repoPath: maybeString(input.repoPath),
-      });
-    },
-  },
-  {
-    cliCommand: "promote",
-    mcpTool: "promote_note",
-    description: "Promote a note up the knowledge stack: to researcher (~/.datalox/researcher/notes/) or domain (~/.datalox/domains/<name>/notes/). Use 'researcher' or 'domain:<name>' as the target.",
-    args: [
-      repoPathArg,
-      {
-        key: "notePath",
-        description: "Path to the note file to promote (relative to repo or absolute).",
-        kind: "string",
-        cliFlag: "note",
-        mcpKey: "note_path",
-        cliRequired: true,
-        mcpRequired: true,
-      },
-      {
-        key: "to",
-        description: "Promotion target: 'researcher' or 'domain:<name>' (e.g. 'domain:flow_cytometry').",
-        kind: "string",
-        cliFlag: "to",
-        mcpKey: "to",
-        cliRequired: true,
-        mcpRequired: true,
-      },
-    ],
-    async run(input) {
-      return promoteNote({
-        repoPath: maybeString(input.repoPath),
-        notePath: maybeString(input.notePath) ?? "",
-        to: maybeString(input.to) ?? "",
       });
     },
   },

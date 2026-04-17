@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { runInNewContext } from "node:vm";
@@ -28,10 +27,6 @@ const DEFAULT_COMPARISON_DIR = `${DEFAULT_WIKI_DIR}/comparisons`;
 const DEFAULT_QUESTION_DIR = `${DEFAULT_WIKI_DIR}/questions`;
 const DEFAULT_EVENTS_DIR = `${DEFAULT_WIKI_DIR}/events`;
 const WIKI_PAGE_TYPES = ["note", "meta", "source", "concept", "comparison", "question"];
-
-const GLOBAL_ROOT = path.join(os.homedir(), ".datalox");
-const RESEARCHER_NOTES_DIR = path.join(GLOBAL_ROOT, "researcher", "notes");
-const DOMAINS_ROOT = path.join(GLOBAL_ROOT, "domains");
 
 async function fileExists(filePath) {
   try {
@@ -755,8 +750,6 @@ export function resolvePackPaths(config, options = {}) {
     seedConceptsDir: path.resolve(seedRoot, DEFAULT_CONCEPT_DIR),
     seedComparisonsDir: path.resolve(seedRoot, DEFAULT_COMPARISON_DIR),
     seedQuestionsDir: path.resolve(seedRoot, DEFAULT_QUESTION_DIR),
-    researcherNotesDir: RESEARCHER_NOTES_DIR,
-    domainsRoot: DOMAINS_ROOT,
   };
 }
 
@@ -918,24 +911,9 @@ async function listSkillEntries(config, cwd = process.cwd(), sourcePath) {
   );
 }
 
-async function listDomainNotesDirs(domainsRoot, workflow) {
-  if (!(await fileExists(domainsRoot))) {
-    return [];
-  }
-  const entries = await readdir(domainsRoot, { withFileTypes: true });
-  const domainDirs = entries
-    .filter((e) => e.isDirectory())
-    .filter((e) => !workflow || e.name === workflow || workflow.startsWith(e.name) || e.name.startsWith(workflow));
-  return domainDirs.map((e) => ({
-    domain: e.name,
-    notesDir: path.join(domainsRoot, e.name, "notes"),
-  }));
-}
-
 async function listWikiEntries(config, cwd = process.cwd(), sourcePath) {
   const paths = resolvePackPaths(config, { cwd, sourcePath });
   const merged = new Map();
-  const workflow = config.runtime?.defaultWorkflow;
   const dirSpecs = [
     {
       pageType: "note",
@@ -974,9 +952,6 @@ async function listWikiEntries(config, cwd = process.cwd(), sourcePath) {
     },
   ];
 
-  // Collect domain and researcher dirs once (shared across all dirSpecs)
-  const domainDirs = await listDomainNotesDirs(paths.domainsRoot, workflow);
-
   for (const spec of dirSpecs) {
     const useSameDir = pathKey(spec.hostDir) === pathKey(spec.seedDir);
     const [seedEntries, hostEntries] = await Promise.all([
@@ -984,7 +959,6 @@ async function listWikiEntries(config, cwd = process.cwd(), sourcePath) {
       readDirMarkdown(spec.hostDir),
     ]);
 
-    // Tier 1: seed (lowest priority)
     for (const filePath of seedEntries) {
       const relativePath = normalizePath(path.relative(paths.seedRoot, filePath));
       merged.set(relativePath, {
@@ -996,40 +970,6 @@ async function listWikiEntries(config, cwd = process.cwd(), sourcePath) {
       });
     }
 
-    // Tier 2: domain (only for notes, filtered by workflow)
-    if (spec.pageType === "note") {
-      for (const { domain, notesDir } of domainDirs) {
-        const domainEntries = await readDirMarkdown(notesDir);
-        for (const filePath of domainEntries) {
-          const relativePath = normalizePath(`${domain}/${path.basename(filePath)}`);
-          merged.set(`domain:${relativePath}`, {
-            filePath,
-            relativePath: normalizePath(path.relative(paths.hostRoot, filePath).startsWith("..") ? filePath : path.relative(paths.hostRoot, filePath)),
-            origin: "domain",
-            domain,
-            repoRoot: notesDir,
-            pageType: spec.pageType,
-          });
-        }
-      }
-    }
-
-    // Tier 3: researcher (only for notes)
-    if (spec.pageType === "note") {
-      const researcherEntries = await readDirMarkdown(paths.researcherNotesDir);
-      for (const filePath of researcherEntries) {
-        const relativePath = normalizePath(`researcher/${path.basename(filePath)}`);
-        merged.set(`researcher:${relativePath}`, {
-          filePath,
-          relativePath,
-          origin: "researcher",
-          repoRoot: paths.researcherNotesDir,
-          pageType: spec.pageType,
-        });
-      }
-    }
-
-    // Tier 4: host/project (highest priority)
     for (const filePath of hostEntries) {
       const relativePath = normalizePath(path.relative(paths.hostRoot, filePath));
       merged.set(relativePath, {
@@ -3524,43 +3464,6 @@ export async function learnFromInteraction(
     skill,
     resolution,
     pattern: note,
-  };
-}
-
-export async function promoteNote({ notePath, to }, cwd = process.cwd()) {
-  if (!notePath || !to) {
-    throw new Error("promoteNote requires notePath and to (researcher | domain:<name>)");
-  }
-
-  const absNotePath = path.isAbsolute(notePath)
-    ? notePath
-    : path.resolve(cwd, notePath);
-
-  if (!(await fileExists(absNotePath))) {
-    throw new Error(`Note not found: ${absNotePath}`);
-  }
-
-  let destDir;
-  if (to === "researcher") {
-    destDir = RESEARCHER_NOTES_DIR;
-  } else if (to.startsWith("domain:")) {
-    const domain = to.slice("domain:".length);
-    if (!domain) {
-      throw new Error("domain name must follow domain: prefix");
-    }
-    destDir = path.join(DOMAINS_ROOT, domain, "notes");
-  } else {
-    throw new Error(`Unknown promotion target: ${to}. Use "researcher" or "domain:<name>"`);
-  }
-
-  await mkdir(destDir, { recursive: true });
-  const destPath = path.join(destDir, path.basename(absNotePath));
-  await cp(absNotePath, destPath);
-
-  return {
-    sourcePath: absNotePath,
-    destPath,
-    target: to,
   };
 }
 
