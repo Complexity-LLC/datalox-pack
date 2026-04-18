@@ -1805,6 +1805,7 @@ function parseWikiDoc(relativePath, content, includeContent) {
     author: frontmatter.author ?? metadata.author ?? null,
     updatedAt: frontmatter.updated ?? metadata.updated ?? null,
     reviewAfter: frontmatter.reviewAfter ?? frontmatter.review_after ?? metadata.review_after ?? null,
+    validUntil: frontmatter.valid_until ?? frontmatter.validUntil ?? null,
     confidence: frontmatter.confidence ?? null,
     status: frontmatter.status ?? metadata.status ?? "active",
     related,
@@ -1859,6 +1860,7 @@ function parseNoteDoc(relativePath, content, includeContent) {
     author: page.author,
     updatedAt: page.updatedAt,
     reviewAfter: page.reviewAfter,
+    validUntil: page.validUntil,
     confidence: page.confidence,
     status: page.status,
     usage: isRecord(page.frontmatter.usage) ? page.frontmatter.usage : null,
@@ -2006,7 +2008,13 @@ function normalizeNoteStatus(status) {
 }
 
 function isDirectNoteEligible(note) {
-  return !["archived", "inactive", "disabled", "deprecated"].includes(normalizeNoteStatus(note.status));
+  if (["archived", "inactive", "disabled", "deprecated"].includes(normalizeNoteStatus(note.status))) {
+    return false;
+  }
+  if (note.validUntil && parseTimestamp(note.validUntil) > 0 && parseTimestamp(note.validUntil) < Date.now()) {
+    return false;
+  }
+  return true;
 }
 
 function parseUsageCount(value) {
@@ -2107,7 +2115,19 @@ function explainNoteMatch(note, query) {
   return reasons;
 }
 
-function scoreNote(note, query) {
+function isNoteDecayed(note, origin) {
+  if (origin !== "domain" && origin !== "researcher") {
+    return false;
+  }
+  const lastUsed = note.usage?.last_used_at ?? note.usage?.lastUsedAt ?? null;
+  if (!lastUsed) {
+    return true;
+  }
+  const elapsed = Date.now() - parseTimestamp(lastUsed);
+  return elapsed > 90 * 24 * 60 * 60 * 1000;
+}
+
+function scoreNote(note, query, origin = "host") {
   if (!isDirectNoteEligible(note)) {
     return -1;
   }
@@ -2173,6 +2193,10 @@ function scoreNote(note, query) {
     score -= 10;
   }
 
+  if (isNoteDecayed(note, origin)) {
+    score -= 10;
+  }
+
   return score;
 }
 
@@ -2203,7 +2227,7 @@ async function searchNotesWithNative(config, cwd, sourcePath, query, limit, incl
   return parsedNotes
     .map((item) => ({
       ...item,
-      score: scoreNote(item.note, query),
+      score: scoreNote(item.note, query, item.origin),
       backendScore: item.origin === "host" ? 1 : 0,
     }))
     .filter((item) => item.score > 0)
@@ -3886,6 +3910,15 @@ export async function lintPack(cwd = process.cwd()) {
         code: "stale_page_review_due",
         path: relativePath,
         message: `Wiki page review is overdue since ${parsed.reviewAfter}.`,
+      });
+    }
+
+    if (parsed.validUntil && parseTimestamp(parsed.validUntil) > 0 && parseTimestamp(parsed.validUntil) < Date.now()) {
+      issues.push({
+        level: "warning",
+        code: "expired_valid_until",
+        path: relativePath,
+        message: `Wiki page validity expired on ${parsed.validUntil}. Update or remove valid_until.`,
       });
     }
 
