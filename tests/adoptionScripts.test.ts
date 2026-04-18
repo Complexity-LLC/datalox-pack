@@ -51,6 +51,7 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(hostDir, "bin/datalox-codex.js"), "utf8")).toContain("\"codex\"");
     expect(await readFile(path.join(hostDir, "bin/datalox.js"), "utf8")).toContain("Unable to resolve Datalox runtime root for datalox.js");
     expect(await readFile(path.join(hostDir, "bin/datalox-wrap.js"), "utf8")).toContain("\"wrap\"");
+    expect(await readFile(path.join(hostDir, "bin/disable-default-host-integrations.sh"), "utf8")).toContain("CLI-first disable flow");
     expect(await readFile(path.join(hostDir, "bin/install-default-host-integrations.sh"), "utf8")).toContain("Compatibility shim for the CLI-first install flow.");
     expect(await readFile(path.join(hostDir, "bin/setup-multi-agent.sh"), "utf8")).toContain("Datalox Pack multi-agent setup");
     expect(await readFile(path.join(hostDir, ".github/copilot-instructions.md"), "utf8")).toContain("portable Datalox pack");
@@ -93,9 +94,60 @@ describe("adoption scripts", () => {
     expect(install.status).toBe(0);
     expect(await readFile(path.join(homeDir, ".local/bin/codex"), "utf8")).toContain(`PACK_ROOT="${repoRoot}"`);
     expect(await readFile(path.join(homeDir, ".local/bin/claude"), "utf8")).toContain(`PACK_ROOT="${repoRoot}"`);
+    expect(await readFile(path.join(homeDir, ".local/bin/codex"), "utf8")).toContain("DATALOX_DEFAULT_POST_RUN_MODE:=review");
+    expect(await readFile(path.join(homeDir, ".local/bin/codex"), "utf8")).toContain("DATALOX_DEFAULT_REVIEW_MODEL:=gpt-5.4-mini");
+    expect(await readFile(path.join(homeDir, ".local/bin/claude"), "utf8")).toContain("DATALOX_DEFAULT_POST_RUN_MODE:=review");
+    expect(await readFile(path.join(homeDir, ".local/bin/claude"), "utf8")).toContain("DATALOX_DEFAULT_REVIEW_MODEL:=gpt-5.4-mini");
     expect(await readFile(path.join(homeDir, ".claude/hooks/datalox-auto-promote.sh"), "utf8")).toContain("datalox-auto-promote.js");
     expect(await readlink(path.join(homeDir, ".datalox/cache/datalox-pack"))).toBe(repoRoot);
   }, 15000);
+
+  it("lets an agent stop host integrations from an adopted repo", async () => {
+    const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-host-self-disable-"));
+    const homeDir = await mkdtemp(path.join(tmpdir(), "datalox-disable-home-"));
+    tempDirs.push(hostDir, homeDir);
+
+    const adopt = spawnSync("bash", [path.join(repoRoot, "bin/adopt-host-repo.sh"), hostDir], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    expect(adopt.status).toBe(0);
+
+    const fakeCodex = path.join(homeDir, "fake-codex");
+    const fakeClaude = path.join(homeDir, "fake-claude");
+    await writeFile(fakeCodex, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+    await writeFile(fakeClaude, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+    await chmod(fakeCodex, 0o755);
+    await chmod(fakeClaude, 0o755);
+
+    const install = spawnSync("bash", [path.join(hostDir, "bin/install-default-host-integrations.sh")], {
+      cwd: hostDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        DATALOX_REAL_CODEX_BIN: fakeCodex,
+        DATALOX_REAL_CLAUDE_BIN: fakeClaude,
+      },
+    });
+    expect(install.status).toBe(0);
+
+    const disable = spawnSync("bash", [path.join(hostDir, "bin/disable-default-host-integrations.sh")], {
+      cwd: hostDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+      },
+    });
+
+    expect(disable.status).toBe(0);
+    expect(spawnSync("test", ["-e", path.join(homeDir, ".local/bin/codex")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(homeDir, ".local/bin/claude")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(homeDir, ".claude/hooks/datalox-auto-promote.sh")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(homeDir, ".codex/skills/datalox-pack")]).status).not.toBe(0);
+    expect(await readFile(path.join(homeDir, ".claude/settings.json"), "utf8")).not.toContain("datalox-auto-promote.sh");
+  }, 20000);
 
   it("runs setup-multi-agent.sh from a fresh pack copy without requiring exec permissions on nested scripts", async () => {
     const packDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-copy-"));

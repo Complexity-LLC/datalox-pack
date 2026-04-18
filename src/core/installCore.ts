@@ -36,6 +36,29 @@ export interface InstallHostIntegrationsResult {
   pathExportsUpdated: string[];
 }
 
+export interface DisableLinkSummary {
+  removed: string[];
+  skipped: string[];
+}
+
+export interface DisableHostShimResult {
+  selected: boolean;
+  removed: boolean;
+  shimPath: string;
+  stableLinksRemoved: string[];
+}
+
+export interface DisableHostIntegrationsResult {
+  host: InstallHost;
+  packRootPath: string;
+  skillLinks: DisableLinkSummary;
+  codex: DisableHostShimResult;
+  claude: DisableHostShimResult;
+  claudeHookRemoved: string | null;
+  claudeSettingsPath: string | null;
+  pathExportsRemoved: string[];
+}
+
 const STABLE_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin"];
 
 function normalizePath(value: string): string {
@@ -93,10 +116,8 @@ async function linkIfMissing(target: string, destination: string, summary: Insta
   summary.linked.push(destination);
 }
 
-async function installSkillLinks(host: InstallHost, packRootPath: string): Promise<InstallLinkSummary> {
-  const summary: InstallLinkSummary = { linked: [], skipped: [] };
-  const skillsDir = path.join(packRootPath, "skills");
-  const links = host === "codex"
+function skillLinkDestinations(host: InstallHost, packRootPath: string): string[] {
+  return host === "codex"
     ? [
         path.join(os.homedir(), ".codex", "skills", "datalox-pack"),
       ]
@@ -112,9 +133,47 @@ async function installSkillLinks(host: InstallHost, packRootPath: string): Promi
           path.join(packRootPath, ".cursor", "skills"),
           path.join(packRootPath, ".windsurf", "skills"),
         ];
+}
 
-  for (const destination of links) {
+async function installSkillLinks(host: InstallHost, packRootPath: string): Promise<InstallLinkSummary> {
+  const summary: InstallLinkSummary = { linked: [], skipped: [] };
+  const skillsDir = path.join(packRootPath, "skills");
+  for (const destination of skillLinkDestinations(host, packRootPath)) {
     await linkIfMissing(skillsDir, destination, summary);
+  }
+
+  return summary;
+}
+
+async function removeSymlinkIfTargetMatches(linkPath: string, expectedTarget: string): Promise<boolean> {
+  try {
+    const stats = await lstat(linkPath);
+    if (!stats.isSymbolicLink()) {
+      return false;
+    }
+    const existing = await readlink(linkPath);
+    if (path.resolve(path.dirname(linkPath), existing) !== path.resolve(expectedTarget)) {
+      return false;
+    }
+    await rm(linkPath, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function uninstallSkillLinks(host: InstallHost, packRootPath: string): Promise<DisableLinkSummary> {
+  const summary: DisableLinkSummary = { removed: [], skipped: [] };
+  const skillsDir = path.join(packRootPath, "skills");
+
+  for (const destination of skillLinkDestinations(host, packRootPath)) {
+    if (await removeSymlinkIfTargetMatches(destination, skillsDir)) {
+      summary.removed.push(destination);
+      continue;
+    }
+    if (existsSync(destination)) {
+      summary.skipped.push(destination);
+    }
   }
 
   return summary;
@@ -204,6 +263,48 @@ async function ensurePathExport(filePath: string): Promise<boolean> {
   return true;
 }
 
+async function removePathExport(filePath: string): Promise<boolean> {
+  let existing = "";
+  try {
+    existing = await readFile(filePath, "utf8");
+  } catch {
+    return false;
+  }
+
+  const block = '# Prefer local host shims such as the Datalox Codex wrapper.\nexport PATH="$HOME/.local/bin:$PATH"\n';
+  if (!existing.includes(block)) {
+    return false;
+  }
+
+  const next = existing.replace(block, "");
+  if (next === existing) {
+    return false;
+  }
+  await writeFile(filePath, next, "utf8");
+  return true;
+}
+
+async function removeManagedShim(filePath: string, marker: string): Promise<boolean> {
+  try {
+    const stats = await lstat(filePath);
+    if (!stats.isFile()) {
+      return false;
+    }
+    const contents = await readFile(filePath, "utf8");
+    if (
+      !contents.includes(marker)
+      || !contents.includes("PACK_ROOT=")
+      || !contents.includes("DATALOX_DEFAULT_POST_RUN_MODE")
+    ) {
+      return false;
+    }
+    await rm(filePath, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function buildCodexShim(realBinary: string, packRootPath: string): string {
   return `#!/usr/bin/env bash
 set -euo pipefail
@@ -241,6 +342,10 @@ should_wrap() {
 repo="$(resolve_repo "$@")"
 if should_wrap "$@"; then
   export DATALOX_CODEX_BIN="$REAL_CODEX_BIN"
+  : "\${DATALOX_DEFAULT_POST_RUN_MODE:=review}"
+  : "\${DATALOX_DEFAULT_REVIEW_MODEL:=gpt-5.4-mini}"
+  export DATALOX_DEFAULT_POST_RUN_MODE
+  export DATALOX_DEFAULT_REVIEW_MODEL
   exec node "$PACK_ROOT/bin/datalox-codex.js" --repo "$repo" -- "$@"
 fi
 
@@ -302,6 +407,10 @@ should_wrap() {
 repo="$(resolve_repo "$@")"
 if should_wrap "$@"; then
   export DATALOX_CLAUDE_BIN="$REAL_CLAUDE_BIN"
+  : "\${DATALOX_DEFAULT_POST_RUN_MODE:=review}"
+  : "\${DATALOX_DEFAULT_REVIEW_MODEL:=gpt-5.4-mini}"
+  export DATALOX_DEFAULT_POST_RUN_MODE
+  export DATALOX_DEFAULT_REVIEW_MODEL
   exec node "$PACK_ROOT/bin/datalox-claude.js" --repo "$repo" -- "$@"
 fi
 
@@ -361,6 +470,67 @@ async function installClaudeHook(packRootPath: string): Promise<{ hookPath: stri
   return { hookPath, settingsPath };
 }
 
+async function uninstallClaudeHook(): Promise<{ hookPath: string | null; settingsPath: string | null }> {
+  const claudeHome = path.join(os.homedir(), ".claude");
+  const hookPath = path.join(claudeHome, "hooks", "datalox-auto-promote.sh");
+  const settingsPath = path.join(claudeHome, "settings.json");
+
+  let removedHookPath: string | null = null;
+  try {
+    const hookStats = await lstat(hookPath);
+    if (hookStats.isFile()) {
+      const contents = await readFile(hookPath, "utf8");
+      if (contents.includes("datalox-auto-promote.js")) {
+        await rm(hookPath, { force: true });
+        removedHookPath = hookPath;
+      }
+    }
+  } catch {
+    // Ignore missing or unrelated hook files.
+  }
+
+  try {
+    const parsed = JSON.parse(await readFile(settingsPath, "utf8")) as Record<string, unknown>;
+    const hooks = (parsed.hooks && typeof parsed.hooks === "object") ? parsed.hooks as Record<string, unknown> : null;
+    if (!hooks) {
+      return { hookPath: removedHookPath, settingsPath: existsSync(settingsPath) ? settingsPath : null };
+    }
+
+    let changed = false;
+    for (const eventName of ["Stop", "SubagentStop"]) {
+      const entries = Array.isArray(hooks[eventName]) ? hooks[eventName] as Array<Record<string, unknown>> : [];
+      const filtered = entries.filter((entry) => !(
+        Array.isArray(entry.hooks)
+        && entry.hooks.some((hook) => (
+          hook
+          && typeof hook === "object"
+          && (hook as { type?: unknown }).type === "command"
+          && typeof (hook as { command?: unknown }).command === "string"
+          && (hook as { command: string }).command.includes("datalox-auto-promote.sh")
+        ))
+      ));
+      if (filtered.length !== entries.length) {
+        changed = true;
+      }
+      if (filtered.length > 0) {
+        hooks[eventName] = filtered;
+      } else if (eventName in hooks) {
+        delete hooks[eventName];
+      }
+    }
+
+    if (changed) {
+      if (Object.keys(hooks).length === 0) {
+        delete parsed.hooks;
+      }
+      await writeFile(settingsPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+    }
+    return { hookPath: removedHookPath, settingsPath };
+  } catch {
+    return { hookPath: removedHookPath, settingsPath: existsSync(settingsPath) ? settingsPath : null };
+  }
+}
+
 function createSkippedHostResult(hostName: "codex" | "claude", selected: boolean): InstallHostShimResult {
   return {
     selected,
@@ -368,6 +538,15 @@ function createSkippedHostResult(hostName: "codex" | "claude", selected: boolean
     shimPath: path.join(os.homedir(), ".local", "bin", hostName),
     realBinary: null,
     stableLinks: [],
+  };
+}
+
+function createSkippedDisableHostResult(hostName: "codex" | "claude", selected: boolean): DisableHostShimResult {
+  return {
+    selected,
+    removed: false,
+    shimPath: path.join(os.homedir(), ".local", "bin", hostName),
+    stableLinksRemoved: [],
   };
 }
 
@@ -449,5 +628,88 @@ export async function installHostIntegrations(input: InstallHostIntegrationsInpu
     claudeHookPath: claudeHookPath ? normalizePath(claudeHookPath) : null,
     claudeSettingsPath: claudeSettingsPath ? normalizePath(claudeSettingsPath) : null,
     pathExportsUpdated: pathExportsUpdated.map(normalizePath),
+  };
+}
+
+export async function disableHostIntegrations(input: InstallHostIntegrationsInput): Promise<DisableHostIntegrationsResult> {
+  const host = input.host ?? "all";
+  const packRootPath = path.resolve(input.packRootPath);
+  const selected = new Set(selectedHosts(host));
+  const skillLinks = await uninstallSkillLinks(host, packRootPath);
+
+  const localBin = path.join(os.homedir(), ".local", "bin");
+  const codexShimPath = path.join(localBin, "codex");
+  const claudeShimPath = path.join(localBin, "claude");
+
+  let codex = createSkippedDisableHostResult("codex", selected.has("codex"));
+  if (selected.has("codex")) {
+    const removed = await removeManagedShim(codexShimPath, "datalox-codex.js");
+    const stableLinksRemoved: string[] = [];
+    for (const dir of STABLE_BIN_DIRS) {
+      const target = path.join(dir, "codex");
+      if (await removeSymlinkIfTargetMatches(target, codexShimPath)) {
+        stableLinksRemoved.push(target);
+      }
+    }
+    codex = {
+      selected: true,
+      removed,
+      shimPath: codexShimPath,
+      stableLinksRemoved,
+    };
+  }
+
+  let claude = createSkippedDisableHostResult("claude", selected.has("claude"));
+  let claudeHookRemoved: string | null = null;
+  let claudeSettingsPath: string | null = null;
+  if (selected.has("claude")) {
+    const removed = await removeManagedShim(claudeShimPath, "datalox-claude.js");
+    const stableLinksRemoved: string[] = [];
+    for (const dir of STABLE_BIN_DIRS) {
+      const target = path.join(dir, "claude");
+      if (await removeSymlinkIfTargetMatches(target, claudeShimPath)) {
+        stableLinksRemoved.push(target);
+      }
+    }
+    claude = {
+      selected: true,
+      removed,
+      shimPath: claudeShimPath,
+      stableLinksRemoved,
+    };
+    const hook = await uninstallClaudeHook();
+    claudeHookRemoved = hook.hookPath;
+    claudeSettingsPath = hook.settingsPath;
+  }
+
+  const pathExportsRemoved: string[] = [];
+  if (host === "all") {
+    for (const shellPath of [path.join(os.homedir(), ".zshrc"), path.join(os.homedir(), ".zprofile")]) {
+      if (await removePathExport(shellPath)) {
+        pathExportsRemoved.push(shellPath);
+      }
+    }
+  }
+
+  return {
+    host,
+    packRootPath: normalizePath(packRootPath),
+    skillLinks: {
+      removed: skillLinks.removed.map(normalizePath),
+      skipped: skillLinks.skipped.map(normalizePath),
+    },
+    codex: {
+      ...codex,
+      shimPath: normalizePath(codex.shimPath),
+      stableLinksRemoved: codex.stableLinksRemoved.map(normalizePath),
+    },
+    claude: {
+      ...claude,
+      shimPath: normalizePath(claude.shimPath),
+      stableLinksRemoved: claude.stableLinksRemoved.map(normalizePath),
+    },
+    claudeHookRemoved: claudeHookRemoved ? normalizePath(claudeHookRemoved) : null,
+    claudeSettingsPath: claudeSettingsPath ? normalizePath(claudeSettingsPath) : null,
+    pathExportsRemoved: pathExportsRemoved.map(normalizePath),
   };
 }

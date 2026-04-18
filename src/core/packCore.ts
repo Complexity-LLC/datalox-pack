@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { extractTraceSource } from "./sourceBundle.js";
+import { createRuntimeClient } from "./runtimeClient.js";
+import { loadAgentConfig } from "../agent/loadAgentConfig.js";
 
 export interface ResolveLoopInput {
   repoPath?: string;
@@ -187,6 +189,7 @@ const SINGLE_FILE_ADOPTION_PATHS = [
   "bin/datalox-mcp.js",
   "bin/datalox.js",
   "bin/datalox-wrap.js",
+  "bin/disable-default-host-integrations.sh",
   "bin/install-default-host-integrations.sh",
   "bin/setup-multi-agent.sh",
   "agent-wiki/note.schema.md",
@@ -802,7 +805,24 @@ export async function resolveLoop(input: ResolveLoopInput) {
       lastReadAt: timestamp,
     }));
   }
-  return result;
+
+  // Enrich with remote guidance when runtime is enabled
+  let runtimeGuidance = null;
+  try {
+    const { config } = await loadAgentConfig(repoPath);
+    const client = createRuntimeClient(config);
+    if (client && input.task) {
+      runtimeGuidance = await client.compileGuidance({
+        task: input.task,
+        workflow: input.workflow ?? config.runtime.defaultWorkflow,
+        step: input.step,
+      });
+    }
+  } catch {
+    // Runtime unreachable — continue with local-only result
+  }
+
+  return { ...result, runtimeGuidance };
 }
 
 export async function syncNoteRetrieval(input: SyncNoteRetrievalInput = {}) {
@@ -915,8 +935,35 @@ export async function promoteGap(input: PromoteGapInput) {
     },
     repoPath,
   );
+
+  // Auto-publish promoted skills to the runtime registry
+  let runtimePublish = null;
+  try {
+    const promotion = result.promotion;
+    if (promotion?.skill) {
+      const { config } = await loadAgentConfig(repoPath);
+      const client = createRuntimeClient(config);
+      if (client) {
+        const skillContent = typeof promotion.skill.content === "string"
+          ? promotion.skill.content
+          : "";
+        runtimePublish = await client.publishSkill({
+          name: promotion.skill.name ?? promotion.skill.id ?? "unnamed",
+          description: promotion.skill.description ?? input.summary ?? "",
+          workflow: input.workflow ?? config.runtime.defaultWorkflow,
+          trigger: input.signal ?? "",
+          skillMd: skillContent,
+          tags: input.tags ?? [],
+        });
+      }
+    }
+  } catch {
+    // Runtime unreachable — continue without publishing
+  }
+
   return {
     ...result,
+    runtimePublish,
     promotion: result.promotion
       ? {
         ...result.promotion,

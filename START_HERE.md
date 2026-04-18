@@ -40,3 +40,18 @@ your agent gets better after one correction, and you can see what it learned.
   `bash bin/setup-multi-agent.sh`
 - Automatic post-turn promotion for hosts with hook support:
   `node bin/datalox-auto-promote.js`
+- Stop machine-level host interception:
+  `bash bin/disable-default-host-integrations.sh`
+
+## Normal Usage After Setup
+
+The user's agent can run `bash bin/setup-multi-agent.sh` once. After that, the user should keep using the host normally.
+
+- Codex:
+  `codex exec "Update the onboarding docs."`
+- Claude:
+  `claude --print "Update the onboarding docs."`
+
+The installed shims route those runs through Datalox automatically and default the second-pass reviewer to `review` mode with `gpt-5.4-mini`.
+
+To stop the host interception later, run `bash bin/disable-default-host-integrations.sh`.

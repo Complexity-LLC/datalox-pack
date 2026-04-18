@@ -9,7 +9,7 @@ import {
   probeBootstrapCandidate,
   syncNoteRetrieval,
 } from "../core/packCore.js";
-import { installHostIntegrations, type InstallHost } from "../core/installCore.js";
+import { disableHostIntegrations, installHostIntegrations, type InstallHost } from "../core/installCore.js";
 import { runClaudeWrapper } from "../adapters/claude/run.js";
 import { runCodexWrapper } from "../adapters/codex/run.js";
 import { runGenericWrapper } from "../adapters/generic/run.js";
@@ -38,6 +38,7 @@ function usage(): string {
   return [
     "Usage:",
     "  datalox install [all|codex|claude] [--json]",
+    "  datalox disable [all|codex|claude] [--json]",
     "  datalox bootstrap [--repo <path>] [--pack-source <path-or-git-url>] [--json]",
     "  datalox setup [all|codex|claude] [--repo <path>] [--pack-source <path-or-git-url>] [--json]",
     "  datalox adopt <host-repo-path> [--pack-source <path-or-git-url>] [--json]",
@@ -54,9 +55,9 @@ function usage(): string {
     "  datalox promote [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--changed-file <path>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--outcome <text>] [--tag <tag>] [--event-kind <kind>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--json]",
     "  datalox lint [--repo <path>] [--json]",
     "  datalox wrap prompt [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--json]",
-    "  datalox wrap command [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--json] -- <command> [args with __DATALOX_PROMPT__ placeholders]",
-    "  datalox claude [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--claude-bin <path>] [--json] [-- <claude args>]",
-    "  datalox codex [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--codex-bin <path>] [--json] [-- <codex exec args>]",
+    "  datalox wrap command [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote|review>] [--json] -- <command> [args with __DATALOX_PROMPT__ placeholders]",
+    "  datalox claude [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote|review>] [--review-model <model>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--claude-bin <path>] [--json] [-- <claude args>]",
+    "  datalox codex [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote|review>] [--review-model <model>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--codex-bin <path>] [--json] [-- <codex exec args>]",
   ].join("\n");
 }
 
@@ -74,6 +75,43 @@ function parsePositiveInt(value: string | string[] | boolean | undefined): numbe
   }
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parsePostRunMode(
+  value: string | string[] | boolean | undefined,
+): "off" | "record" | "auto" | "promote" | "review" | undefined {
+  const raw = typeof value === "string"
+    ? value
+    : typeof process.env.DATALOX_DEFAULT_POST_RUN_MODE === "string"
+      ? process.env.DATALOX_DEFAULT_POST_RUN_MODE
+      : undefined;
+
+  switch (raw) {
+    case "off":
+    case "record":
+    case "auto":
+    case "promote":
+    case "review":
+      return raw;
+    default:
+      return undefined;
+  }
+}
+
+function parseOptionalString(
+  value: string | string[] | boolean | undefined,
+  envKey?: string,
+): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (envKey) {
+    const envValue = process.env[envKey];
+    if (typeof envValue === "string" && envValue.trim().length > 0) {
+      return envValue.trim();
+    }
+  }
+  return undefined;
 }
 
 function parseInstallHost(value: string | undefined): InstallHost {
@@ -114,9 +152,27 @@ function writePostRunSummary(prefix: string, postRun: unknown): void {
       event?: { relativePath?: string };
       decision?: { action?: string; reason?: string; occurrenceCount?: number };
     } | null;
+    review?: {
+      status?: string;
+      decision?: { action?: string; reason?: string } | null;
+      error?: string;
+    } | null;
   };
   const eventPath = typed.result?.event?.relativePath;
   const decision = typed.result?.decision;
+  const review = typed.review;
+  if (typed.mode === "review") {
+    if (review?.status === "completed" && review.decision) {
+      process.stderr.write(
+        `[${prefix}] review | ${review.decision.action} | ${review.decision.reason ?? "no reason"}${eventPath ? ` | ${eventPath}` : ""}\n`,
+      );
+      return;
+    }
+    process.stderr.write(
+      `[${prefix}] review | ${review?.status ?? "failed"} | ${review?.error ?? "review unavailable"}${eventPath ? ` | ${eventPath}` : ""}\n`,
+    );
+    return;
+  }
   if (decision?.action) {
     process.stderr.write(
       `[${prefix}] ${decision.action} | ${decision.reason ?? "no reason"} | occurrences=${decision.occurrenceCount ?? "?"}${eventPath ? ` | ${eventPath}` : ""}\n`,
@@ -144,6 +200,15 @@ async function main(): Promise<void> {
     case "install": {
       const host = parseInstallHost(positional);
       const result = await installHostIntegrations({
+        host,
+        packRootPath: resolveCliPackRoot(),
+      });
+      writeResult(result, true);
+      return;
+    }
+    case "disable": {
+      const host = parseInstallHost(positional);
+      const result = await disableHostIntegrations({
         host,
         packRootPath: resolveCliPackRoot(),
       });
@@ -206,9 +271,8 @@ async function main(): Promise<void> {
         summary: typeof args.summary === "string" ? args.summary : undefined,
         tags: toStringArray(args.tag),
         eventKind: typeof args["event-kind"] === "string" ? args["event-kind"] : undefined,
-        postRunMode: typeof args["post-run-mode"] === "string"
-          ? args["post-run-mode"] as "off" | "record" | "auto" | "promote"
-          : undefined,
+        postRunMode: parsePostRunMode(args["post-run-mode"]),
+        reviewModel: parseOptionalString(args["review-model"], "DATALOX_DEFAULT_REVIEW_MODEL"),
         minWikiOccurrences: parsePositiveInt(args["min-wiki-occurrences"]),
         minSkillOccurrences: parsePositiveInt(args["min-skill-occurrences"]),
       };
@@ -235,7 +299,8 @@ async function main(): Promise<void> {
         });
         if (asJson) {
           writeResult(result, true);
-          process.exit(result.child?.exitCode ?? 0);
+          process.exitCode = result.child?.exitCode ?? 0;
+          return;
         }
         if (result.child?.stdout) {
           process.stdout.write(result.child.stdout);
@@ -244,7 +309,8 @@ async function main(): Promise<void> {
           process.stderr.write(result.child.stderr);
         }
         writePostRunSummary("datalox-wrap", result.postRun);
-        process.exit(result.child?.exitCode ?? 0);
+        process.exitCode = result.child?.exitCode ?? 0;
+        return;
       }
 
       throw new Error("wrap requires subcommand prompt or command");
@@ -261,9 +327,8 @@ async function main(): Promise<void> {
         summary: typeof args.summary === "string" ? args.summary : undefined,
         tags: toStringArray(args.tag),
         eventKind: typeof args["event-kind"] === "string" ? args["event-kind"] : undefined,
-        postRunMode: typeof args["post-run-mode"] === "string"
-          ? args["post-run-mode"] as "off" | "record" | "auto" | "promote"
-          : undefined,
+        postRunMode: parsePostRunMode(args["post-run-mode"]),
+        reviewModel: parseOptionalString(args["review-model"], "DATALOX_DEFAULT_REVIEW_MODEL"),
         minWikiOccurrences: parsePositiveInt(args["min-wiki-occurrences"]),
         minSkillOccurrences: parsePositiveInt(args["min-skill-occurrences"]),
         codexBin: typeof args["codex-bin"] === "string" ? args["codex-bin"] : undefined,
@@ -271,7 +336,8 @@ async function main(): Promise<void> {
       });
       if (asJson) {
         writeResult(result, true);
-        process.exit(result.child.exitCode);
+        process.exitCode = result.child.exitCode;
+        return;
       }
       if (result.child.stdout) {
         process.stdout.write(result.child.stdout);
@@ -280,7 +346,8 @@ async function main(): Promise<void> {
         process.stderr.write(result.child.stderr);
       }
       writePostRunSummary("datalox-codex", result.postRun);
-      process.exit(result.child.exitCode);
+      process.exitCode = result.child.exitCode;
+      return;
     }
     case "claude": {
       const claudeArgs = positional !== undefined ? [positional, ...rest] : rest;
@@ -294,9 +361,8 @@ async function main(): Promise<void> {
         summary: typeof args.summary === "string" ? args.summary : undefined,
         tags: toStringArray(args.tag),
         eventKind: typeof args["event-kind"] === "string" ? args["event-kind"] : undefined,
-        postRunMode: typeof args["post-run-mode"] === "string"
-          ? args["post-run-mode"] as "off" | "record" | "auto" | "promote"
-          : undefined,
+        postRunMode: parsePostRunMode(args["post-run-mode"]),
+        reviewModel: parseOptionalString(args["review-model"], "DATALOX_DEFAULT_REVIEW_MODEL"),
         minWikiOccurrences: parsePositiveInt(args["min-wiki-occurrences"]),
         minSkillOccurrences: parsePositiveInt(args["min-skill-occurrences"]),
         claudeBin: typeof args["claude-bin"] === "string" ? args["claude-bin"] : undefined,
@@ -304,7 +370,8 @@ async function main(): Promise<void> {
       });
       if (asJson) {
         writeResult(result, true);
-        process.exit(result.child.exitCode);
+        process.exitCode = result.child.exitCode;
+        return;
       }
       if (result.child.stdout) {
         process.stdout.write(result.child.stdout);
@@ -313,7 +380,8 @@ async function main(): Promise<void> {
         process.stderr.write(result.child.stderr);
       }
       writePostRunSummary("datalox-claude", result.postRun);
-      process.exit(result.child.exitCode);
+      process.exitCode = result.child.exitCode;
+      return;
     }
     case "help":
     case "--help":

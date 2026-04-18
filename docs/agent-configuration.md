@@ -63,3 +63,26 @@ Lint checks:
 - missing skill playbook sections
 - orphan notes
 - overlapping skills
+
+## Machine Setup
+
+The user's agent may perform one-time machine setup.
+
+Preferred commands:
+
+- `bash bin/setup-multi-agent.sh`
+- `node bin/datalox.js install all --json`
+
+After setup, the user should keep using `codex` or `claude` normally from the target repo.
+
+## Stop
+
+To stop Datalox-managed host interception:
+
+- `bash bin/disable-default-host-integrations.sh`
+- `node bin/datalox.js disable all --json`
+
+To keep the wrapper but stop autonomous post-run review:
+
+- set `DATALOX_DEFAULT_POST_RUN_MODE=off`
+- or pass `--post-run-mode off`

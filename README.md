@@ -41,6 +41,8 @@ cd datalox-pack
 bash bin/setup-multi-agent.sh
 ```
 
+This one-time machine setup can be done by the user's agent.
+
 Repo-level adoption:
 
 ```bash
@@ -74,9 +76,30 @@ node dist/src/cli/main.js lint --repo . --json
 Wrapper entrypoints:
 
 ```bash
-node bin/datalox-claude.js --repo /path/to/repo -- --print "Update the docs."
-node bin/datalox-codex.js --repo /path/to/repo --task "update docs" --prompt "Update the docs."
+node bin/datalox-claude.js -- --print "Update the docs."
+node bin/datalox-codex.js -- exec "Update the docs."
 node bin/datalox-wrap.js command --repo /path/to/repo --task "update docs" --prompt "Update the docs." -- <host-command> __DATALOX_PROMPT__
+```
+
+After `node bin/datalox.js setup codex` or `bash bin/setup-multi-agent.sh`, the user should not need Datalox flags at all:
+
+```bash
+codex exec "Update the docs."
+claude --print "Update the docs."
+```
+
+The installed shims infer the repo from the current working directory and default autonomous second-pass review to `review` mode with `gpt-5.4-mini`.
+
+To stop Datalox-managed host interception later:
+
+```bash
+bash bin/disable-default-host-integrations.sh
+```
+
+To keep the wrapper but stop autonomous review only:
+
+```bash
+export DATALOX_DEFAULT_POST_RUN_MODE=off
 ```
 
 ## MCP

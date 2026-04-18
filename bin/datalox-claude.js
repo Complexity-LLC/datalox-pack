@@ -43,6 +43,11 @@ const entrypoint = path.join(runtimeRoot, "dist", "src", "cli", "main.js");
 
 const child = spawn(process.execPath, [entrypoint, "claude", ...process.argv.slice(2)], {
   stdio: "inherit",
+  env: {
+    ...process.env,
+    DATALOX_DEFAULT_POST_RUN_MODE: process.env.DATALOX_DEFAULT_POST_RUN_MODE ?? "review",
+    DATALOX_DEFAULT_REVIEW_MODEL: process.env.DATALOX_DEFAULT_REVIEW_MODEL ?? "gpt-5.4-mini",
+  },
 });
 
 child.on("exit", (code, signal) => {
