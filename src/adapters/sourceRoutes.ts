@@ -113,7 +113,7 @@ export async function resolveSourceRoute(input: {
       ],
       watchFor: [
         "The task depends on document evidence rather than the repo's default skill match.",
-        "Prefer extracted headings and snippets over reopening or dumping binary PDF content.",
+        "Prefer normalized section maps, exact operational facts, and extracted procedure fragments over reopening or dumping binary PDF content.",
       ],
       nextReads: notes.map((note) => note.notePath),
       supportingNotes: notes.map((note) => ({

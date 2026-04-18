@@ -1,0 +1,1981 @@
+{
+  "version": 2,
+  "slug": "nucleotide-resolution-regulatory-elements-tiled-base-editing",
+  "sourcePath": "/tmp/datalox-biotech-eval/downloads/gene_editing-PMC13065808.pdf",
+  "sourceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13065808/",
+  "title": "Nucleotide-resolution mapping of regulatory elements via allelic readout of tiled base editing",
+  "capturedAt": "2026-04-18T11:04:04.856Z",
+  "artifactType": "note",
+  "notePath": "agent-wiki/notes/pdf/nucleotide-resolution-regulatory-elements-tiled-base-editing.md",
+  "pageCount": 24,
+  "headings": [
+    "Abstract",
+    "Results",
+    "Figure Legends",
+    "Methods",
+    "Discussion",
+    "Acknowledgments",
+    "Data Availability"
+  ],
+  "sections": [
+    {
+      "title": "Abstract (page 1)",
+      "text": "Abstract CRISPR tiling screens have enabled the characterization of regulatory sequences but are limited by low resolution arising from the indirect readout of editing via guide RNA sequencing and enrichment analysis."
+    },
+    {
+      "title": "Results (page 2)",
+      "text": "To address these limitations, we introduce an experimental and computational framework that enables precise determination of genotype-phenotype relationships at the nucleotide level from bulk amplicon sequencing, in the context of non-coding sequences, utilizing information from direct sequencing of alleles produced by base editing at regulatory regions."
+    },
+    {
+      "title": "Figure Legends (pages 3-5)",
+      "text": "Base-editor tiling screen design featuring gRNA-directed targeting, allele-based phenotypic readout, and integrated computational analysis pipeline."
+    },
+    {
+      "title": "Methods (page 6)",
+      "text": "In contrast to the gRNA readout model, CRISPR-Millipede demonstrates superior capabilities in elucidating genotype-phenotype relationship with nucleotide-level precision, a significant improvement over the ~5–10 base pair resolution of traditional genetic screens."
+    },
+    {
+      "title": "Results (page 7)",
+      "text": "identified 220 A > G and 224 A > G (Supplementary Fig."
+    },
+    {
+      "title": "Figure Legends (page 8)",
+      "text": "Arrayed flow cytometry-based validation of shared and framework-specific hit regions using different base editors."
+    },
+    {
+      "title": "Results (page 9)",
+      "text": "(AAVS1, CD19 ex2acc and neutral 1-3 gRNAs) for validations in ABE8e and evoCDA cells are shown twice in panels b and d."
+    },
+    {
+      "title": "Figure Legends (pages 10-11)",
+      "text": "Pinpointing CD19 regulating transcription factors (TFs) via CRISPR-Millipede boards and a focused TF KO screen."
+    },
+    {
+      "title": "Discussion (page 12)",
+      "text": "Targeting hit regions provides resistance to CD19-CAR-T cells."
+    },
+    {
+      "title": "Methods (pages 13-18)",
+      "text": "Other methods have been developed to investigate the contribution of individual single nucleotide variants on gene expression14,15."
+    },
+    {
+      "title": "Acknowledgments (page 19)",
+      "text": "Source data Source Data 1 (16.6KB, xlsx) Source Data 2 (134.3KB, xlsx) Source Data 3 (32.9KB, xlsx) Source Data 4 (76.3KB, xlsx) Source Data 5 (13.1KB, xlsx) Source Data 6 (348.8KB, xlsx) Acknowledgements The authors thank funding from 1R35HG010717–01 (L.P., D.B.), UM1HG012010 (L.P.,D.B.,B.P.K.), Rappaport MGH Research Scholar Award 2024-2029 (L.P.), the Kayden-Lambert MGH Research Scholar Award 2023-2028 (B.P.K.), the Austrian Federal Ministry of Labour and Economy and the National Foundation for Research, Technology and Development to the Christian Doppler Research Association (M.L.)."
+    },
+    {
+      "title": "Data Availability (pages 20-24)",
+      "text": "Data availability The raw and processed sequencing data generated in this study have been deposited in the Gene Expression Omnibus (GEO) database under accession code GSE278581 [https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE278581] and the Zenodo database under accession code 18187633 [10.5281/zenodo.18187633]."
+    }
+  ],
+  "textSnippets": [
+    "Abstract CRISPR tiling screens have enabled the characterization of regulatory sequences but are limited by low resolution arising from the indirect readout of editing via guide RNA sequencing and enrichment analysis.",
+    "This study introduces an end-to-end experimental assay and computational pipeline, which leverages targeted sequencing of CRISPR-introduced alleles at the endogenous target locus following dense base-editing mutagenesis.",
+    "As a proof of concept, we studied a putative CD19 enhancer, an immunotherapy target in leukemia, and identified alleles and single nucleotides crucial for CD19 regulation.",
+    "Our visualization tools revealed transcription factor motifs corresponding to the top-ranked nucleotides.",
+    "Validation experiments confirmed that mutations in MYB, PAX5, and EBF1 binding sites reduce CD19 expression.",
+    "Critically, editing MYB and PAX5 motifs conferred resistance to CD19 CAR-T cell therapy, revealing how non-coding variants can drive immunotherapy escape.",
+    "Taken together, this approach achieves nucleotide-resolution genotypephenotype mapping at regulatory elements beyond conventional gRNA-based screens.",
+    "Subject terms: Functional genomics, Software Regulatory DNA screens often lack nucleotide-level resolution."
+  ],
+  "operationalFacts": [
+    {
+      "page": 2,
+      "section": "Results",
+      "field": "temperature",
+      "raw": "1c",
+      "value": "1",
+      "unit": "c",
+      "subject": null,
+      "action": null,
+      "context": "1c), confirming the regulatory potential of this enhancer element."
+    },
+    {
+      "page": 2,
+      "section": "Results",
+      "field": "temperature",
+      "raw": "1c",
+      "value": "1",
+      "unit": "c",
+      "subject": null,
+      "action": null,
+      "context": "1c), evoCDA is a spurious editor primarily introducing C-to-T substitutions along with different types of C-to-N substitutions and short indels, thereby increasing allele diversity (Supplementary Fig."
+    },
+    {
+      "page": 4,
+      "section": "Figure Legends",
+      "field": "dose",
+      "raw": "0.3 MOI",
+      "value": "0.3",
+      "unit": "MOI",
+      "subject": "gRNAs 0.3 MOI we",
+      "action": "cultured",
+      "context": "After transducing the gRNAs at a 0.3 MOI, we cultured the cells for 7 days to allow for efficient editing and phenotype development."
+    },
+    {
+      "page": 4,
+      "section": "Figure Legends",
+      "field": "time",
+      "raw": "7 days",
+      "value": "7",
+      "unit": "days",
+      "subject": "gRNAs 0.3 MOI we",
+      "action": "cultured",
+      "context": "After transducing the gRNAs at a 0.3 MOI, we cultured the cells for 7 days to allow for efficient editing and phenotype development."
+    },
+    {
+      "page": 4,
+      "section": "Figure Legends",
+      "field": "percent",
+      "raw": "41.5%",
+      "value": "41.5",
+      "unit": "%",
+      "subject": null,
+      "action": null,
+      "context": "CRISPR-Correct increases the read count of gRNAs by an average of 26.5–41.5% across all ABE8e-SpRY CD19 positive and CD19 negative samples (Supplementary Fig."
+    },
+    {
+      "page": 4,
+      "section": "Figure Legends",
+      "field": "percent",
+      "raw": "16.6%",
+      "value": "16.6",
+      "unit": "%",
+      "subject": null,
+      "action": null,
+      "context": "2a) and 13.6–16.6% across all evoCDA CD19 positive and CD19 negative samples (Supplementary Fig."
+    },
+    {
+      "page": 4,
+      "section": "Figure Legends",
+      "field": "percent",
+      "raw": "22.9%",
+      "value": "22.9",
+      "unit": "%",
+      "subject": null,
+      "action": null,
+      "context": "We observed an average of 20.3–22.9% self-editing frequency in ABE8e-SpRY presort samples (Supplementary Fig."
+    },
+    {
+      "page": 4,
+      "section": "Figure Legends",
+      "field": "temperature",
+      "raw": "2c",
+      "value": "2",
+      "unit": "c",
+      "subject": null,
+      "action": null,
+      "context": "2c) primarily consisting of A > G self-edits (Supplementary Fig."
+    },
+    {
+      "page": 5,
+      "section": "Figure Legends",
+      "field": "other",
+      "raw": "154 G",
+      "value": "154",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Red dots correspond to alleles containing the top 6 CRISPR-Millipede hits in both ABE8e-SpRY (137 T > C, 223 A > G, 176 T > C, 230 A > G, 151 A > G, 311 A > G) and evoCDA (154 G > A, 201 G > A, 227 C > T, 229 C > T, 202 G > A, 214 G > A) screens; some of the representative alleles are labeled."
+    },
+    {
+      "page": 5,
+      "section": "Figure Legends",
+      "field": "other",
+      "raw": "201 G",
+      "value": "201",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Red dots correspond to alleles containing the top 6 CRISPR-Millipede hits in both ABE8e-SpRY (137 T > C, 223 A > G, 176 T > C, 230 A > G, 151 A > G, 311 A > G) and evoCDA (154 G > A, 201 G > A, 227 C > T, 229 C > T, 202 G > A, 214 G > A) screens; some of the representative alleles are labeled."
+    },
+    {
+      "page": 5,
+      "section": "Figure Legends",
+      "field": "temperature",
+      "raw": "227 C",
+      "value": "227",
+      "unit": "C",
+      "subject": null,
+      "action": null,
+      "context": "Red dots correspond to alleles containing the top 6 CRISPR-Millipede hits in both ABE8e-SpRY (137 T > C, 223 A > G, 176 T > C, 230 A > G, 151 A > G, 311 A > G) and evoCDA (154 G > A, 201 G > A, 227 C > T, 229 C > T, 202 G > A, 214 G > A) screens; some of the representative alleles are labeled."
+    },
+    {
+      "page": 5,
+      "section": "Figure Legends",
+      "field": "temperature",
+      "raw": "229 C",
+      "value": "229",
+      "unit": "C",
+      "subject": null,
+      "action": null,
+      "context": "Red dots correspond to alleles containing the top 6 CRISPR-Millipede hits in both ABE8e-SpRY (137 T > C, 223 A > G, 176 T > C, 230 A > G, 151 A > G, 311 A > G) and evoCDA (154 G > A, 201 G > A, 227 C > T, 229 C > T, 202 G > A, 214 G > A) screens; some of the representative alleles are labeled."
+    },
+    {
+      "page": 5,
+      "section": "Figure Legends",
+      "field": "other",
+      "raw": "202 G",
+      "value": "202",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Red dots correspond to alleles containing the top 6 CRISPR-Millipede hits in both ABE8e-SpRY (137 T > C, 223 A > G, 176 T > C, 230 A > G, 151 A > G, 311 A > G) and evoCDA (154 G > A, 201 G > A, 227 C > T, 229 C > T, 202 G > A, 214 G > A) screens; some of the representative alleles are labeled."
+    },
+    {
+      "page": 5,
+      "section": "Figure Legends",
+      "field": "other",
+      "raw": "214 G",
+      "value": "214",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Red dots correspond to alleles containing the top 6 CRISPR-Millipede hits in both ABE8e-SpRY (137 T > C, 223 A > G, 176 T > C, 230 A > G, 151 A > G, 311 A > G) and evoCDA (154 G > A, 201 G > A, 227 C > T, 229 C > T, 202 G > A, 214 G > A) screens; some of the representative alleles are labeled."
+    },
+    {
+      "page": 6,
+      "section": "Methods",
+      "field": "other",
+      "raw": "172 G",
+      "value": "172",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "To explore the DESeq2-only hits, we examined two variants, 276 T > C and 172 G > A (Supplementary Fig."
+    },
+    {
+      "page": 6,
+      "section": "Methods",
+      "field": "other",
+      "raw": "154 G",
+      "value": "154",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Additionally, variant 154 G > A in the evoCDA screen, a single-variant hit in DESeq2 (p-adj = 3.9e−3), persists as a CRISPR-Millipede hit after removal of the single-variant “154 G > A” allele from the input encoding matrix, since composite alleles such as “154 G > A,155 G > A”, “154 G > A,155 G > A,161 G > A,162 G > A”, and “154 G > A,161 G > A,162 G > A” are also called as significant (p-adj = 4.9e−7 and p-adj = 4.2e−14)."
+    },
+    {
+      "page": 6,
+      "section": "Methods",
+      "field": "other",
+      "raw": "155 G",
+      "value": "155",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Additionally, variant 154 G > A in the evoCDA screen, a single-variant hit in DESeq2 (p-adj = 3.9e−3), persists as a CRISPR-Millipede hit after removal of the single-variant “154 G > A” allele from the input encoding matrix, since composite alleles such as “154 G > A,155 G > A”, “154 G > A,155 G > A,161 G > A,162 G > A”, and “154 G > A,161 G > A,162 G > A” are also called as significant (p-adj = 4.9e−7 and p-adj = 4.2e−14)."
+    },
+    {
+      "page": 6,
+      "section": "Methods",
+      "field": "other",
+      "raw": "161 G",
+      "value": "161",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Additionally, variant 154 G > A in the evoCDA screen, a single-variant hit in DESeq2 (p-adj = 3.9e−3), persists as a CRISPR-Millipede hit after removal of the single-variant “154 G > A” allele from the input encoding matrix, since composite alleles such as “154 G > A,155 G > A”, “154 G > A,155 G > A,161 G > A,162 G > A”, and “154 G > A,161 G > A,162 G > A” are also called as significant (p-adj = 4.9e−7 and p-adj = 4.2e−14)."
+    },
+    {
+      "page": 6,
+      "section": "Methods",
+      "field": "other",
+      "raw": "162 G",
+      "value": "162",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Additionally, variant 154 G > A in the evoCDA screen, a single-variant hit in DESeq2 (p-adj = 3.9e−3), persists as a CRISPR-Millipede hit after removal of the single-variant “154 G > A” allele from the input encoding matrix, since composite alleles such as “154 G > A,155 G > A”, “154 G > A,155 G > A,161 G > A,162 G > A”, and “154 G > A,161 G > A,162 G > A” are also called as significant (p-adj = 4.9e−7 and p-adj = 4.2e−14)."
+    },
+    {
+      "page": 6,
+      "section": "Methods",
+      "field": "other",
+      "raw": "155 G",
+      "value": "155",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Alleles containing only the bystander variants such as “155 G > A” or “155 G > A,161 G > A,162 G > A” are not called as functional (p-adj = 0.21 and p-adj = 0.24, respectively) despite having differential editing frequencies, highlighting CRISPR-Millipede’s ability to pinpoint the true functional variant (Supplementary Fig."
+    },
+    {
+      "page": 6,
+      "section": "Methods",
+      "field": "other",
+      "raw": "161 G",
+      "value": "161",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Alleles containing only the bystander variants such as “155 G > A” or “155 G > A,161 G > A,162 G > A” are not called as functional (p-adj = 0.21 and p-adj = 0.24, respectively) despite having differential editing frequencies, highlighting CRISPR-Millipede’s ability to pinpoint the true functional variant (Supplementary Fig."
+    },
+    {
+      "page": 6,
+      "section": "Methods",
+      "field": "other",
+      "raw": "162 G",
+      "value": "162",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Alleles containing only the bystander variants such as “155 G > A” or “155 G > A,161 G > A,162 G > A” are not called as functional (p-adj = 0.21 and p-adj = 0.24, respectively) despite having differential editing frequencies, highlighting CRISPR-Millipede’s ability to pinpoint the true functional variant (Supplementary Fig."
+    },
+    {
+      "page": 7,
+      "section": "Results",
+      "field": "time",
+      "raw": "7 days",
+      "value": "7",
+      "unit": "days",
+      "subject": "We",
+      "action": "transduced",
+      "context": "We transduced NALM6 cells expressing different base editors, including ABE8e-SpRY, evoCDA and the cytosine base editor CBE-SpRY, with individual gRNAs in an arrayed fashion and measured CD19 expression 7 days post transduction via flow cytometry."
+    },
+    {
+      "page": 7,
+      "section": "Results",
+      "field": "percent",
+      "raw": "50%",
+      "value": "50",
+      "unit": "%",
+      "subject": "GFP + versus non-",
+      "action": "transduced",
+      "context": "For normalization, we aimed for a 50% gRNA transduction efficiency and compared the CD19 levels of gRNAtransduced cells (GFP + ) versus non-transduced cells (GFP-) within the same well (Supplementary Fig."
+    },
+    {
+      "page": 9,
+      "section": "Results",
+      "field": "percent",
+      "raw": "44%",
+      "value": "44",
+      "unit": "%",
+      "subject": "expression 17–44% compared non-",
+      "action": "transduced",
+      "context": "By editing position 137 in NALM6 ABE8e-SpRY cells, we observed that a single base substitution at this position using different gRNAs reduces CD19 expression by 17–44%, compared to non-transduced cells (Fig."
+    },
+    {
+      "page": 9,
+      "section": "Results",
+      "field": "time",
+      "raw": "3d",
+      "value": "3",
+      "unit": "d",
+      "subject": null,
+      "action": null,
+      "context": "3d, e), while three neutral gRNAs, designed to target non-hit regions, showed no effect on CD19 expression."
+    },
+    {
+      "page": 9,
+      "section": "Results",
+      "field": "percent",
+      "raw": "23%",
+      "value": "23",
+      "unit": "%",
+      "subject": null,
+      "action": null,
+      "context": "Similarly, editing of position 176 led to a 23% reduction of CD19 levels (Fig."
+    },
+    {
+      "page": 9,
+      "section": "Results",
+      "field": "other",
+      "raw": "3g",
+      "value": "3",
+      "unit": "g",
+      "subject": null,
+      "action": null,
+      "context": "3g, h, Supplementary Fig."
+    },
+    {
+      "page": 9,
+      "section": "Results",
+      "field": "time",
+      "raw": "7 days",
+      "value": "7",
+      "unit": "days",
+      "subject": null,
+      "action": null,
+      "context": "We then performed validation experiments by transducing ddABE8e-SpRY cells with gRNAs targeting position 326–330 as well as the shared hit regions 145–166 and 218–235 and culturing them in Shield-1 for 7 days to ensure editing."
+    },
+    {
+      "page": 9,
+      "section": "Results",
+      "field": "other",
+      "raw": "154 G",
+      "value": "154",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Notably, the board plot shows that 154 G > A affects the motifs of MYB, ZBTB18 and ZEB1, while 151 A > G only disrupts the MYB motif (Fig."
+    },
+    {
+      "page": 10,
+      "section": "Figure Legends",
+      "field": "other",
+      "raw": "154 G",
+      "value": "154",
+      "unit": "G",
+      "subject": null,
+      "action": null,
+      "context": "Top variants with high effect size and PIP include 154 G > A, 227 T > C and 229 T > C."
+    },
+    {
+      "page": 10,
+      "section": "Figure Legends",
+      "field": "concentration",
+      "raw": "10 μM",
+      "value": "10",
+      "unit": "μM",
+      "subject": "CD19 enhancer position 145",
+      "action": "treated",
+      "context": "Sorted cells transduced with gRNAs targeting AAVS1 or CD19 enhancer position 145 were treated with 10 μM Mebendazole for 24 h and CD19 median fluorescence intensity (MFI) was assessed via flow cytometry."
+    },
+    {
+      "page": 10,
+      "section": "Figure Legends",
+      "field": "time",
+      "raw": "24 h",
+      "value": "24",
+      "unit": "h",
+      "subject": "CD19 enhancer position 145",
+      "action": "treated",
+      "context": "Sorted cells transduced with gRNAs targeting AAVS1 or CD19 enhancer position 145 were treated with 10 μM Mebendazole for 24 h and CD19 median fluorescence intensity (MFI) was assessed via flow cytometry."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "field": "time",
+      "raw": "6 days",
+      "value": "6",
+      "unit": "days",
+      "subject": null,
+      "action": null,
+      "context": "We assessed CD19 expression of these clones upon washing-out Shield-1 and culturing them in normal media for 6 days, thus avoiding steric hindrance effects."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "field": "time",
+      "raw": "7 days",
+      "value": "7",
+      "unit": "days",
+      "subject": "highest lowest CD19-expressing gRNA-",
+      "action": "transduced",
+      "context": "Following transduction, we cultured the cells for 7 days before sorting for the 5% highest and lowest CD19-expressing gRNA-transduced cells (Supplementary Fig."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "field": "percent",
+      "raw": "5%",
+      "value": "5",
+      "unit": "%",
+      "subject": "highest lowest CD19-expressing gRNA-",
+      "action": "transduced",
+      "context": "Following transduction, we cultured the cells for 7 days before sorting for the 5% highest and lowest CD19-expressing gRNA-transduced cells (Supplementary Fig."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "field": "percent",
+      "raw": "64%",
+      "value": "64",
+      "unit": "%",
+      "subject": null,
+      "action": null,
+      "context": "KO of PAX5 and EBF1 in Cas9-expressing cells resulted in a 64% and 37% reduction in CD19 expression, respectively, further validating our findings (Supplementary Fig."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "field": "percent",
+      "raw": "37%",
+      "value": "37",
+      "unit": "%",
+      "subject": null,
+      "action": null,
+      "context": "KO of PAX5 and EBF1 in Cas9-expressing cells resulted in a 64% and 37% reduction in CD19 expression, respectively, further validating our findings (Supplementary Fig."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "field": "time",
+      "raw": "24 h",
+      "value": "24",
+      "unit": "h",
+      "subject": null,
+      "action": null,
+      "context": "To investigate this further, we combined MYB motif editing using sg145 with a 24 h Mebendazole treatment (Fig."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "field": "percent",
+      "raw": "35%",
+      "value": "35",
+      "unit": "%",
+      "subject": "rates ~35% B-ALL cases",
+      "action": "treated",
+      "context": "Despite initial high success rates, ~35% of B-ALL cases treated with CD19 CAR-T relapse27, with a subset due to loss or downregulation of the CD19 antigen28."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "field": "time",
+      "raw": "3 days",
+      "value": "3",
+      "unit": "days",
+      "subject": "3 days co-",
+      "action": "culture",
+      "context": "After 3 days of co-culture, we observed that targeting the CD19 exon 2 splice acceptor site (our positive control) resulted in accumulation of cells resistant to CAR-T-mediated killing, in line with known variants found at the CD19 splice site in CAR-T relapses."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "count",
+      "raw": "300 cells",
+      "value": "300",
+      "unit": "cells",
+      "subject": null,
+      "action": null,
+      "context": "To illustrate the point regarding scalability and cost, consider that a scenario where single-cell RNA sequencing is used to produce the same output as our approach obtaining sufficient coverage of alleles would require sequencing ~300 cells per variant and with ~300 variants tested in biological triplicates, this would mean encapsulating and sequencing around 270,000 single cells."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "10%",
+      "value": "10",
+      "unit": "%",
+      "subject": "lines NALM6 cells CVCL_0092",
+      "action": "cultured",
+      "context": "Methods Cell culture and cell lines NALM6 cells (CVCL_0092) were cultured in RPMI 1640 (Thermo Fisher Scientific, # A41923-01) with 10% Fetal Bovine Serum (Fisher Scientific, #10500064), 100 U/ml Penicillin-Streptomycin (Fisher Scientific, #11548876), and 2 mM L-Glutamine (Thermo Fisher Scientific, #11510626) at 37 °C, 5% CO2."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "concentration",
+      "raw": "2 mM",
+      "value": "2",
+      "unit": "mM",
+      "subject": "lines NALM6 cells CVCL_0092",
+      "action": "cultured",
+      "context": "Methods Cell culture and cell lines NALM6 cells (CVCL_0092) were cultured in RPMI 1640 (Thermo Fisher Scientific, # A41923-01) with 10% Fetal Bovine Serum (Fisher Scientific, #10500064), 100 U/ml Penicillin-Streptomycin (Fisher Scientific, #11548876), and 2 mM L-Glutamine (Thermo Fisher Scientific, #11510626) at 37 °C, 5% CO2."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "temperature",
+      "raw": "37 °C",
+      "value": "37",
+      "unit": "°C",
+      "subject": "lines NALM6 cells CVCL_0092",
+      "action": "cultured",
+      "context": "Methods Cell culture and cell lines NALM6 cells (CVCL_0092) were cultured in RPMI 1640 (Thermo Fisher Scientific, # A41923-01) with 10% Fetal Bovine Serum (Fisher Scientific, #10500064), 100 U/ml Penicillin-Streptomycin (Fisher Scientific, #11548876), and 2 mM L-Glutamine (Thermo Fisher Scientific, #11510626) at 37 °C, 5% CO2."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "5%",
+      "value": "5",
+      "unit": "%",
+      "subject": "lines NALM6 cells CVCL_0092",
+      "action": "cultured",
+      "context": "Methods Cell culture and cell lines NALM6 cells (CVCL_0092) were cultured in RPMI 1640 (Thermo Fisher Scientific, # A41923-01) with 10% Fetal Bovine Serum (Fisher Scientific, #10500064), 100 U/ml Penicillin-Streptomycin (Fisher Scientific, #11548876), and 2 mM L-Glutamine (Thermo Fisher Scientific, #11510626) at 37 °C, 5% CO2."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "10%",
+      "value": "10",
+      "unit": "%",
+      "subject": "HEK293T cells",
+      "action": "cultured",
+      "context": "HEK293T cells were cultured in DMEM (Thermo Fisher Scientific, #11584486) with 10% Fetal Bovine Serum (Fisher Scientific, #10500064), 100 U/ml Penicillin-Streptomycin (Fisher Scientific, #11548876), and 2 mM L-Glutamine (Thermo Fisher Scientific, #11510626)."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "concentration",
+      "raw": "2 mM",
+      "value": "2",
+      "unit": "mM",
+      "subject": "HEK293T cells",
+      "action": "cultured",
+      "context": "HEK293T cells were cultured in DMEM (Thermo Fisher Scientific, #11584486) with 10% Fetal Bovine Serum (Fisher Scientific, #10500064), 100 U/ml Penicillin-Streptomycin (Fisher Scientific, #11548876), and 2 mM L-Glutamine (Thermo Fisher Scientific, #11510626)."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "count",
+      "raw": "5×105 cells",
+      "value": "5×105",
+      "unit": "cells",
+      "subject": "RPMI 24 well plates",
+      "action": "transduced",
+      "context": "To achieve stable expression of NGG-evoCDA, ABE8e-SpRY, ddABE8e-SpRY, CBE-SpRY, and Cas9 (Supplementary Data 1) 5×105 cells were seeded in 1 ml RPMI in 24 well plates, transduced with lentiviruses, and selected with 10 μg/ml Blasticidin (Gibco, # A1113903) for five days."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "1 ml",
+      "value": "1",
+      "unit": "ml",
+      "subject": "RPMI 24 well plates",
+      "action": "transduced",
+      "context": "To achieve stable expression of NGG-evoCDA, ABE8e-SpRY, ddABE8e-SpRY, CBE-SpRY, and Cas9 (Supplementary Data 1) 5×105 cells were seeded in 1 ml RPMI in 24 well plates, transduced with lentiviruses, and selected with 10 μg/ml Blasticidin (Gibco, # A1113903) for five days."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "concentration",
+      "raw": "10 μg/ml",
+      "value": "10",
+      "unit": "μg/ml",
+      "subject": "RPMI 24 well plates",
+      "action": "transduced",
+      "context": "To achieve stable expression of NGG-evoCDA, ABE8e-SpRY, ddABE8e-SpRY, CBE-SpRY, and Cas9 (Supplementary Data 1) 5×105 cells were seeded in 1 ml RPMI in 24 well plates, transduced with lentiviruses, and selected with 10 μg/ml Blasticidin (Gibco, # A1113903) for five days."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "time",
+      "raw": "11131D",
+      "value": "11131",
+      "unit": "D",
+      "subject": "primary human T cells",
+      "action": "thawed",
+      "context": "To generate CAR-expressing T cells, primary human T cells were thawed and activated (Dynabeads Human T-Activator αCD3/αCD28 beads; Thermo Scientific, #11131D), followed by transduction with purified lentiviruses (Lenti-X Concentrator; Takara, #631232) and Puromycin (Gibco, # A1113803) selection29."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "cell_density",
+      "raw": "2×106 cells/ml",
+      "value": "2×106",
+      "unit": "cells/ml",
+      "subject": "T cells",
+      "action": "cultured",
+      "context": "T cells were cultured at a density of 0.3 − 2×106 cells/ml in AIMV medium (Thermo Fisher Scientific, #12055091) supplemented with 2% Octaplas (Blutspendezentrale Wien), 2.5% HEPES (Thermo Fisher Scientific, #15630056), 1% L-glutamine (Thermo Fisher Scientific, #11510626), and 200 U/mL recombinant human IL-2 (Peprotech, #200-02-250UG)."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "2%",
+      "value": "2",
+      "unit": "%",
+      "subject": "T cells",
+      "action": "cultured",
+      "context": "T cells were cultured at a density of 0.3 − 2×106 cells/ml in AIMV medium (Thermo Fisher Scientific, #12055091) supplemented with 2% Octaplas (Blutspendezentrale Wien), 2.5% HEPES (Thermo Fisher Scientific, #15630056), 1% L-glutamine (Thermo Fisher Scientific, #11510626), and 200 U/mL recombinant human IL-2 (Peprotech, #200-02-250UG)."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "2.5%",
+      "value": "2.5",
+      "unit": "%",
+      "subject": "T cells",
+      "action": "cultured",
+      "context": "T cells were cultured at a density of 0.3 − 2×106 cells/ml in AIMV medium (Thermo Fisher Scientific, #12055091) supplemented with 2% Octaplas (Blutspendezentrale Wien), 2.5% HEPES (Thermo Fisher Scientific, #15630056), 1% L-glutamine (Thermo Fisher Scientific, #11510626), and 200 U/mL recombinant human IL-2 (Peprotech, #200-02-250UG)."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "1%",
+      "value": "1",
+      "unit": "%",
+      "subject": "T cells",
+      "action": "cultured",
+      "context": "T cells were cultured at a density of 0.3 − 2×106 cells/ml in AIMV medium (Thermo Fisher Scientific, #12055091) supplemented with 2% Octaplas (Blutspendezentrale Wien), 2.5% HEPES (Thermo Fisher Scientific, #15630056), 1% L-glutamine (Thermo Fisher Scientific, #11510626), and 200 U/mL recombinant human IL-2 (Peprotech, #200-02-250UG)."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "field": "other",
+      "raw": "250UG",
+      "value": "250",
+      "unit": "UG",
+      "subject": "T cells",
+      "action": "cultured",
+      "context": "T cells were cultured at a density of 0.3 − 2×106 cells/ml in AIMV medium (Thermo Fisher Scientific, #12055091) supplemented with 2% Octaplas (Blutspendezentrale Wien), 2.5% HEPES (Thermo Fisher Scientific, #15630056), 1% L-glutamine (Thermo Fisher Scientific, #11510626), and 200 U/mL recombinant human IL-2 (Peprotech, #200-02-250UG)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "count",
+      "raw": "5 cells/well",
+      "value": "5",
+      "unit": "cells/well",
+      "subject": "200 μl 96 well",
+      "action": "plate",
+      "context": "Three days post-electroporation, GFP+ cells were sorted and plated at a density of 5 cells/well in 200 μl in a 96 well plate."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "200 μl",
+      "value": "200",
+      "unit": "μl",
+      "subject": "200 μl 96 well",
+      "action": "plate",
+      "context": "Three days post-electroporation, GFP+ cells were sorted and plated at a density of 5 cells/well in 200 μl in a 96 well plate."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "count",
+      "raw": "2×105 cells",
+      "value": "2×105",
+      "unit": "cells",
+      "subject": "Briefly 1-2×105 cells",
+      "action": "incubated",
+      "context": "Briefly, 1-2×105 cells were incubated with a 1:25 antibody dilution in DPBS for 25 minutes at 4 °C."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "time",
+      "raw": "25 minutes",
+      "value": "25",
+      "unit": "minutes",
+      "subject": "Briefly 1-2×105 cells",
+      "action": "incubated",
+      "context": "Briefly, 1-2×105 cells were incubated with a 1:25 antibody dilution in DPBS for 25 minutes at 4 °C."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "temperature",
+      "raw": "4 °C",
+      "value": "4",
+      "unit": "°C",
+      "subject": "Briefly 1-2×105 cells",
+      "action": "incubated",
+      "context": "Briefly, 1-2×105 cells were incubated with a 1:25 antibody dilution in DPBS for 25 minutes at 4 °C."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "count",
+      "raw": "50×106 cells",
+      "value": "50×106",
+      "unit": "cells",
+      "subject": "above 200-300 μl staining",
+      "action": "mix",
+      "context": "For sorting of the base editor screens, 20–50×106 cells per replicate were washed in DPBS and stained using the APC-conjugated antibody (APC Clone SJ25C1; BD Biosciences; #340722) from above in 200-300 μl staining mix."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "300 μl",
+      "value": "300",
+      "unit": "μl",
+      "subject": "above 200-300 μl staining",
+      "action": "mix",
+      "context": "For sorting of the base editor screens, 20–50×106 cells per replicate were washed in DPBS and stained using the APC-conjugated antibody (APC Clone SJ25C1; BD Biosciences; #340722) from above in 200-300 μl staining mix."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "count",
+      "raw": "130×106 cells",
+      "value": "130×106",
+      "unit": "cells",
+      "subject": "130×106 cells stained washed",
+      "action": "resuspended",
+      "context": "130×106 cells were stained, washed, resuspended in DPBS and strained through a 35 μm nylon mesh (Fisher Scientific, #10585801)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "concentration",
+      "raw": "35 μm",
+      "value": "35",
+      "unit": "μm",
+      "subject": "130×106 cells stained washed",
+      "action": "resuspended",
+      "context": "130×106 cells were stained, washed, resuspended in DPBS and strained through a 35 μm nylon mesh (Fisher Scientific, #10585801)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "1 ml",
+      "value": "1",
+      "unit": "ml",
+      "subject": "Sorter system sorted cells",
+      "action": "collected",
+      "context": "FACS was performed with BD FACSAria™ Cell Sorter system and sorted cells were collected in 0.5-1 ml DPBS."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "time",
+      "raw": "24 h",
+      "value": "24",
+      "unit": "h",
+      "subject": "Lentivirus production HEK293T cells",
+      "action": "seeded",
+      "context": "Lentivirus production HEK293T cells were seeded in 15 cm dishes 24 h prior to transfection."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "80%",
+      "value": "80",
+      "unit": "%",
+      "subject": null,
+      "action": null,
+      "context": "Cells were transfected at 80% confluency in 16 ml of media with 8.75 μg of VSVG, 16.25 μg of psPAX2, and 25 μg of the lentiviral vector, using 150 μg of linear polyethylenimine (PEI) (Sigma-Aldrich, #408727-100 ML)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "16 ml",
+      "value": "16",
+      "unit": "ml",
+      "subject": null,
+      "action": null,
+      "context": "Cells were transfected at 80% confluency in 16 ml of media with 8.75 μg of VSVG, 16.25 μg of psPAX2, and 25 μg of the lentiviral vector, using 150 μg of linear polyethylenimine (PEI) (Sigma-Aldrich, #408727-100 ML)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "other",
+      "raw": "8.75 μg",
+      "value": "8.75",
+      "unit": "μg",
+      "subject": null,
+      "action": null,
+      "context": "Cells were transfected at 80% confluency in 16 ml of media with 8.75 μg of VSVG, 16.25 μg of psPAX2, and 25 μg of the lentiviral vector, using 150 μg of linear polyethylenimine (PEI) (Sigma-Aldrich, #408727-100 ML)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "other",
+      "raw": "16.25 μg",
+      "value": "16.25",
+      "unit": "μg",
+      "subject": null,
+      "action": null,
+      "context": "Cells were transfected at 80% confluency in 16 ml of media with 8.75 μg of VSVG, 16.25 μg of psPAX2, and 25 μg of the lentiviral vector, using 150 μg of linear polyethylenimine (PEI) (Sigma-Aldrich, #408727-100 ML)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "other",
+      "raw": "25 μg",
+      "value": "25",
+      "unit": "μg",
+      "subject": null,
+      "action": null,
+      "context": "Cells were transfected at 80% confluency in 16 ml of media with 8.75 μg of VSVG, 16.25 μg of psPAX2, and 25 μg of the lentiviral vector, using 150 μg of linear polyethylenimine (PEI) (Sigma-Aldrich, #408727-100 ML)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "other",
+      "raw": "150 μg",
+      "value": "150",
+      "unit": "μg",
+      "subject": null,
+      "action": null,
+      "context": "Cells were transfected at 80% confluency in 16 ml of media with 8.75 μg of VSVG, 16.25 μg of psPAX2, and 25 μg of the lentiviral vector, using 150 μg of linear polyethylenimine (PEI) (Sigma-Aldrich, #408727-100 ML)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "100 ML",
+      "value": "100",
+      "unit": "ML",
+      "subject": null,
+      "action": null,
+      "context": "Cells were transfected at 80% confluency in 16 ml of media with 8.75 μg of VSVG, 16.25 μg of psPAX2, and 25 μg of the lentiviral vector, using 150 μg of linear polyethylenimine (PEI) (Sigma-Aldrich, #408727-100 ML)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "time",
+      "raw": "24 h",
+      "value": "24",
+      "unit": "h",
+      "subject": null,
+      "action": null,
+      "context": "Media was changed to fresh media 16–24 h post-transfection."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "time",
+      "raw": "48 h",
+      "value": "48",
+      "unit": "h",
+      "subject": "72 h post-transfection subsequently",
+      "action": "concentrated",
+      "context": "Lentiviral supernatant was collected at 48 h and 72 h post-transfection and subsequently concentrated by ultracentrifugation (24000 rpm, 4 °C, 2 h) in a 20% sucrose gradient."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "time",
+      "raw": "72 h",
+      "value": "72",
+      "unit": "h",
+      "subject": "72 h post-transfection subsequently",
+      "action": "concentrated",
+      "context": "Lentiviral supernatant was collected at 48 h and 72 h post-transfection and subsequently concentrated by ultracentrifugation (24000 rpm, 4 °C, 2 h) in a 20% sucrose gradient."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "speed",
+      "raw": "24000 rpm",
+      "value": "24000",
+      "unit": "rpm",
+      "subject": "72 h post-transfection subsequently",
+      "action": "concentrated",
+      "context": "Lentiviral supernatant was collected at 48 h and 72 h post-transfection and subsequently concentrated by ultracentrifugation (24000 rpm, 4 °C, 2 h) in a 20% sucrose gradient."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "temperature",
+      "raw": "4 °C",
+      "value": "4",
+      "unit": "°C",
+      "subject": "72 h post-transfection subsequently",
+      "action": "concentrated",
+      "context": "Lentiviral supernatant was collected at 48 h and 72 h post-transfection and subsequently concentrated by ultracentrifugation (24000 rpm, 4 °C, 2 h) in a 20% sucrose gradient."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "time",
+      "raw": "2 h",
+      "value": "2",
+      "unit": "h",
+      "subject": "72 h post-transfection subsequently",
+      "action": "concentrated",
+      "context": "Lentiviral supernatant was collected at 48 h and 72 h post-transfection and subsequently concentrated by ultracentrifugation (24000 rpm, 4 °C, 2 h) in a 20% sucrose gradient."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "20%",
+      "value": "20",
+      "unit": "%",
+      "subject": "72 h post-transfection subsequently",
+      "action": "concentrated",
+      "context": "Lentiviral supernatant was collected at 48 h and 72 h post-transfection and subsequently concentrated by ultracentrifugation (24000 rpm, 4 °C, 2 h) in a 20% sucrose gradient."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "15 ml",
+      "value": "15",
+      "unit": "ml",
+      "subject": "seeded 10-15 ml RPMI",
+      "action": "transduced",
+      "context": "Base editor screen in NALM6 cells For base editor screens, 5–7.5×106 NALM6 cells stably expressing evoCDA or ABE8e-SpRY were seeded in 10-15 ml RPMI and transduced at a 0.3 MOI to ensure single viral integrations per cell."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "dose",
+      "raw": "0.3 MOI",
+      "value": "0.3",
+      "unit": "MOI",
+      "subject": "seeded 10-15 ml RPMI",
+      "action": "transduced",
+      "context": "Base editor screen in NALM6 cells For base editor screens, 5–7.5×106 NALM6 cells stably expressing evoCDA or ABE8e-SpRY were seeded in 10-15 ml RPMI and transduced at a 0.3 MOI to ensure single viral integrations per cell."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "30%",
+      "value": "30",
+      "unit": "%",
+      "subject": null,
+      "action": null,
+      "context": "A titration experiment was performed to determine the amount of virus required to achieve a transduction rate of 30%."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "field": "count",
+      "raw": "50×106 cells",
+      "value": "50×106",
+      "unit": "cells",
+      "subject": "post transduction 20–50×106 cells",
+      "action": "collected",
+      "context": "Seven days post transduction, 20–50×106 cells were collected, counted, and processed for FACS sorting."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "dose",
+      "raw": "0.3 MOI",
+      "value": "0.3",
+      "unit": "MOI",
+      "subject": "clonal NALM6 Cas9 cells",
+      "action": "transduced",
+      "context": "For the TF KO screen, 20×106 clonal NALM6 Cas9 cells were transduced at a 0.3 MOI to ensure single viral integrations per cell."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "30%",
+      "value": "30",
+      "unit": "%",
+      "subject": null,
+      "action": null,
+      "context": "A titration experiment was performed beforehand to determine the virus amount necessary to achieve a 30% transduction and a 1000x gRNA representation was maintained throughout the screen."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "count",
+      "raw": "130×106 cells",
+      "value": "130×106",
+      "unit": "cells",
+      "subject": "130×106 cells collected counted",
+      "action": "stained",
+      "context": "Seven days post transduction, 130×106 cells were collected, counted, stained and processed for FACS sorting."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "5%",
+      "value": "5",
+      "unit": "%",
+      "subject": null,
+      "action": null,
+      "context": "5% of cells with highest (3.9–4.7×105 cells) and 5% of cells with lowest (4.7–8.4×105 cells) CD19 levels were sorted."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "count",
+      "raw": "4.7×105 cells",
+      "value": "4.7×105",
+      "unit": "cells",
+      "subject": null,
+      "action": null,
+      "context": "5% of cells with highest (3.9–4.7×105 cells) and 5% of cells with lowest (4.7–8.4×105 cells) CD19 levels were sorted."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "count",
+      "raw": "8.4×105 cells",
+      "value": "8.4×105",
+      "unit": "cells",
+      "subject": null,
+      "action": null,
+      "context": "5% of cells with highest (3.9–4.7×105 cells) and 5% of cells with lowest (4.7–8.4×105 cells) CD19 levels were sorted."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "100 μl",
+      "value": "100",
+      "unit": "μl",
+      "subject": "well 96 well plates",
+      "action": "transduced",
+      "context": "Validation experiments using individual sgRNAs 5×104 NALM6 cells stably expressing evoCDA, ABE8e-SpRY, ddABE8e-SpRY, CBE-SpRY, or Cas9 were seeded in 100 μl RPMI per well in 96 well plates and transduced with lentiviruses."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "count",
+      "raw": "2×105 cells",
+      "value": "2×105",
+      "unit": "cells",
+      "subject": "cytometry see above rest",
+      "action": "collected",
+      "context": "Seven days post transduction, 1–2×105 cells were used for flow cytometry (see above) and the rest was collected for Sanger sequencing."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "concentration",
+      "raw": "200 nM",
+      "value": "200",
+      "unit": "nM",
+      "subject": "cells clonal ddABE8e-SpRY seeded",
+      "action": "transduced",
+      "context": "For experiments using the ddABE8e-SpRY base editor system, NALM6 cells clonal for ddABE8e-SpRY were seeded and transduced in media containing 200 nM of Shield-1 (TargetMol, #T13884)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "time",
+      "raw": "3 days",
+      "value": "3",
+      "unit": "days",
+      "subject": "cytometry see above rest",
+      "action": "collected",
+      "context": "After 3 days, 1–2×105 cells were used for flow cytometry (see above) and the rest was collected for Sanger sequencing."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "count",
+      "raw": "2×105 cells",
+      "value": "2×105",
+      "unit": "cells",
+      "subject": "cytometry see above rest",
+      "action": "collected",
+      "context": "After 3 days, 1–2×105 cells were used for flow cytometry (see above) and the rest was collected for Sanger sequencing."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "100 μl",
+      "value": "100",
+      "unit": "μl",
+      "subject": "μl 96 well plate",
+      "action": "transduced",
+      "context": "IKZF1 validation experiment 5×104 NALM6 Cas9 IKZF1-GFP reporter cells were seeded in 100 μl in a 96 well plate and transduced with gRNAs targeting AAVS1 or IKZF1 itself."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "time",
+      "raw": "7 days",
+      "value": "7",
+      "unit": "days",
+      "subject": null,
+      "action": "transduced",
+      "context": "Transduced cells were selected using Puromycin (Gibco, #A1113803) for 7 days and later GFP levels and CD19 levels were assessed via flow cytometry."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "100 μl",
+      "value": "100",
+      "unit": "μl",
+      "subject": "μl 96 well plates",
+      "action": "treated",
+      "context": "Treatment with IKZF1 and MYB degraders 5×104 NALM6 Cas9 IKZF1-GFP cells in 100 μl in 96 well plates were treated for 48 h with 2 μM Lenalidomide (Merck, #901558) and 1×105 NALM6 ABe8e-SpRY cells in 100 μl in 96 well plates were treated for 24 h with 10 μM Mebendazole (MedChemExpress, #HY-17595) prior to assessment of IKZF1 and/or CD19 levels by flow cytometry."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "time",
+      "raw": "48 h",
+      "value": "48",
+      "unit": "h",
+      "subject": "μl 96 well plates",
+      "action": "treated",
+      "context": "Treatment with IKZF1 and MYB degraders 5×104 NALM6 Cas9 IKZF1-GFP cells in 100 μl in 96 well plates were treated for 48 h with 2 μM Lenalidomide (Merck, #901558) and 1×105 NALM6 ABe8e-SpRY cells in 100 μl in 96 well plates were treated for 24 h with 10 μM Mebendazole (MedChemExpress, #HY-17595) prior to assessment of IKZF1 and/or CD19 levels by flow cytometry."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "concentration",
+      "raw": "2 μM",
+      "value": "2",
+      "unit": "μM",
+      "subject": "μl 96 well plates",
+      "action": "treated",
+      "context": "Treatment with IKZF1 and MYB degraders 5×104 NALM6 Cas9 IKZF1-GFP cells in 100 μl in 96 well plates were treated for 48 h with 2 μM Lenalidomide (Merck, #901558) and 1×105 NALM6 ABe8e-SpRY cells in 100 μl in 96 well plates were treated for 24 h with 10 μM Mebendazole (MedChemExpress, #HY-17595) prior to assessment of IKZF1 and/or CD19 levels by flow cytometry."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "time",
+      "raw": "24 h",
+      "value": "24",
+      "unit": "h",
+      "subject": "μl 96 well plates",
+      "action": "treated",
+      "context": "Treatment with IKZF1 and MYB degraders 5×104 NALM6 Cas9 IKZF1-GFP cells in 100 μl in 96 well plates were treated for 48 h with 2 μM Lenalidomide (Merck, #901558) and 1×105 NALM6 ABe8e-SpRY cells in 100 μl in 96 well plates were treated for 24 h with 10 μM Mebendazole (MedChemExpress, #HY-17595) prior to assessment of IKZF1 and/or CD19 levels by flow cytometry."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "concentration",
+      "raw": "10 μM",
+      "value": "10",
+      "unit": "μM",
+      "subject": "μl 96 well plates",
+      "action": "treated",
+      "context": "Treatment with IKZF1 and MYB degraders 5×104 NALM6 Cas9 IKZF1-GFP cells in 100 μl in 96 well plates were treated for 48 h with 2 μM Lenalidomide (Merck, #901558) and 1×105 NALM6 ABe8e-SpRY cells in 100 μl in 96 well plates were treated for 24 h with 10 μM Mebendazole (MedChemExpress, #HY-17595) prior to assessment of IKZF1 and/or CD19 levels by flow cytometry."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "count",
+      "raw": "2×106 cells",
+      "value": "2×106",
+      "unit": "cells",
+      "subject": "Western Blot 2×106 cells",
+      "action": "lysed",
+      "context": "Western Blot 2×106 cells were lysed using NP-40 buffer (50 mM Tris-Hcl (pH 8.0), 150 mM NaCl, 1% NP-40) supplemented with 1:100 Protease Inhibitor Cocktail (Sigma, #P8340) and 1:200 Benzonase (Merck, #70664)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "concentration",
+      "raw": "50 mM",
+      "value": "50",
+      "unit": "mM",
+      "subject": "Western Blot 2×106 cells",
+      "action": "lysed",
+      "context": "Western Blot 2×106 cells were lysed using NP-40 buffer (50 mM Tris-Hcl (pH 8.0), 150 mM NaCl, 1% NP-40) supplemented with 1:100 Protease Inhibitor Cocktail (Sigma, #P8340) and 1:200 Benzonase (Merck, #70664)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "concentration",
+      "raw": "150 mM",
+      "value": "150",
+      "unit": "mM",
+      "subject": "Western Blot 2×106 cells",
+      "action": "lysed",
+      "context": "Western Blot 2×106 cells were lysed using NP-40 buffer (50 mM Tris-Hcl (pH 8.0), 150 mM NaCl, 1% NP-40) supplemented with 1:100 Protease Inhibitor Cocktail (Sigma, #P8340) and 1:200 Benzonase (Merck, #70664)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "1%",
+      "value": "1",
+      "unit": "%",
+      "subject": "Western Blot 2×106 cells",
+      "action": "lysed",
+      "context": "Western Blot 2×106 cells were lysed using NP-40 buffer (50 mM Tris-Hcl (pH 8.0), 150 mM NaCl, 1% NP-40) supplemented with 1:100 Protease Inhibitor Cocktail (Sigma, #P8340) and 1:200 Benzonase (Merck, #70664)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "time",
+      "raw": "15 min",
+      "value": "15",
+      "unit": "min",
+      "subject": "incubation 4 °C samples",
+      "action": "centrifuged",
+      "context": "Following a 15 min incubation at 4 °C, samples were centrifuged at 15,000 g for 10 min."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "temperature",
+      "raw": "4 °C",
+      "value": "4",
+      "unit": "°C",
+      "subject": "incubation 4 °C samples",
+      "action": "centrifuged",
+      "context": "Following a 15 min incubation at 4 °C, samples were centrifuged at 15,000 g for 10 min."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "other",
+      "raw": "000 g",
+      "value": "000",
+      "unit": "g",
+      "subject": "incubation 4 °C samples",
+      "action": "centrifuged",
+      "context": "Following a 15 min incubation at 4 °C, samples were centrifuged at 15,000 g for 10 min."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "time",
+      "raw": "10 min",
+      "value": "10",
+      "unit": "min",
+      "subject": "incubation 4 °C samples",
+      "action": "centrifuged",
+      "context": "Following a 15 min incubation at 4 °C, samples were centrifuged at 15,000 g for 10 min."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "other",
+      "raw": "70 μg",
+      "value": "70",
+      "unit": "μg",
+      "subject": null,
+      "action": null,
+      "context": "Protein quantification was conducted using Pierce BCA Protein Assay Kit (Thermo Scientific, #23227) according to manufacturer’s instructions and 70 μg of protein was used for Western Blot."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "time",
+      "raw": "5 min",
+      "value": "5",
+      "unit": "min",
+      "subject": "5 min 95 °C",
+      "action": "separated",
+      "context": "Proteins were denatured using XT Sample Buffer (BioRad, #1610791) for 5 min at 95 °C and separated in 4–12% Criterion XT Bis-Tris Protein Gels (BioRad, #3450125)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "temperature",
+      "raw": "95 °C",
+      "value": "95",
+      "unit": "°C",
+      "subject": "5 min 95 °C",
+      "action": "separated",
+      "context": "Proteins were denatured using XT Sample Buffer (BioRad, #1610791) for 5 min at 95 °C and separated in 4–12% Criterion XT Bis-Tris Protein Gels (BioRad, #3450125)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "12%",
+      "value": "12",
+      "unit": "%",
+      "subject": "5 min 95 °C",
+      "action": "separated",
+      "context": "Proteins were denatured using XT Sample Buffer (BioRad, #1610791) for 5 min at 95 °C and separated in 4–12% Criterion XT Bis-Tris Protein Gels (BioRad, #3450125)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "time",
+      "raw": "1 h",
+      "value": "1",
+      "unit": "h",
+      "subject": "membranes blocked 1 h",
+      "action": "incubated",
+      "context": "The membranes were blocked for 1 h, incubated overnight at 4 °C in primary antibody (1:1000 MYB – Proteintech, 17800-1-AP; 1: 20,000 bActin – Santa Cruz, sc-47778) and at RT for 2 h in secondary antibody (1: 10,000 anti-rabbit – Cell Signaling, #7074) in EveryBlot blocking buffer (BioRad, #12010020)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "temperature",
+      "raw": "4 °C",
+      "value": "4",
+      "unit": "°C",
+      "subject": "membranes blocked 1 h",
+      "action": "incubated",
+      "context": "The membranes were blocked for 1 h, incubated overnight at 4 °C in primary antibody (1:1000 MYB – Proteintech, 17800-1-AP; 1: 20,000 bActin – Santa Cruz, sc-47778) and at RT for 2 h in secondary antibody (1: 10,000 anti-rabbit – Cell Signaling, #7074) in EveryBlot blocking buffer (BioRad, #12010020)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "field": "time",
+      "raw": "2 h",
+      "value": "2",
+      "unit": "h",
+      "subject": "membranes blocked 1 h",
+      "action": "incubated",
+      "context": "The membranes were blocked for 1 h, incubated overnight at 4 °C in primary antibody (1:1000 MYB – Proteintech, 17800-1-AP; 1: 20,000 bActin – Santa Cruz, sc-47778) and at RT for 2 h in secondary antibody (1: 10,000 anti-rabbit – Cell Signaling, #7074) in EveryBlot blocking buffer (BioRad, #12010020)."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "count",
+      "raw": "2×105 cells",
+      "value": "2×105",
+      "unit": "cells",
+      "subject": "10 min 4 °C",
+      "action": "stained",
+      "context": "Briefly, 1–2×105 cells were washed in FACS buffer (DPBS containing 1% Albunorm (200 g/l; Octapharma, #14512) and 0.2% NaN3), incubated in blocking solution (10% human serum (Sigma, #H4522-20ML) in FACS buffer) for 10 min at 4 °C, and stained with a 1:100 antibody dilution for 25 min at 4 °C."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "1%",
+      "value": "1",
+      "unit": "%",
+      "subject": "10 min 4 °C",
+      "action": "stained",
+      "context": "Briefly, 1–2×105 cells were washed in FACS buffer (DPBS containing 1% Albunorm (200 g/l; Octapharma, #14512) and 0.2% NaN3), incubated in blocking solution (10% human serum (Sigma, #H4522-20ML) in FACS buffer) for 10 min at 4 °C, and stained with a 1:100 antibody dilution for 25 min at 4 °C."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "0.2%",
+      "value": "0.2",
+      "unit": "%",
+      "subject": "10 min 4 °C",
+      "action": "stained",
+      "context": "Briefly, 1–2×105 cells were washed in FACS buffer (DPBS containing 1% Albunorm (200 g/l; Octapharma, #14512) and 0.2% NaN3), incubated in blocking solution (10% human serum (Sigma, #H4522-20ML) in FACS buffer) for 10 min at 4 °C, and stained with a 1:100 antibody dilution for 25 min at 4 °C."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "10%",
+      "value": "10",
+      "unit": "%",
+      "subject": "10 min 4 °C",
+      "action": "stained",
+      "context": "Briefly, 1–2×105 cells were washed in FACS buffer (DPBS containing 1% Albunorm (200 g/l; Octapharma, #14512) and 0.2% NaN3), incubated in blocking solution (10% human serum (Sigma, #H4522-20ML) in FACS buffer) for 10 min at 4 °C, and stained with a 1:100 antibody dilution for 25 min at 4 °C."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "20ML",
+      "value": "20",
+      "unit": "ML",
+      "subject": "10 min 4 °C",
+      "action": "stained",
+      "context": "Briefly, 1–2×105 cells were washed in FACS buffer (DPBS containing 1% Albunorm (200 g/l; Octapharma, #14512) and 0.2% NaN3), incubated in blocking solution (10% human serum (Sigma, #H4522-20ML) in FACS buffer) for 10 min at 4 °C, and stained with a 1:100 antibody dilution for 25 min at 4 °C."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "time",
+      "raw": "10 min",
+      "value": "10",
+      "unit": "min",
+      "subject": "10 min 4 °C",
+      "action": "stained",
+      "context": "Briefly, 1–2×105 cells were washed in FACS buffer (DPBS containing 1% Albunorm (200 g/l; Octapharma, #14512) and 0.2% NaN3), incubated in blocking solution (10% human serum (Sigma, #H4522-20ML) in FACS buffer) for 10 min at 4 °C, and stained with a 1:100 antibody dilution for 25 min at 4 °C."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "temperature",
+      "raw": "4 °C",
+      "value": "4",
+      "unit": "°C",
+      "subject": "10 min 4 °C",
+      "action": "stained",
+      "context": "Briefly, 1–2×105 cells were washed in FACS buffer (DPBS containing 1% Albunorm (200 g/l; Octapharma, #14512) and 0.2% NaN3), incubated in blocking solution (10% human serum (Sigma, #H4522-20ML) in FACS buffer) for 10 min at 4 °C, and stained with a 1:100 antibody dilution for 25 min at 4 °C."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "time",
+      "raw": "25 min",
+      "value": "25",
+      "unit": "min",
+      "subject": "10 min 4 °C",
+      "action": "stained",
+      "context": "Briefly, 1–2×105 cells were washed in FACS buffer (DPBS containing 1% Albunorm (200 g/l; Octapharma, #14512) and 0.2% NaN3), incubated in blocking solution (10% human serum (Sigma, #H4522-20ML) in FACS buffer) for 10 min at 4 °C, and stained with a 1:100 antibody dilution for 25 min at 4 °C."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "1 ml",
+      "value": "1",
+      "unit": "ml",
+      "subject": "24 well plates transduced",
+      "action": "concentrated",
+      "context": "NALM6 T cell co-culture experiments 5×105 NALM6 ABE8e-SpRY cells were seeded in 1 ml RPMI in 24 well plates, transduced with concentrated lentiviruses expressing BFP alone or GFP in combination with a sgRNA, and sorted based on BFP or GFP expression 72 h post transduction."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "time",
+      "raw": "72 h",
+      "value": "72",
+      "unit": "h",
+      "subject": "24 well plates transduced",
+      "action": "concentrated",
+      "context": "NALM6 T cell co-culture experiments 5×105 NALM6 ABE8e-SpRY cells were seeded in 1 ml RPMI in 24 well plates, transduced with concentrated lentiviruses expressing BFP alone or GFP in combination with a sgRNA, and sorted based on BFP or GFP expression 72 h post transduction."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "volume",
+      "raw": "200 μl",
+      "value": "200",
+      "unit": "μl",
+      "subject": "well plates effector-target-ratio 0.2:1",
+      "action": "cultured",
+      "context": "For co-culture experiments, 2.5×104 BFP and 2.5×104 GFP-positive cells were mixed with either mock (non-transduced) or CD19-expressing CART cells in 96 well plates in an effector-target-ratio of 0.2:1 and cultured in a total of 200 μl RPMI media containing 200 U/ml recombinant human IL-2 (PeproTech, #200-02-250UG), in U-shaped 96 well plates for 3 days."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "other",
+      "raw": "250UG",
+      "value": "250",
+      "unit": "UG",
+      "subject": "well plates effector-target-ratio 0.2:1",
+      "action": "cultured",
+      "context": "For co-culture experiments, 2.5×104 BFP and 2.5×104 GFP-positive cells were mixed with either mock (non-transduced) or CD19-expressing CART cells in 96 well plates in an effector-target-ratio of 0.2:1 and cultured in a total of 200 μl RPMI media containing 200 U/ml recombinant human IL-2 (PeproTech, #200-02-250UG), in U-shaped 96 well plates for 3 days."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "time",
+      "raw": "3 days",
+      "value": "3",
+      "unit": "days",
+      "subject": "well plates effector-target-ratio 0.2:1",
+      "action": "cultured",
+      "context": "For co-culture experiments, 2.5×104 BFP and 2.5×104 GFP-positive cells were mixed with either mock (non-transduced) or CD19-expressing CART cells in 96 well plates in an effector-target-ratio of 0.2:1 and cultured in a total of 200 μl RPMI media containing 200 U/ml recombinant human IL-2 (PeproTech, #200-02-250UG), in U-shaped 96 well plates for 3 days."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "field": "percent",
+      "raw": "30%",
+      "value": "30",
+      "unit": "%",
+      "subject": null,
+      "action": null,
+      "context": "Sequencing and demultiplexing Amplicon-sequencing of endogenous allele samples was conducted on Illumina MiSeq using paired-end 250 and 300 bp and 30% PhiX."
+    }
+  ],
+  "procedureFragments": [
+    {
+      "page": 2,
+      "section": "Results",
+      "text": "In order to validate this enhancer, we isolated clones with monoor biallelic deletions of the 346 bp element."
+    },
+    {
+      "page": 3,
+      "section": "Figure Legends",
+      "text": "Open in a new tab a A putative proximal enhancer is located upstream of the CD19 promoter, based on H3K27ac ChIP-seq and ATAC-seq in NALM6 cells, and sequence conservation. b CD19 mRNA levels in NALM6 clones with monoor biallelic deletion of the CD19 enhancer (normalized to GAPDH). c Flow cytometry of wild-type (WT) and enhancer knock-out (KO) clones stained with a CD19 antibody to assess CD19 protein levels."
+    },
+    {
+      "page": 3,
+      "section": "Figure Legends",
+      "text": "A library of 200 gRNAs targeting the region was designed and transduced in evoCDA and ABE8e-SpRY expressing cells."
+    },
+    {
+      "page": 3,
+      "section": "Figure Legends",
+      "text": "Transduced, GFP positive cells were sorted in CD19 positive (red box) and negative (blue box) populations. gRNAs targeting the CD19 exon 2 splice acceptor site (denoted as ex2acc) and the AAVS1 were used as positive and negative controls for gating, respectively. f Comparison of allele-based workflow with standard gRNA enrichment sequencing approach."
+    },
+    {
+      "page": 3,
+      "section": "Figure Legends",
+      "text": "First, cells stably expressing a base editor are transduced with a tiling gRNA library."
+    },
+    {
+      "page": 3,
+      "section": "Figure Legends",
+      "text": "Next, cells are separated based on the expression of the target protein and genomic DNA is extracted."
+    },
+    {
+      "page": 4,
+      "section": "Figure Legends",
+      "text": "After transducing the gRNAs at a 0.3 MOI, we cultured the cells for 7 days to allow for efficient editing and phenotype development."
+    },
+    {
+      "page": 4,
+      "section": "Figure Legends",
+      "text": "We then stained cells with a fluorescently conjugated antibody and performed FACS in triplicates to sort cells into “CD19 positive” and “CD19 negative” populations."
+    },
+    {
+      "page": 5,
+      "section": "Figure Legends",
+      "text": "Pvalues are adjusted using the Benjamini-Hochberg test."
+    },
+    {
+      "page": 6,
+      "section": "Methods",
+      "text": "We transduced NALM6 cells expressing ABE8e-SpRY with sg218 alone, followed by sorting, amplicon-sequencing, and CRISPRMillipede analysis."
+    },
+    {
+      "page": 7,
+      "section": "Results",
+      "text": "We transduced NALM6 cells expressing different base editors, including ABE8e-SpRY, evoCDA and the cytosine base editor CBE-SpRY, with individual gRNAs in an arrayed fashion and measured CD19 expression 7 days post transduction via flow cytometry."
+    },
+    {
+      "page": 7,
+      "section": "Results",
+      "text": "For normalization, we aimed for a 50% gRNA transduction efficiency and compared the CD19 levels of gRNAtransduced cells (GFP + ) versus non-transduced cells (GFP-) within the same well (Supplementary Fig."
+    },
+    {
+      "page": 8,
+      "section": "Figure Legends",
+      "text": "Dark blue/dark orange gRNAs were contained in the initial library, whereas light blue/light orange gRNAs were designed for orthogonal validations. b-h Validation of shared hit regions (positions 145–166 and 218–235; b, c) and allele-based hit regions (positions 137, 176, 200–201 and 311; d-h) via single gRNA transductions and CD19 flow cytometry. e Flow cytometry histograms and Sanger sequencing tracks of cells transduced with gRNAs targeting AAVS1 or CD19 enhancer at position 137."
+    },
+    {
+      "page": 8,
+      "section": "Figure Legends",
+      "text": "The relative CD19 median fluorescence intensity (MFI) is shown as ratio between transduced (GFP + ) and non-transduced (GFP-) cells in all validation experiments (b–d, f–h, j). gRNAs targeting AAVS1 and neutral CD19 enhancer regions were used as negative controls. gRNAs targeting the coding sequence of CD19 exon 2 or the splice acceptor site were used as positive controls."
+    },
+    {
+      "page": 9,
+      "section": "Results",
+      "text": "By editing position 137 in NALM6 ABE8e-SpRY cells, we observed that a single base substitution at this position using different gRNAs reduces CD19 expression by 17–44%, compared to non-transduced cells (Fig."
+    },
+    {
+      "page": 9,
+      "section": "Results",
+      "text": "Following, we cultured the cells in the presence and absence of Shield-1 for 3 additional days before measuring CD19 levels by flow cytometry (Fig."
+    },
+    {
+      "page": 9,
+      "section": "Results",
+      "text": "This approach distinguished the contribution of single nucleotide substitutions from base editor steric hindrance effects by directly comparing CD19 levels in cells subjected to a Shield-1 wash-out and cells continuously grown in Shield-1."
+    },
+    {
+      "page": 10,
+      "section": "Figure Legends",
+      "text": "CD19 activators are shown in blue and CD19 repressors in red (FDR < 0.05). c CD19 expression of NALM6 cells treated with Mebendazole to degrade MYB."
+    },
+    {
+      "page": 10,
+      "section": "Figure Legends",
+      "text": "Sorted cells transduced with gRNAs targeting AAVS1 or CD19 enhancer position 145 were treated with 10 μM Mebendazole for 24 h and CD19 median fluorescence intensity (MFI) was assessed via flow cytometry."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "text": "In line with our allele-based analysis, motifmutated cells display lower CD19 levels compared to AAVS1 transduced cells (Supplementary Fig."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "text": "We transduced Cas9-expressing NALM6 cells with a gRNA library targeting 635 TFs of the hematopoietic lineage and chromatin regulators."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "text": "Following transduction, we cultured the cells for 7 days before sorting for the 5% highest and lowest CD19-expressing gRNA-transduced cells (Supplementary Fig."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "text": "To confirm these results, we transduced IKZF1-GFP reporter NALM6 cells with gRNAs targeting IKZF1 or treated them with Lenalidomide, a potent IKZF1/3 degrader26."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "text": "Despite initial high success rates, ~35% of B-ALL cases treated with CD19 CAR-T relapse27, with a subset due to loss or downregulation of the CD19 antigen28."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "text": "To test how substitutions in the CD19 enhancer impact physiological expression levels in the context of CD19 CAR-T, we performed a competition experiment with unedited NALM6 cells (marked with BFP) and genome-edited NALM6 cells (marked with GFP), co-cultured with CD19 CAR-T or mock T-cells (Fig."
+    },
+    {
+      "page": 11,
+      "section": "Figure Legends",
+      "text": "After 3 days of co-culture, we observed that targeting the CD19 exon 2 splice acceptor site (our positive control) resulted in accumulation of cells resistant to CAR-T-mediated killing, in line with known variants found at the CD19 splice site in CAR-T relapses."
+    },
+    {
+      "page": 12,
+      "section": "Discussion",
+      "text": "Open in a new tab a Schematics of CAR-T co-culture experiments."
+    },
+    {
+      "page": 12,
+      "section": "Discussion",
+      "text": "WT, BFP + NALM6 cells were mixed 1:1 with GFP + NALM6 cells carrying edits at the CD19 enhancer and co-cultured with CD19 CAR-T cells or mock T cells."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "text": "CRISPR-Millipede uncovered four regions missed by conventional gRNAbased screens and pinpointed specific nucleotides crucial for CD19 regulation, highlighting the added sensitivity of our approach."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "text": "Methods Cell culture and cell lines NALM6 cells (CVCL_0092) were cultured in RPMI 1640 (Thermo Fisher Scientific, # A41923-01) with 10% Fetal Bovine Serum (Fisher Scientific, #10500064), 100 U/ml Penicillin-Streptomycin (Fisher Scientific, #11548876), and 2 mM L-Glutamine (Thermo Fisher Scientific, #11510626) at 37 °C, 5% CO2."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "text": "HEK293T cells were cultured in DMEM (Thermo Fisher Scientific, #11584486) with 10% Fetal Bovine Serum (Fisher Scientific, #10500064), 100 U/ml Penicillin-Streptomycin (Fisher Scientific, #11548876), and 2 mM L-Glutamine (Thermo Fisher Scientific, #11510626)."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "text": "To achieve stable expression of NGG-evoCDA, ABE8e-SpRY, ddABE8e-SpRY, CBE-SpRY, and Cas9 (Supplementary Data 1) 5×105 cells were seeded in 1 ml RPMI in 24 well plates, transduced with lentiviruses, and selected with 10 μg/ml Blasticidin (Gibco, # A1113903) for five days."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "text": "To generate CAR-expressing T cells, primary human T cells were thawed and activated (Dynabeads Human T-Activator αCD3/αCD28 beads; Thermo Scientific, #11131D), followed by transduction with purified lentiviruses (Lenti-X Concentrator; Takara, #631232) and Puromycin (Gibco, # A1113803) selection29."
+    },
+    {
+      "page": 13,
+      "section": "Methods",
+      "text": "T cells were cultured at a density of 0.3 − 2×106 cells/ml in AIMV medium (Thermo Fisher Scientific, #12055091) supplemented with 2% Octaplas (Blutspendezentrale Wien), 2.5% HEPES (Thermo Fisher Scientific, #15630056), 1% L-glutamine (Thermo Fisher Scientific, #11510626), and 200 U/mL recombinant human IL-2 (Peprotech, #200-02-250UG)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "Generation of genome-edited NALM6 clones 1×106 NALM6 Cas9 cells were electroporated with two GFP-labeled gRNAs targeting sequences flanking the CD19 enhancer using a NEPA21 electroporator."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "Three days post-electroporation, GFP+ cells were sorted and plated at a density of 5 cells/well in 200 μl in a 96 well plate."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "RNA isolation and RT-qPCR RNA was isolated from cells using RNeasy Mini Kit (Qiagen, #74134), and cDNA was prepared using iScript cDNA Synthesis Kit (Bio-Rad, #1708891)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "Briefly, 1-2×105 cells were incubated with a 1:25 antibody dilution in DPBS for 25 minutes at 4 °C."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "After staining, cells were washed twice, resuspended in DPBS and analyzed using a BD LSRFortessa™ Cell Analyzer."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "For sorting of the base editor screens, 20–50×106 cells per replicate were washed in DPBS and stained using the APC-conjugated antibody (APC Clone SJ25C1; BD Biosciences; #340722) from above in 200-300 μl staining mix."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "130×106 cells were stained, washed, resuspended in DPBS and strained through a 35 μm nylon mesh (Fisher Scientific, #10585801)."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "FACS was performed with BD FACSAria™ Cell Sorter system and sorted cells were collected in 0.5-1 ml DPBS."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "Lentivirus production HEK293T cells were seeded in 15 cm dishes 24 h prior to transfection."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "Lentiviral supernatant was collected at 48 h and 72 h post-transfection and subsequently concentrated by ultracentrifugation (24000 rpm, 4 °C, 2 h) in a 20% sucrose gradient."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "Base editor screen in NALM6 cells For base editor screens, 5–7.5×106 NALM6 cells stably expressing evoCDA or ABE8e-SpRY were seeded in 10-15 ml RPMI and transduced at a 0.3 MOI to ensure single viral integrations per cell."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "Seven days post transduction, 20–50×106 cells were collected, counted, and processed for FACS sorting."
+    },
+    {
+      "page": 14,
+      "section": "Methods",
+      "text": "Genomic DNA was isolated with DNeasy Blood & Tissue Kit (Qiagen, #69506) and next-generation sequencing (NGS) libraries for the count-based read-out were prepared as previously reported31."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "For the validation of sg 218, cells were treated equally to the base editor screen but transduced only with sg 218."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "For the TF KO screen, 20×106 clonal NALM6 Cas9 cells were transduced at a 0.3 MOI to ensure single viral integrations per cell."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "Seven days post transduction, 130×106 cells were collected, counted, stained and processed for FACS sorting."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "Genomic DNA was isolated with DNeasy Blood & Tissue Kit (Qiagen, #69506) and next-generation sequencing (NGS) libraries for the count-based read-out were prepared as previously reported31."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "Validation experiments using individual sgRNAs 5×104 NALM6 cells stably expressing evoCDA, ABE8e-SpRY, ddABE8e-SpRY, CBE-SpRY, or Cas9 were seeded in 100 μl RPMI per well in 96 well plates and transduced with lentiviruses."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "Seven days post transduction, 1–2×105 cells were used for flow cytometry (see above) and the rest was collected for Sanger sequencing."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "For experiments using the ddABE8e-SpRY base editor system, NALM6 cells clonal for ddABE8e-SpRY were seeded and transduced in media containing 200 nM of Shield-1 (TargetMol, #T13884)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "Seven days post transduction, cells were washed once in DPBS to remove Shield-1 (TargetMol, #T13884)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "After 3 days, 1–2×105 cells were used for flow cytometry (see above) and the rest was collected for Sanger sequencing."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "For all validation experiments, data was normalized by calculating the ratio of CD19 MFI in transduced (GFP positive) vs. non-transduced (GFP negative) cells."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "IKZF1 validation experiment 5×104 NALM6 Cas9 IKZF1-GFP reporter cells were seeded in 100 μl in a 96 well plate and transduced with gRNAs targeting AAVS1 or IKZF1 itself."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "Transduced cells were selected using Puromycin (Gibco, #A1113803) for 7 days and later GFP levels and CD19 levels were assessed via flow cytometry."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "Treatment with IKZF1 and MYB degraders 5×104 NALM6 Cas9 IKZF1-GFP cells in 100 μl in 96 well plates were treated for 48 h with 2 μM Lenalidomide (Merck, #901558) and 1×105 NALM6 ABe8e-SpRY cells in 100 μl in 96 well plates were treated for 24 h with 10 μM Mebendazole (MedChemExpress, #HY-17595) prior to assessment of IKZF1 and/or CD19 levels by flow cytometry."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "Cells treated with DMSO (Fisher Scientific, # BP231-100) were used as controls."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "Western Blot 2×106 cells were lysed using NP-40 buffer (50 mM Tris-Hcl (pH 8.0), 150 mM NaCl, 1% NP-40) supplemented with 1:100 Protease Inhibitor Cocktail (Sigma, #P8340) and 1:200 Benzonase (Merck, #70664)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "Following a 15 min incubation at 4 °C, samples were centrifuged at 15,000 g for 10 min."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "Proteins were denatured using XT Sample Buffer (BioRad, #1610791) for 5 min at 95 °C and separated in 4–12% Criterion XT Bis-Tris Protein Gels (BioRad, #3450125)."
+    },
+    {
+      "page": 15,
+      "section": "Methods",
+      "text": "The membranes were blocked for 1 h, incubated overnight at 4 °C in primary antibody (1:1000 MYB – Proteintech, 17800-1-AP; 1: 20,000 bActin – Santa Cruz, sc-47778) and at RT for 2 h in secondary antibody (1: 10,000 anti-rabbit – Cell Signaling, #7074) in EveryBlot blocking buffer (BioRad, #12010020)."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "text": "Briefly, 1–2×105 cells were washed in FACS buffer (DPBS containing 1% Albunorm (200 g/l; Octapharma, #14512) and 0.2% NaN3), incubated in blocking solution (10% human serum (Sigma, #H4522-20ML) in FACS buffer) for 10 min at 4 °C, and stained with a 1:100 antibody dilution for 25 min at 4 °C."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "text": "NALM6 T cell co-culture experiments 5×105 NALM6 ABE8e-SpRY cells were seeded in 1 ml RPMI in 24 well plates, transduced with concentrated lentiviruses expressing BFP alone or GFP in combination with a sgRNA, and sorted based on BFP or GFP expression 72 h post transduction."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "text": "For co-culture experiments, 2.5×104 BFP and 2.5×104 GFP-positive cells were mixed with either mock (non-transduced) or CD19-expressing CART cells in 96 well plates in an effector-target-ratio of 0.2:1 and cultured in a total of 200 μl RPMI media containing 200 U/ml recombinant human IL-2 (PeproTech, #200-02-250UG), in U-shaped 96 well plates for 3 days."
+    },
+    {
+      "page": 16,
+      "section": "Methods",
+      "text": "For flow cytometry, cells were washed with FACS buffer and measured using a BD LSRFortessa™ Cell Analyzer."
+    },
+    {
+      "page": 17,
+      "section": "Methods",
+      "text": "P-values were adjusted for multiple testing using the Benjamini–Hochberg procedure."
+    },
+    {
+      "page": 17,
+      "section": "Methods",
+      "text": "The resulting log2 fold changes and adjusted p-values were used for downstream visualization and interpretation of allele distributions."
+    },
+    {
+      "page": 18,
+      "section": "Methods",
+      "text": "Randomization was ensured as cells were plated in different plate formats (6, 24 and 96 well plates) and treated in different wells."
+    }
+  ],
+  "sectionMap": [
+    {
+      "title": "Abstract",
+      "startPage": 1,
+      "endPage": 1,
+      "summary": "Abstract CRISPR tiling screens have enabled the characterization of regulatory sequences but are limited by low resolution arising from the indirect readout of editing via guide RNA sequencing and enrichment analysis."
+    },
+    {
+      "title": "Results",
+      "startPage": 2,
+      "endPage": 2,
+      "summary": "To address these limitations, we introduce an experimental and computational framework that enables precise determination of genotype-phenotype relationships at the nucleotide level from bulk amplicon sequencing, in the context of non-coding sequences, utilizing information from direct sequencing of alleles produced by base editing at regulatory regions."
+    },
+    {
+      "title": "Figure Legends",
+      "startPage": 3,
+      "endPage": 5,
+      "summary": "Base-editor tiling screen design featuring gRNA-directed targeting, allele-based phenotypic readout, and integrated computational analysis pipeline."
+    },
+    {
+      "title": "Methods",
+      "startPage": 6,
+      "endPage": 6,
+      "summary": "In contrast to the gRNA readout model, CRISPR-Millipede demonstrates superior capabilities in elucidating genotype-phenotype relationship with nucleotide-level precision, a significant improvement over the ~5–10 base pair resolution of traditional genetic screens."
+    },
+    {
+      "title": "Results",
+      "startPage": 7,
+      "endPage": 7,
+      "summary": "identified 220 A > G and 224 A > G (Supplementary Fig."
+    },
+    {
+      "title": "Figure Legends",
+      "startPage": 8,
+      "endPage": 8,
+      "summary": "Arrayed flow cytometry-based validation of shared and framework-specific hit regions using different base editors."
+    },
+    {
+      "title": "Results",
+      "startPage": 9,
+      "endPage": 9,
+      "summary": "(AAVS1, CD19 ex2acc and neutral 1-3 gRNAs) for validations in ABE8e and evoCDA cells are shown twice in panels b and d."
+    },
+    {
+      "title": "Figure Legends",
+      "startPage": 10,
+      "endPage": 11,
+      "summary": "Pinpointing CD19 regulating transcription factors (TFs) via CRISPR-Millipede boards and a focused TF KO screen."
+    },
+    {
+      "title": "Discussion",
+      "startPage": 12,
+      "endPage": 12,
+      "summary": "Targeting hit regions provides resistance to CD19-CAR-T cells."
+    },
+    {
+      "title": "Methods",
+      "startPage": 13,
+      "endPage": 18,
+      "summary": "Other methods have been developed to investigate the contribution of individual single nucleotide variants on gene expression14,15."
+    },
+    {
+      "title": "Acknowledgments",
+      "startPage": 19,
+      "endPage": 19,
+      "summary": "Source data Source Data 1 (16.6KB, xlsx) Source Data 2 (134.3KB, xlsx) Source Data 3 (32.9KB, xlsx) Source Data 4 (76.3KB, xlsx) Source Data 5 (13.1KB, xlsx) Source Data 6 (348.8KB, xlsx) Acknowledgements The authors thank funding from 1R35HG010717–01 (L.P., D.B.), UM1HG012010 (L.P.,D.B.,B.P.K.), Rappaport MGH Research Scholar Award 2024-2029 (L.P.), the Kayden-Lambert MGH Research Scholar Award 2023-2028 (B.P.K.), the Austrian Federal Ministry of Labour and Economy and the National Foundation for Research, Technology and Development to the Christian Doppler Research Association (M.L.)."
+    },
+    {
+      "title": "Data Availability",
+      "startPage": 20,
+      "endPage": 24,
+      "summary": "Data availability The raw and processed sequencing data generated in this study have been deposited in the Gene Expression Omnibus (GEO) database under accession code GSE278581 [https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE278581] and the Zenodo database under accession code 18187633 [10.5281/zenodo.18187633]."
+    }
+  ]
+}

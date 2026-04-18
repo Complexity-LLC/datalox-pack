@@ -46,13 +46,17 @@ async function createSamplePdf(
 
   const first = pdf.addPage([612, 792]);
   first.drawText(options.firstPageTitle ?? "Example PDF", { x: 48, y: 740, size: 24, font });
-  first.drawText("Introduction to the method.", { x: 48, y: 700, size: 12, font });
-  first.drawText("Key result one.", { x: 48, y: 680, size: 12, font });
+  first.drawText("Abstract", { x: 48, y: 700, size: 18, font });
+  first.drawText("Cells remained viable with >50% memory phenotype after scaffold treatment.", { x: 48, y: 676, size: 12, font });
 
   const second = pdf.addPage([612, 792]);
-  second.drawText("Evaluation", { x: 48, y: 740, size: 24, font });
-  second.drawText("Key result two.", { x: 48, y: 700, size: 12, font });
-  second.drawText("Conclusion.", { x: 48, y: 680, size: 12, font });
+  second.drawText("Methods", { x: 48, y: 740, size: 24, font });
+  second.drawText("Cells were resuspended in 5 mL RPMI and incubated at 37°C for 10 min.", { x: 48, y: 700, size: 12, font });
+  second.drawText("The culture was supplemented with 200 uL cytokine mix at MOI 5.", { x: 48, y: 680, size: 12, font });
+
+  const third = pdf.addPage([612, 792]);
+  third.drawText("Supplementary Materials", { x: 48, y: 740, size: 24, font });
+  third.drawText("Samples were washed with 1 mL buffer and plated at 1 x 10^6 cells/mL.", { x: 48, y: 700, size: 12, font });
 
   const pdfPath = path.join(rootDir, options.filename ?? "example.pdf");
   await writeFile(pdfPath, await pdf.save());
@@ -91,15 +95,21 @@ describe("pdf capture", () => {
     };
 
     const note = await readFile(path.join(hostDir, payload.notePath), "utf8");
-    expect(payload.capture.pageCount).toBe(2);
+    expect(payload.capture.pageCount).toBe(3);
     expect(payload.capture.title).toContain("Example");
     expect(note).toContain("## Signal");
-    expect(note).toContain("## Evidence");
-    expect(note).toContain("Use this note when the task depends on claims, terminology, or structure from Example PDF.");
-    expect(note).toContain("The document's reusable value is concentrated in");
+    expect(note).toContain("## Agent Protocol");
+    expect(note).toContain("## Operational Facts");
+    expect(note).toContain("## Procedure Fragments");
+    expect(note).toContain("Use this note when the task depends on claims, terminology, protocol parameters, assay conditions, or exact numeric values from Example PDF.");
+    expect(note).toContain("5 mL");
+    expect(note).toMatch(/37\s*°?C/);
+    expect(note).toContain("200 uL");
+    expect(note).toContain("MOI 5");
+    expect(note).toContain("1 x 10^6 cells/mL");
     expect(note).toContain("Source URL: https://example.com/example.pdf");
-    expect(note).toContain("Introduction to the method.");
-    expect(note).toContain("Evaluation");
+    expect(note).toContain("Methods | page 2");
+    expect(note).toContain("Supplementary Materials | page 3");
     expect(note).not.toContain("content trapped in a binary file");
     expect(spawnSync("test", ["-f", path.join(hostDir, payload.metadataPath)]).status).toBe(0);
   }, 60000);
@@ -129,8 +139,9 @@ describe("pdf capture", () => {
 
       expect(note).toContain("# Example PDF");
       expect(note).toContain("## Structure");
-      expect(note).toContain("Key result one.");
-      expect(note).toContain("Use the extracted headings, snippets, and page structure below");
+      expect(note).toContain("## Operational Facts");
+      expect(note).toContain("5 mL");
+      expect(note).toContain("Prefer `Operational Facts` and `Procedure Fragments`");
     } finally {
       await client.close();
     }

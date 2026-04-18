@@ -4,7 +4,7 @@ import path from "node:path";
 import { PDFParse } from "pdf-parse";
 
 import { autoBootstrapIfSafe, probeBootstrapCandidate, refreshControlArtifacts } from "./packCore.js";
-import { extractPdfSource } from "./sourceBundle.js";
+import { extractPdfEvidence, type PdfOperationalFact, type PdfProcedureFragment, type PdfSectionSpan } from "./pdfEvidence.js";
 
 export interface CapturePdfInput {
   repoPath?: string;
@@ -15,7 +15,7 @@ export interface CapturePdfInput {
 }
 
 export interface PdfCaptureMetadata {
-  version: 1;
+  version: 2;
   slug: string;
   sourcePath: string;
   sourceUrl: string | null;
@@ -27,6 +27,9 @@ export interface PdfCaptureMetadata {
   headings: string[];
   sections: Array<{ title: string; text: string }>;
   textSnippets: string[];
+  operationalFacts: PdfOperationalFact[];
+  procedureFragments: PdfProcedureFragment[];
+  sectionMap: PdfSectionSpan[];
 }
 
 export interface CapturePdfResult {
@@ -40,6 +43,9 @@ export interface CapturePdfResult {
     pageCount: number;
     headings: string[];
     textSnippets: string[];
+    operationalFacts: PdfOperationalFact[];
+    procedureFragments: PdfProcedureFragment[];
+    sectionMap: PdfSectionSpan[];
   };
 }
 
@@ -110,6 +116,10 @@ function formatList(items: string[], emptyLine: string): string[] {
     return [`- ${emptyLine}`];
   }
   return items.map((item) => `- ${item}`);
+}
+
+function formatJsonBlock(value: unknown): string[] {
+  return ["```json", JSON.stringify(value, null, 2), "```"];
 }
 
 function readableList(items: string[]): string {
@@ -184,8 +194,14 @@ function renderPdfNote(input: {
   headings: string[];
   sections: Array<{ title: string; text: string }>;
   textSnippets: string[];
+  operationalFacts: PdfOperationalFact[];
+  procedureFragments: PdfProcedureFragment[];
+  sectionMap: PdfSectionSpan[];
 }): string {
   const summary = buildPdfCaptureNoteSummary(input);
+  const factExamples = input.operationalFacts
+    .slice(0, 5)
+    .map((fact) => `${fact.raw} | page ${fact.page} | ${fact.section} | ${fact.context}`);
 
   return [
     "---",
@@ -220,7 +236,36 @@ function renderPdfNote(input: {
     "",
     "## Examples",
     "",
-    ...formatList(summary.examples, "No extracted examples."),
+    ...formatList(factExamples.length > 0 ? factExamples : summary.examples, "No extracted examples."),
+    "",
+    "## Agent Protocol",
+    "",
+    "Use `Operational Facts` first for exact numbers and units.",
+    "Use `Procedure Fragments` next for executable steps and assay conditions.",
+    "Use `Section Map` to locate where a parameter came from before reopening the source PDF.",
+    "If a required value is missing here, only then reopen the source document.",
+    "",
+    "## Section Map",
+    "",
+    ...formatList(
+      input.sectionMap.map((section) =>
+        section.startPage === section.endPage
+          ? `${section.title} | page ${section.startPage} | ${section.summary}`
+          : `${section.title} | pages ${section.startPage}-${section.endPage} | ${section.summary}`),
+      "No section map detected.",
+    ),
+    "",
+    "## Operational Facts",
+    "",
+    ...formatJsonBlock(input.operationalFacts),
+    "",
+    "## Procedure Fragments",
+    "",
+    ...formatJsonBlock(input.procedureFragments),
+    "",
+    "## Evidence Snippets",
+    "",
+    ...formatList(input.textSnippets.slice(0, 12), "No extracted evidence snippets."),
     "",
     "## Evidence",
     "",
@@ -252,24 +297,34 @@ function buildPdfCaptureNoteSummary(input: {
   pageCount: number;
   headings: string[];
   textSnippets: string[];
+  operationalFacts: PdfOperationalFact[];
+  procedureFragments: PdfProcedureFragment[];
 }): PdfCaptureNoteSummary {
   const keyHeadings = input.headings.slice(0, 3);
-  const keySnippets = input.textSnippets.slice(0, 3);
   const headingPhrase = keyHeadings.length > 0
     ? readableList(keyHeadings)
     : `${input.pageCount} extracted PDF page${input.pageCount === 1 ? "" : "s"}`;
   const sourceDescriptor = input.sourceUrl ?? input.sourcePath;
+  const topFact = input.operationalFacts[0];
+  const topSnippet = input.textSnippets[0];
+  const signalParts = [
+    `Captured ${input.pageCount} page(s) from ${sourceDescriptor}.`,
+    `Section map anchored on ${headingPhrase}.`,
+    `${input.operationalFacts.length} operational fact(s) and ${input.procedureFragments.length} procedure fragment(s) extracted.`,
+  ];
 
   return {
     title: input.title,
     notePath: input.notePath,
-    whenToUse: `Use this note when the task depends on claims, terminology, or structure from ${input.title}.`,
-    signal: `Captured ${input.pageCount} page(s) from ${sourceDescriptor}, centered on ${headingPhrase}.`,
-    interpretation: keySnippets.length > 0
-      ? `The document's reusable value is concentrated in ${headingPhrase}, with concrete excerpts such as "${keySnippets[0]}".`
-      : `The document's reusable value is concentrated in ${headingPhrase}.`,
-    action: `Use the extracted headings, snippets, and page structure below before summarizing, citing, or turning ${input.title} into implementation guidance.`,
-    examples: input.textSnippets.slice(0, 5),
+    whenToUse: `Use this note when the task depends on claims, terminology, protocol parameters, assay conditions, or exact numeric values from ${input.title}.`,
+    signal: signalParts.join(" "),
+    interpretation: topFact
+      ? `The reusable value is concentrated in page-linked exact facts such as ${topFact.raw} from ${topFact.section} on page ${topFact.page}, plus section-scoped procedure fragments.`
+      : `The reusable value is concentrated in the normalized section map and evidence snippets from ${headingPhrase}.`,
+    action: `Use the structured sections below first. Prefer \`Operational Facts\` and \`Procedure Fragments\` over prose summary before turning ${input.title} into implementation guidance.`,
+    examples: input.operationalFacts.length > 0
+      ? input.operationalFacts.slice(0, 5).map((fact) => `${fact.raw} | page ${fact.page} | ${fact.section}`)
+      : (topSnippet ? [topSnippet] : []),
   };
 }
 
@@ -282,6 +337,8 @@ export function describeCapturedPdfNote(input: CapturePdfResult): PdfCaptureNote
     pageCount: input.capture.pageCount,
     headings: input.capture.headings,
     textSnippets: input.capture.textSnippets,
+    operationalFacts: input.capture.operationalFacts,
+    procedureFragments: input.capture.procedureFragments,
   });
 }
 
@@ -303,13 +360,16 @@ async function readStoredPdfCaptures(repoPath: string): Promise<StoredPdfCapture
           try {
             const parsed = JSON.parse(await readFile(absoluteMetadataPath, "utf8")) as Partial<PdfCaptureMetadata>;
             if (
-              parsed.version !== 1
+              parsed.version !== 2
               || typeof parsed.sourcePath !== "string"
               || typeof parsed.notePath !== "string"
               || typeof parsed.title !== "string"
               || typeof parsed.pageCount !== "number"
               || !Array.isArray(parsed.headings)
               || !Array.isArray(parsed.textSnippets)
+              || !Array.isArray(parsed.operationalFacts)
+              || !Array.isArray(parsed.procedureFragments)
+              || !Array.isArray(parsed.sectionMap)
             ) {
               return null;
             }
@@ -363,13 +423,16 @@ async function findStoredPdfCapture(repoPath: string, absolutePdfPath: string): 
       sourceUrl: entry.metadata.sourceUrl ?? null,
       notePath: entry.metadata.notePath,
       metadataPath: entry.relativeMetadataPath,
-      capture: {
-        title: entry.metadata.title,
-        pageCount: entry.metadata.pageCount,
-        headings: entry.metadata.headings,
-        textSnippets: entry.metadata.textSnippets,
-      },
-    };
+        capture: {
+          title: entry.metadata.title,
+          pageCount: entry.metadata.pageCount,
+          headings: entry.metadata.headings,
+          textSnippets: entry.metadata.textSnippets,
+          operationalFacts: entry.metadata.operationalFacts,
+          procedureFragments: entry.metadata.procedureFragments,
+          sectionMap: entry.metadata.sectionMap,
+        },
+      };
   }
   return null;
 }
@@ -408,18 +471,12 @@ async function capturePdfArtifactPrepared(repoPath: string, input: CapturePdfInp
     await mkdir(noteDir, { recursive: true });
 
     const sourcePath = normalizeRepoPath(repoPath, absolutePdfPath);
-    const bundle = extractPdfSource({
-      id: sourceSlug,
-      title,
-      capturedAt,
-      path: sourcePath,
-      url: input.sourceUrl,
+    const bundle = extractPdfEvidence({
       pageCount: textResult.total,
       pages: textResult.pages.map((page) => ({
         number: page.num,
         text: page.text,
       })),
-      citations: input.sourceUrl ? [{ label: input.sourceUrl, target: input.sourceUrl }] : undefined,
     });
 
     const relativeNotePath = path.relative(repoPath, notePath) || notePath;
@@ -432,15 +489,18 @@ async function capturePdfArtifactPrepared(repoPath: string, input: CapturePdfInp
         notePath: relativeNotePath,
         capturedAt,
         pageCount: textResult.total,
-        headings: bundle.structure.headings,
-        sections: bundle.structure.sections,
-        textSnippets: bundle.evidence.textSnippets,
+        headings: bundle.headings,
+        sections: bundle.sections,
+        textSnippets: bundle.textSnippets,
+        operationalFacts: bundle.operationalFacts,
+        procedureFragments: bundle.procedureFragments,
+        sectionMap: bundle.sectionMap,
       }),
       "utf8",
     );
 
     const metadata: PdfCaptureMetadata = {
-      version: 1,
+      version: 2,
       slug: sourceSlug,
       sourcePath,
       sourceUrl: input.sourceUrl ?? null,
@@ -449,9 +509,12 @@ async function capturePdfArtifactPrepared(repoPath: string, input: CapturePdfInp
       artifactType: "note",
       notePath: relativeNotePath,
       pageCount: textResult.total,
-      headings: bundle.structure.headings,
-      sections: bundle.structure.sections,
-      textSnippets: bundle.evidence.textSnippets,
+      headings: bundle.headings,
+      sections: bundle.sections,
+      textSnippets: bundle.textSnippets,
+      operationalFacts: bundle.operationalFacts,
+      procedureFragments: bundle.procedureFragments,
+      sectionMap: bundle.sectionMap,
     };
     const relativeMetadataPath = path.relative(repoPath, metadataPath) || metadataPath;
     await writeFile(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
@@ -474,8 +537,11 @@ async function capturePdfArtifactPrepared(repoPath: string, input: CapturePdfInp
       capture: {
         title,
         pageCount: textResult.total,
-        headings: bundle.structure.headings,
-        textSnippets: bundle.evidence.textSnippets,
+        headings: bundle.headings,
+        textSnippets: bundle.textSnippets,
+        operationalFacts: bundle.operationalFacts,
+        procedureFragments: bundle.procedureFragments,
+        sectionMap: bundle.sectionMap,
       },
     };
   } finally {
