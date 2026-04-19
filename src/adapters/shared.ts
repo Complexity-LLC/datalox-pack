@@ -103,6 +103,26 @@ export interface WrappedLoopResult {
   postRun: WrapperPostRunResult | null;
 }
 
+export interface ObservedTurnInput {
+  hostKind: string;
+  eventClass?: "trace" | "candidate";
+  task?: string;
+  workflow?: string;
+  step?: string;
+  skillId?: string | null;
+  summary?: string;
+  observations?: string[];
+  transcript?: string;
+  changedFiles?: string[];
+  matchedNotePaths?: string[];
+  tags?: string[];
+  title?: string;
+  signal?: string;
+  interpretation?: string;
+  recommendedAction?: string;
+  eventKind?: string;
+}
+
 interface ParsedMarkers {
   cleanedText: string;
   summary?: string;
@@ -580,6 +600,65 @@ function collectChangedFiles(repoPath: string): string[] {
     .slice(0, 25);
 }
 
+export function buildObservedTurnPayload(
+  envelope: Pick<LoopEnvelope, "repoPath" | "sessionId" | "guidance" | "originalPrompt">,
+  input: ObservedTurnInput,
+): RecordTurnResultInput {
+  const transcript = typeof input.transcript === "string"
+    ? truncateTranscriptSection(input.transcript, STORED_TRANSCRIPT_LIMITS.stdout)
+    : undefined;
+  const changedFiles = Array.isArray(input.changedFiles)
+    ? input.changedFiles.filter(Boolean).slice(0, 25)
+    : [];
+  const matchedNotePaths = Array.isArray(input.matchedNotePaths) && input.matchedNotePaths.length > 0
+    ? input.matchedNotePaths.filter(Boolean)
+    : envelope.guidance.supportingNotes.map((note) => note.path);
+
+  return {
+    repoPath: envelope.repoPath,
+    eventClass: input.eventClass,
+    task: input.task ?? (envelope.originalPrompt || undefined),
+    workflow: input.workflow ?? envelope.guidance.workflow,
+    step: input.step,
+    skillId: input.skillId ?? envelope.guidance.matchedSkillId ?? undefined,
+    summary: input.summary ?? firstNonEmptyLine(transcript ?? ""),
+    observations: Array.isArray(input.observations) ? [...input.observations] : [],
+    transcript,
+    changedFiles,
+    matchedNotePaths,
+    tags: Array.isArray(input.tags) ? [...input.tags] : [],
+    title: input.title,
+    signal: input.signal,
+    interpretation: input.interpretation,
+    recommendedAction: input.recommendedAction,
+    eventKind: input.eventKind,
+    sessionId: envelope.sessionId ?? undefined,
+    hostKind: input.hostKind,
+  };
+}
+
+export async function recordObservedTurnPayload(
+  envelope: Pick<LoopEnvelope, "repoPath" | "guidance">,
+  payloadBase: RecordTurnResultInput,
+  options: {
+    applyMatchedNotes?: boolean;
+  } = {},
+) {
+  const recorded = await recordTurnResult(payloadBase);
+  const matchedNotePaths = Array.isArray(payloadBase.matchedNotePaths)
+    ? payloadBase.matchedNotePaths.filter(Boolean)
+    : [];
+
+  if (options.applyMatchedNotes && matchedNotePaths.length > 0) {
+    await recordLoopApplication({
+      repoPath: envelope.repoPath,
+      notePaths: matchedNotePaths,
+    });
+  }
+
+  return recorded;
+}
+
 function renderReviewNotes(notes: LoopEnvelope["guidance"]["supportingNotes"]): string {
   if (notes.length === 0) {
     return "- none";
@@ -835,13 +914,15 @@ export async function finalizeWrappedRun(
     : sanitized.child.exitCode !== 0
       ? [buildFailureObservation(sanitized.child)].filter((value): value is string => Boolean(value))
       : [];
+  const eventClass = hasExplicitPromotionSignal(markers) ? "candidate" : "trace";
 
-  const payloadBase: RecordTurnResultInput = {
-    repoPath: envelope.repoPath,
+  const payloadBase = buildObservedTurnPayload(envelope, {
+    hostKind: input.hostKind,
+    eventClass,
     task: input.task ?? (envelope.originalPrompt || undefined),
     workflow: input.workflow ?? envelope.guidance.workflow,
     step: input.step,
-    skillId: input.skillId ?? envelope.guidance.matchedSkillId ?? undefined,
+    skillId: input.skillId,
     summary: input.summary
       ?? markers.summary
       ?? firstNonEmpty([
@@ -851,7 +932,6 @@ export async function finalizeWrappedRun(
     observations,
     transcript: buildTranscript(envelope, sanitized.child, STORED_TRANSCRIPT_LIMITS),
     changedFiles,
-    matchedNotePaths: envelope.guidance.supportingNotes.map((note) => note.path),
     tags: [
       ...(input.tags ?? []),
       ...markers.tags,
@@ -860,28 +940,17 @@ export async function finalizeWrappedRun(
     ],
     title: markers.title,
     signal: markers.signal,
-    interpretation: markers.interpretation ?? (
-      sanitized.child.exitCode === 0
-        ? "Wrapped host command completed while using Datalox loop guidance."
-        : "Wrapped host command failed while using Datalox loop guidance."
-    ),
-    recommendedAction: markers.recommendedAction ?? (
-      sanitized.child.exitCode === 0
-        ? "Reuse this wrapper path for the same task if the guidance stays helpful."
-        : "Inspect the failure and retry only after the gap is understood."
-    ),
+    interpretation: markers.interpretation,
+    recommendedAction: markers.recommendedAction,
     eventKind: input.eventKind ?? markers.eventKind ?? `wrapper:${input.hostKind}:${sanitized.child.exitCode === 0 ? "success" : "failure"}`,
-    sessionId: envelope.sessionId ?? undefined,
-    hostKind: input.hostKind,
-  };
+  });
 
-  const recorded = await recordTurnResult(payloadBase);
+  const recorded = await recordObservedTurnPayload(envelope, payloadBase, {
+    applyMatchedNotes: sanitized.child.exitCode === 0,
+  });
 
-  if (sanitized.child.exitCode === 0 && envelope.guidance.supportingNotes.length > 0) {
-    await recordLoopApplication({
-      repoPath: envelope.repoPath,
-      notePaths: envelope.guidance.supportingNotes.map((note) => note.path),
-    });
+  if (postRunMode === "review" && !input.reviewer) {
+    throw new Error(`Autonomous review is not configured for the ${input.hostKind} wrapper path.`);
   }
 
   if (postRunMode === "review") {

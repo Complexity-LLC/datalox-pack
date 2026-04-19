@@ -2922,6 +2922,32 @@ function derivePatternFields(input) {
   };
 }
 
+function deriveTraceFields(input) {
+  const title = firstNonEmpty([
+    input.title,
+    input.summary,
+    input.observations?.[0],
+    input.task,
+    input.step,
+    "interaction-trace",
+  ]) ?? "interaction-trace";
+
+  const signal = firstNonEmpty([
+    input.signal,
+    input.observations?.[0],
+    sentenceFromTranscript(input.transcript),
+    input.task,
+    title,
+  ]) ?? title;
+
+  return {
+    title: shortenSentence(title, 120),
+    signal,
+    interpretation: input.interpretation ?? null,
+    recommendedAction: input.recommendedAction ?? null,
+  };
+}
+
 function buildEventFingerprint({
   workflow,
   skillId,
@@ -2957,7 +2983,7 @@ async function writeTurnEventFile(payload, cwd = process.cwd(), sourcePathOverri
   const artifacts = await updateControlArtifacts(config, cwd, sourcePath, {
     logEntry: {
       action: "record_event",
-      detail: `${nextPayload.eventKind ?? "observation"} | ${nextPayload.workflow ?? "unknown"} | ${nextPayload.fingerprint}`,
+      detail: `${nextPayload.eventKind ?? "observation"} | ${nextPayload.workflow ?? "unknown"} | ${nextPayload.fingerprint ?? nextPayload.eventClass ?? "trace"}`,
       path: relativePath,
     },
   });
@@ -2987,6 +3013,7 @@ export async function recordTurnResult(
     recommendedAction,
     outcome,
     eventKind = "observation",
+    eventClass = "trace",
   },
   cwd = process.cwd(),
 ) {
@@ -3009,32 +3036,53 @@ export async function recordTurnResult(
   const effectiveWorkflow = workflow
     || reusableMatch?.skill.workflow
     || config.runtime.defaultWorkflow;
-  const derived = derivePatternFields({
-    workflow: effectiveWorkflow,
-    task,
-    step,
-    summary,
-    observations,
-    transcript,
-    title,
-    signal,
-    interpretation,
-    recommendedAction,
-  });
-  const fingerprint = buildEventFingerprint({
-    workflow: effectiveWorkflow,
-    skillId: skillId ?? topMatch?.skill.id,
-    title: derived.title,
-    signal: derived.signal,
-    summary,
-    task,
-    step,
-  });
-  const existingEvents = await listRecordedEvents(config, cwd, sourcePath);
-  const occurrenceCount = existingEvents.filter((entry) => entry.value?.fingerprint === fingerprint).length + 1;
+  const effectiveEventClass = eventClass === "candidate" ? "candidate" : "trace";
+  const derived = effectiveEventClass === "candidate"
+    ? derivePatternFields({
+        workflow: effectiveWorkflow,
+        task,
+        step,
+        summary,
+        observations,
+        transcript,
+        title,
+        signal,
+        interpretation,
+        recommendedAction,
+      })
+    : deriveTraceFields({
+        workflow: effectiveWorkflow,
+        task,
+        step,
+        summary,
+        observations,
+        transcript,
+        title,
+        signal,
+        interpretation,
+        recommendedAction,
+      });
+  const fingerprint = effectiveEventClass === "candidate"
+    ? buildEventFingerprint({
+        workflow: effectiveWorkflow,
+        skillId: skillId ?? topMatch?.skill.id,
+        title: derived.title,
+        signal: derived.signal,
+        summary,
+        task,
+        step,
+      })
+    : null;
+  const existingEvents = effectiveEventClass === "candidate"
+    ? await listRecordedEvents(config, cwd, sourcePath)
+    : [];
+  const occurrenceCount = effectiveEventClass === "candidate"
+    ? existingEvents.filter((entry) => entry.value?.eventClass === "candidate" && entry.value?.fingerprint === fingerprint).length + 1
+    : 1;
   const event = await writeTurnEventFile(
     {
       eventKind,
+      eventClass: effectiveEventClass,
       workflow: effectiveWorkflow,
       task: task ?? null,
       step: step ?? null,
@@ -3128,7 +3176,24 @@ export async function compileRecordedEvent(
   }
 
   const payload = recordedEntry.value ?? {};
-  const occurrenceCount = recordedEvents.filter((entry) => entry.value?.fingerprint === payload.fingerprint).length;
+  if (payload.eventClass !== "candidate") {
+    return {
+      event: {
+        filePath: recordedEntry.filePath,
+        relativePath: recordedEntry.relativePath,
+        payload,
+      },
+      occurrenceCount: 1,
+      fingerprint: payload.fingerprint ?? null,
+      decision: {
+        action: "record_only",
+        reason: "trace events are grounded history only; they do not enter the promotion ladder.",
+        occurrenceCount: 1,
+      },
+      promotion: null,
+    };
+  }
+  const occurrenceCount = recordedEvents.filter((entry) => entry.value?.eventClass === "candidate" && entry.value?.fingerprint === payload.fingerprint).length;
   const decision = {
     ...decidePromotionAction({
       occurrenceCount,
@@ -3280,6 +3345,7 @@ export async function promoteGap(
       recommendedAction,
       outcome,
       eventKind,
+      eventClass: "candidate",
     },
     cwd,
   );

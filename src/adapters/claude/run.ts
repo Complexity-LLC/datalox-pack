@@ -123,14 +123,17 @@ export async function runClaudeWrapper(input: ClaudeWrapperInput) {
   });
 
   const promptIndex = findClaudePromptIndex(claudeArgs);
+  const isPassThroughCommand = claudeArgs.length > 0 && CLAUDE_PASSTHROUGH_COMMANDS.has(claudeArgs[0]);
   let finalArgs: string[];
   if (claudeArgs.some((arg) => arg.includes("__DATALOX_PROMPT__"))) {
     finalArgs = claudeArgs;
   } else if (promptIndex !== -1) {
     finalArgs = [...claudeArgs];
     finalArgs[promptIndex] = envelope.wrappedPrompt;
-  } else {
+  } else if (isPassThroughCommand) {
     finalArgs = [...claudeArgs];
+  } else {
+    finalArgs = [...claudeArgs, envelope.wrappedPrompt];
   }
 
   const executed = runWrappedCommand(claudeBin, finalArgs, envelope, {

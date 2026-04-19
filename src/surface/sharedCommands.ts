@@ -173,6 +173,20 @@ const eventKindArg: SharedArgSpec = {
   mcpKey: "event_kind",
 };
 
+const eventClassOptions = [
+  { canonical: "trace", cli: "trace" },
+  { canonical: "candidate", cli: "candidate" },
+] as const;
+
+const eventClassArg: SharedArgSpec = {
+  key: "eventClass",
+  description: "Event class: trace for grounded history, candidate for promotable reusable gaps.",
+  kind: "enum",
+  cliFlag: "event-class",
+  mcpKey: "event_class",
+  options: eventClassOptions,
+};
+
 const skillArg: SharedArgSpec = {
   key: "skill",
   description: "Skill identifier to resolve directly.",
@@ -573,6 +587,7 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
       recommendedActionArg,
       outcomeArg,
       eventKindArg,
+      eventClassArg,
     ],
     async run(input) {
       return recordTurnResult({
@@ -592,6 +607,7 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
         recommendedAction: maybeString(input.recommendedAction),
         outcome: maybeString(input.outcome),
         eventKind: maybeString(input.eventKind),
+        eventClass: maybeString(input.eventClass) as "trace" | "candidate" | undefined,
       });
     },
   },

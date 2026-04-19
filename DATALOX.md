@@ -142,7 +142,9 @@ Preferred MCP tools:
 
 - `resolve_loop`
 - `record_turn_result`
+  Writes a grounded `trace` by default. Use for receipts and audit history, not automatic knowledge promotion.
 - `promote_gap`
+  Records a promotable `candidate` and runs the note/skill promotion ladder.
 - `lint_pack`
 - `capture_web_artifact`
 - `capture_pdf_artifact`

@@ -49,6 +49,8 @@ Repo-level adoption:
 bash bin/adopt-host-repo.sh /path/to/your-project
 ```
 
+If the host repo already has `AGENTS.md`, `CLAUDE.md`, or `.github/copilot-instructions.md`, adoption preserves that file and injects a small Datalox adapter instead of skipping the Datalox entrypoint entirely.
+
 Or from GitHub:
 
 ```bash
@@ -108,7 +110,9 @@ Primary MCP tools:
 
 - `resolve_loop`
 - `record_turn_result`
+  Records a grounded `trace` by default.
 - `promote_gap`
+  Records a promotable `candidate` and runs the note/skill promotion ladder.
 - `lint_pack`
 - `capture_web_artifact`
 - `capture_pdf_artifact`

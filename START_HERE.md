@@ -38,10 +38,13 @@ your agent gets better after one correction, and you can see what it learned.
   `bash bin/adopt-from-github.sh /path/to/host-repo`
 - Wire skills into common agent tools:
   `bash bin/setup-multi-agent.sh`
-- Automatic post-turn promotion for hosts with hook support:
+- Automatic post-turn hook recording for hosts with hook support:
   `node bin/datalox-auto-promote.js`
+  Default hook events are recorded as `trace`. Set `DATALOX_HOOK_EVENT_CLASS=candidate` only when the hook should enter the promotion ladder.
 - Stop machine-level host interception:
   `bash bin/disable-default-host-integrations.sh`
+
+If the host repo already has `AGENTS.md`, `CLAUDE.md`, or `.github/copilot-instructions.md`, adoption preserves that file and injects a small Datalox adapter instead of skipping the Datalox entrypoint.
 
 ## Normal Usage After Setup
 

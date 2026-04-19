@@ -95,22 +95,32 @@ describe("pdf capture", () => {
     };
 
     const note = await readFile(path.join(hostDir, payload.notePath), "utf8");
+    const metadata = JSON.parse(await readFile(path.join(hostDir, payload.metadataPath), "utf8")) as {
+      version: number;
+      pages: Array<{ page: number; section: string; text: string }>;
+      sectionMap: Array<{ title: string; startPage: number; endPage: number }>;
+    };
     expect(payload.capture.pageCount).toBe(3);
     expect(payload.capture.title).toContain("Example");
     expect(note).toContain("## Signal");
     expect(note).toContain("## Agent Protocol");
-    expect(note).toContain("## Operational Facts");
-    expect(note).toContain("## Procedure Fragments");
+    expect(note).toContain("## Metadata");
     expect(note).toContain("Use this note when the task depends on claims, terminology, protocol parameters, assay conditions, or exact numeric values from Example PDF.");
-    expect(note).toContain("5 mL");
-    expect(note).toMatch(/37\s*°?C/);
-    expect(note).toContain("200 uL");
-    expect(note).toContain("MOI 5");
-    expect(note).toContain("1 x 10^6 cells/mL");
+    expect(note).not.toContain("## Operational Facts");
+    expect(note).not.toContain("## Procedure Fragments");
+    expect(note).toContain(`Metadata path: ${payload.metadataPath}`);
+    expect(note).toContain("Read the metadata JSON before reopening the raw PDF.");
     expect(note).toContain("Source URL: https://example.com/example.pdf");
     expect(note).toContain("Methods | page 2");
     expect(note).toContain("Supplementary Materials | page 3");
     expect(note).not.toContain("content trapped in a binary file");
+    expect(metadata.version).toBe(3);
+    expect(metadata.sectionMap.map((entry) => entry.title)).toContain("Methods");
+    expect(metadata.pages.find((page) => page.page === 2)?.text).toContain("5 mL");
+    expect(metadata.pages.find((page) => page.page === 2)?.text).toMatch(/37\s*°?C/);
+    expect(metadata.pages.find((page) => page.page === 2)?.text).toContain("200 uL");
+    expect(metadata.pages.find((page) => page.page === 2)?.text).toContain("MOI 5");
+    expect(metadata.pages.find((page) => page.page === 3)?.text).toContain("1 x 10^6 cells/mL");
     expect(spawnSync("test", ["-f", path.join(hostDir, payload.metadataPath)]).status).toBe(0);
   }, 60000);
 
@@ -134,14 +144,19 @@ describe("pdf capture", () => {
           path: pdfPath,
         },
       });
-      const result = (response.structuredContent as { result: { notePath: string } }).result;
+      const result = (response.structuredContent as { result: { notePath: string; metadataPath: string } }).result;
       const note = await readFile(path.join(hostDir, result.notePath), "utf8");
+      const metadata = JSON.parse(await readFile(path.join(hostDir, result.metadataPath), "utf8")) as {
+        pages: Array<{ page: number; section: string; text: string }>;
+      };
 
       expect(note).toContain("# Example PDF");
       expect(note).toContain("## Structure");
-      expect(note).toContain("## Operational Facts");
-      expect(note).toContain("5 mL");
-      expect(note).toContain("Prefer `Operational Facts` and `Procedure Fragments`");
+      expect(note).toContain("## Metadata");
+      expect(note).not.toContain("## Operational Facts");
+      expect(note).toContain(result.metadataPath);
+      expect(note).toContain("Return the value with page number and source sentence");
+      expect(metadata.pages.find((page) => page.page === 2)?.text).toContain("5 mL");
     } finally {
       await client.close();
     }

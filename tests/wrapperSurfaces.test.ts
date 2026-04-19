@@ -127,6 +127,7 @@ describe("wrapper surfaces", () => {
       await readFile(path.join(hostDir, "agent-wiki", "events", eventFiles[0]), "utf8"),
     );
     expect(eventPayload.hostKind).toBe("generic");
+    expect(eventPayload.eventClass).toBe("trace");
     expect(eventPayload.matchedSkillId).toBe("flow-cytometry.review-ambiguous-viability-gate");
     expect(eventPayload.matchedNotePaths).toContain("agent-wiki/notes/viability-gate-review.md");
     const noteFile = await readFile(path.join(hostDir, "agent-wiki", "notes", "viability-gate-review.md"), "utf8");
@@ -136,6 +137,38 @@ describe("wrapper surfaces", () => {
     expect(readCountMatch).not.toBeNull();
     expect(Number.parseInt(readCountMatch?.[1] ?? "0", 10)).toBeGreaterThanOrEqual(1);
   }, 40000);
+
+  it("fails generic wrapped commands that do not expose a Datalox prompt placeholder", async () => {
+    const hostDir = await adoptHostRepo();
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "wrap",
+        "command",
+        "--repo",
+        hostDir,
+        "--task",
+        "review ambiguous live dead gate",
+        "--workflow",
+        "flow_cytometry",
+        "--prompt",
+        "Need a gate recommendation",
+        "--",
+        "node",
+        "-e",
+        "process.stdout.write('plain wrapped answer')",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("__DATALOX_PROMPT__ placeholder");
+    expect(await readdir(path.join(hostDir, "agent-wiki", "events"))).toHaveLength(0);
+  }, 20000);
 
   it("records a raw wrapper event even when post-run compilation is turned off and no markers are emitted", async () => {
     const hostDir = await adoptHostRepo();
@@ -318,6 +351,49 @@ describe("wrapper surfaces", () => {
     expect(parsed.args[1]).toContain("Update the pack docs to mention Claude shims.");
     expect(result.stderr).toContain("[datalox-claude] record");
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
+  }, 20000);
+
+  it("appends the wrapped prompt for Claude runs that only provide flags and no prompt slot", async () => {
+    const hostDir = await adoptHostRepo();
+    const fakeClaudePath = path.join(hostDir, "fake-claude-append.sh");
+    await writeFile(
+      fakeClaudePath,
+      "#!/usr/bin/env bash\nnode -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL}))' -- \"$@\"\n",
+      "utf8",
+    );
+    await chmod(fakeClaudePath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "claude",
+        "--repo",
+        hostDir,
+        "--task",
+        "change portable pack loop bridge",
+        "--workflow",
+        "repo_engineering",
+        "--prompt",
+        "Explain the wrapper contract.",
+        "--claude-bin",
+        fakeClaudePath,
+        "--",
+        "--model",
+        "cheap-test-model",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.skill).toBe("repo-engineering.evolve-portable-pack");
+    expect(parsed.args[0]).toBe("--model");
+    expect(parsed.args[2]).toContain("# Datalox Loop Guidance");
+    expect(parsed.args[2]).toContain("Explain the wrapper contract.");
   }, 20000);
 
   it("infers the prompt from raw codex exec args when no explicit Datalox prompt is given", async () => {
@@ -550,7 +626,17 @@ EOF
 
   it("patches a matched wrapper skill when the same wrapped failure repeats", async () => {
     const hostDir = await adoptHostRepo();
-    const failingScript = "process.stderr.write('fatal onboarding gap\\n'); process.exit(1)";
+    const failingScript = [
+      "const lines = [",
+      "\"DATALOX_TITLE: Unsupported host wrapper failure\",",
+      "\"DATALOX_SIGNAL: the same unsupported host cli path kept failing under the wrapper\",",
+      "\"DATALOX_INTERPRETATION: this is a reusable wrapper gap rather than a one-off child failure\",",
+      "\"DATALOX_ACTION: patch the wrapper skill so future agents use the supported host path\",",
+      "\"fatal onboarding gap\"",
+      "];",
+      "process.stderr.write(lines.join('\\n'));",
+      "process.exit(1);",
+    ].join(" ");
 
     const runFailure = () =>
       spawnSync(
@@ -569,15 +655,16 @@ EOF
           "repo-engineering.host-cli-wrapper",
           "--prompt",
           "Debug repeated wrapper failure in unsupported host cli path",
-          "--",
-          "node",
-          "-e",
-          failingScript,
-        ],
-        {
-          cwd: repoRoot,
-          encoding: "utf8",
-        },
+        "--",
+        "node",
+        "-e",
+        failingScript,
+        "__DATALOX_PROMPT__",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
       );
 
     const first = runFailure();
@@ -741,7 +828,7 @@ EOF
     expect(eventPayload.transcript).toContain("[truncated ");
   }, 30000);
 
-  it("reports review mode as unavailable for generic wrapped commands", async () => {
+  it("fails generic review mode because autonomous review requires a reviewer-backed wrapper", async () => {
     const hostDir = await adoptHostRepo();
     const result = spawnSync(
       "node",
@@ -769,11 +856,8 @@ EOF
       },
     );
 
-    expect(result.status).toBe(0);
-    const parsed = JSON.parse(result.stdout);
-    expect(parsed.postRun.mode).toBe("review");
-    expect(parsed.postRun.review.status).toBe("skipped");
-    expect(parsed.postRun.review.error).toContain("No autonomous reviewer is configured");
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("do not support autonomous review");
   }, 20000);
 
   it("uses environment defaults so wrapped Codex runs do not need explicit review flags", async () => {

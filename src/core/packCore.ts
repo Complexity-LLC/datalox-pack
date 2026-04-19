@@ -9,6 +9,8 @@ import { extractTraceSource } from "./sourceBundle.js";
 import { createRuntimeClient } from "./runtimeClient.js";
 import { loadAgentConfig } from "../agent/loadAgentConfig.js";
 
+export type EventClass = "trace" | "candidate";
+
 export interface ResolveLoopInput {
   repoPath?: string;
   task?: string;
@@ -56,6 +58,7 @@ export interface RecordTurnResultInput {
   recommendedAction?: string;
   outcome?: string;
   eventKind?: string;
+  eventClass?: EventClass;
   matchedNotePaths?: string[];
   sessionId?: string;
   hostKind?: string;
@@ -102,6 +105,7 @@ interface AdoptPackResult {
   hostRepoPath: string;
   packRootPath: string;
   copied: string[];
+  injected: string[];
   skipped: string[];
   installStampPath: string;
   installMode: "manual" | "auto" | "repair";
@@ -198,6 +202,53 @@ const TREE_ADOPTION_PATHS = [
   "skills",
   "agent-wiki/notes",
 ];
+const ADOPTION_INJECTION_BEGIN = "<!-- DATALOX_PACK:BEGIN -->";
+const ADOPTION_INJECTION_END = "<!-- DATALOX_PACK:END -->";
+type ExistingInstructionInjectionMode = "append" | "after_frontmatter";
+interface ExistingInstructionInjectionSpec {
+  mode: ExistingInstructionInjectionMode;
+  lines: string[];
+}
+const EXISTING_INSTRUCTION_INJECTIONS: Record<string, ExistingInstructionInjectionSpec> = {
+  "AGENTS.md": {
+    mode: "after_frontmatter",
+    lines: [
+      "## Datalox Pack",
+      "If `DATALOX.md` exists in this repo, read it after this file and treat it as the repo-local Datalox contract.",
+      "Use reusable local knowledge in `agent-wiki/notes/` and grounded event records in `agent-wiki/events/`.",
+    ],
+  },
+  "CLAUDE.md": {
+    mode: "after_frontmatter",
+    lines: [
+      "@DATALOX.md",
+    ],
+  },
+  "WIKI.md": {
+    mode: "after_frontmatter",
+    lines: [
+      "## Datalox Pack",
+      "If `DATALOX.md` exists in this repo, read it after this file and use it as the repo-local Datalox loop contract.",
+      "Keep reusable knowledge in `agent-wiki/notes/` and grounded event traces in `agent-wiki/events/`.",
+    ],
+  },
+  "GEMINI.md": {
+    mode: "after_frontmatter",
+    lines: [
+      "## Datalox Pack",
+      "If `DATALOX.md` exists in this repo, read it after this file and use it as the repo-local Datalox loop contract.",
+      "Keep reusable knowledge in `agent-wiki/notes/` and grounded event traces in `agent-wiki/events/`.",
+    ],
+  },
+  ".github/copilot-instructions.md": {
+    mode: "append",
+    lines: [
+      "## Datalox Pack",
+      "Also consult `AGENTS.md` and `DATALOX.md` when they exist.",
+      "Use `agent-wiki/notes/` for reusable repo knowledge and `agent-wiki/events/` for grounded event traces.",
+    ],
+  },
+};
 const INSTALL_STAMP_RELATIVE_PATH = ".datalox/install.json";
 const EVENTS_RELATIVE_DIR = path.join("agent-wiki", "events");
 const NOTES_RELATIVE_DIR = path.join("agent-wiki", "notes");
@@ -213,18 +264,24 @@ interface NoteUsageStats {
 interface RecordedEventPayload {
   id?: string;
   timestamp?: string;
+  task?: string | null;
   title?: string | null;
   summary?: string | null;
   workflow?: string | null;
   step?: string | null;
   eventKind?: string | null;
+  eventClass?: EventClass | null;
   signal?: string | null;
   interpretation?: string | null;
   recommendedAction?: string | null;
   outcome?: string | null;
+  fingerprint?: string | null;
+  explicitSkillId?: string | null;
   matchedSkillId?: string | null;
   matchedNotePaths?: string[] | null;
   observations?: string[] | null;
+  changedFiles?: string[] | null;
+  transcript?: string | null;
   sessionId?: string | null;
   hostKind?: string | null;
 }
@@ -546,19 +603,98 @@ async function writeInstallStamp(
   return installStampPath;
 }
 
-async function copyIfMissing(
+function detectLineEnding(content: string): string {
+  return content.includes("\r\n") ? "\r\n" : "\n";
+}
+
+function splitLeadingFrontmatter(content: string): { prefix: string; rest: string } {
+  const match = /^(---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$))([\s\S]*)$/u.exec(content);
+  if (!match) {
+    return { prefix: "", rest: content };
+  }
+  return {
+    prefix: match[1],
+    rest: match[2],
+  };
+}
+
+function buildAdoptionInjectionBlock(spec: ExistingInstructionInjectionSpec, eol: string): string {
+  return [ADOPTION_INJECTION_BEGIN, ...spec.lines, ADOPTION_INJECTION_END].join(eol);
+}
+
+function injectAdoptionInstructions(
+  content: string,
+  spec: ExistingInstructionInjectionSpec,
+): string {
+  if (content.includes(ADOPTION_INJECTION_BEGIN) && content.includes(ADOPTION_INJECTION_END)) {
+    return content;
+  }
+
+  const eol = detectLineEnding(content);
+  const block = buildAdoptionInjectionBlock(spec, eol);
+
+  if (spec.mode === "append") {
+    const trimmed = content.trimEnd();
+    if (trimmed.length === 0) {
+      return `${block}${eol}`;
+    }
+    return `${trimmed}${eol}${eol}${block}${eol}`;
+  }
+
+  const { prefix, rest } = splitLeadingFrontmatter(content);
+  if (prefix.length > 0) {
+    if (rest.length === 0) {
+      return `${prefix}${block}${eol}`;
+    }
+    return `${prefix}${block}${eol}${eol}${rest}`;
+  }
+
+  if (content.length === 0) {
+    return `${block}${eol}`;
+  }
+  return `${block}${eol}${eol}${content}`;
+}
+
+async function copyOrInjectInstructionFile(
   sourcePath: string,
   destinationPath: string,
+  relativePath: string,
   copied: string[],
+  injected: string[],
   skipped: string[],
 ): Promise<void> {
   await mkdir(path.dirname(destinationPath), { recursive: true });
-  if (await fileExists(destinationPath)) {
+  if (!await fileExists(destinationPath)) {
+    await cp(sourcePath, destinationPath, { recursive: false });
+    copied.push(destinationPath);
+    return;
+  }
+
+  if (path.resolve(sourcePath) === path.resolve(destinationPath)) {
     skipped.push(destinationPath);
     return;
   }
-  await cp(sourcePath, destinationPath, { recursive: false });
-  copied.push(destinationPath);
+
+  const spec = EXISTING_INSTRUCTION_INJECTIONS[relativePath];
+  if (!spec) {
+    skipped.push(destinationPath);
+    return;
+  }
+
+  const current = await readFile(destinationPath, "utf8");
+  const source = await readFile(sourcePath, "utf8");
+  if (current === source) {
+    skipped.push(destinationPath);
+    return;
+  }
+  const next = injectAdoptionInstructions(current, spec);
+  if (next === current) {
+    skipped.push(destinationPath);
+    return;
+  }
+
+  await writeFile(destinationPath, next, "utf8");
+  injected.push(destinationPath);
 }
 
 async function copyTreeEntriesIfMissing(
@@ -877,6 +1013,7 @@ export async function recordTurnResult(input: RecordTurnResultInput) {
       recommendedAction: input.recommendedAction,
       outcome: input.outcome,
       eventKind: input.eventKind,
+      eventClass: input.eventClass,
     },
     repoPath,
   );
@@ -930,6 +1067,7 @@ export async function promoteGap(input: PromoteGapInput) {
       recommendedAction: input.recommendedAction,
       outcome: input.outcome,
       eventKind: input.eventKind,
+      eventClass: "candidate",
       minWikiOccurrences: input.minWikiOccurrences,
       minSkillOccurrences: input.minSkillOccurrences,
     },
@@ -1069,6 +1207,7 @@ export async function adoptPack(input: AdoptPackInput): Promise<AdoptPackResult>
   const installMode = input.installMode ?? "manual";
   await ensureLocalPackCache(packRootPath);
   const copied: string[] = [];
+  const injected: string[] = [];
   const skipped: string[] = [];
 
   await mkdir(path.join(hostRepoPath, ".datalox"), { recursive: true });
@@ -1081,10 +1220,12 @@ export async function adoptPack(input: AdoptPackInput): Promise<AdoptPackResult>
   await mkdir(path.join(hostRepoPath, "agent-wiki", "events"), { recursive: true });
 
   for (const relativePath of SINGLE_FILE_ADOPTION_PATHS) {
-    await copyIfMissing(
+    await copyOrInjectInstructionFile(
       path.join(packRootPath, relativePath),
       path.join(hostRepoPath, relativePath),
+      relativePath,
       copied,
+      injected,
       skipped,
     );
   }
@@ -1105,6 +1246,7 @@ export async function adoptPack(input: AdoptPackInput): Promise<AdoptPackResult>
     hostRepoPath,
     packRootPath,
     copied: copied.map((item) => path.relative(hostRepoPath, item) || "."),
+    injected: injected.map((item) => path.relative(hostRepoPath, item) || "."),
     skipped: skipped.map((item) => path.relative(hostRepoPath, item) || "."),
     installStampPath: path.relative(hostRepoPath, installStampPath) || ".",
     installMode,

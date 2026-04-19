@@ -38,6 +38,13 @@ function parseOptionalPositiveInt(value) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
+function parseEventClass(value, fallback = "trace") {
+  if (value === "trace" || value === "candidate") {
+    return value;
+  }
+  return fallback;
+}
+
 async function readStdin() {
   if (process.stdin.isTTY) {
     return "";
@@ -170,6 +177,14 @@ function resolvePackRoot(args) {
   throw new Error("Unable to resolve Datalox pack root for auto-promote hook");
 }
 
+function resolvePackDistModuleUrl(packRoot, ...relativeParts) {
+  const modulePath = path.join(packRoot, "dist", ...relativeParts);
+  if (!existsSync(modulePath)) {
+    throw new Error(`Missing built Datalox module: ${path.relative(packRoot, modulePath)}`);
+  }
+  return pathToFileURL(modulePath).href;
+}
+
 function resolveRepoPath(args, payload) {
   const candidate = typeof args.repo === "string"
     ? args.repo
@@ -240,44 +255,80 @@ async function main() {
   const observations = buildObservations(changedPaths, payload);
   const task = typeof args.task === "string" ? args.task : transcript.task;
   const summary = typeof args.summary === "string" ? args.summary : transcript.summary;
+  const workflow = typeof args.workflow === "string"
+    ? args.workflow
+    : typeof payload?.workflow === "string"
+      ? payload.workflow
+      : process.env.DATALOX_DEFAULT_WORKFLOW;
+  const eventClass = parseEventClass(
+    typeof args["event-class"] === "string"
+      ? args["event-class"]
+      : process.env.DATALOX_HOOK_EVENT_CLASS,
+    "trace",
+  );
   const interpretation = typeof args.interpretation === "string"
     ? args.interpretation
-    : `Automatic post-turn promotion from ${payload?.hook_event_name ?? "host-hook"}.`;
+    : eventClass === "candidate"
+      ? `Automatic post-turn promotion from ${payload?.hook_event_name ?? "host-hook"}.`
+      : undefined;
   const recommendedAction = typeof args.action === "string"
     ? args.action
-    : "Promote only if this gap repeats enough to justify a wiki page or skill.";
+    : eventClass === "candidate"
+      ? "Promote only if this gap repeats enough to justify a wiki page or skill."
+      : undefined;
 
   if (!task && !summary && observations.length === 0) {
     return;
   }
 
-  const moduleUrl = pathToFileURL(path.join(packRoot, "scripts", "lib", "agent-pack.mjs")).href;
-  const { compileRecordedEvent, recordTurnResult } = await import(moduleUrl);
-  const recorded = await recordTurnResult(
-    {
-      task: task ?? summary ?? "auto-promote-hook",
-      workflow: typeof args.workflow === "string"
-        ? args.workflow
-        : typeof payload?.workflow === "string"
-          ? payload.workflow
-          : process.env.DATALOX_DEFAULT_WORKFLOW,
-      step: typeof args.step === "string" ? args.step : undefined,
-      summary: summary ?? undefined,
-      observations,
-      transcript: transcript.transcript ?? undefined,
-      tags: ["auto_hook"],
-      title: typeof args.title === "string" ? args.title : undefined,
-      signal: typeof args.signal === "string" ? args.signal : undefined,
-      interpretation,
-      recommendedAction,
-      eventKind: typeof args["event-kind"] === "string"
-        ? args["event-kind"]
-        : payload?.hook_event_name
-          ? `hook:${payload.hook_event_name}`
-          : "hook:auto-promote",
-    },
+  const sharedModuleUrl = resolvePackDistModuleUrl(packRoot, "src", "adapters", "shared.js");
+  const coreModuleUrl = resolvePackDistModuleUrl(packRoot, "src", "core", "packCore.js");
+  const {
+    buildLoopEnvelope,
+    buildObservedTurnPayload,
+    recordObservedTurnPayload,
+  } = await import(sharedModuleUrl);
+  const { compileRecordedEvent } = await import(coreModuleUrl);
+
+  const normalizedTask = task ?? summary ?? "auto-promote-hook";
+  const envelope = await buildLoopEnvelope({
     repoPath,
-  );
+    task: normalizedTask,
+    workflow,
+    prompt: task ?? summary ?? undefined,
+    sessionId: typeof payload?.session_id === "string"
+      ? payload.session_id
+      : typeof payload?.sessionId === "string"
+        ? payload.sessionId
+        : undefined,
+  });
+  const recordPayload = buildObservedTurnPayload(envelope, {
+    hostKind: "hook",
+    eventClass,
+    task: normalizedTask,
+    workflow,
+    step: typeof args.step === "string" ? args.step : undefined,
+    summary: summary ?? undefined,
+    observations,
+    transcript: transcript.transcript ?? undefined,
+    changedFiles: changedPaths,
+    tags: [
+      "auto_hook",
+      payload?.hook_event_name ? `hook:${String(payload.hook_event_name).toLowerCase()}` : null,
+    ].filter(Boolean),
+    title: typeof args.title === "string" ? args.title : undefined,
+    signal: typeof args.signal === "string" ? args.signal : undefined,
+    interpretation,
+    recommendedAction,
+    eventKind: typeof args["event-kind"] === "string"
+      ? args["event-kind"]
+      : payload?.hook_event_name
+        ? `hook:${payload.hook_event_name}`
+        : "hook:auto-promote",
+  });
+  const recorded = await recordObservedTurnPayload(envelope, recordPayload, {
+    applyMatchedNotes: true,
+  });
   const result = await compileRecordedEvent(
     {
       eventPath: recorded.event.relativePath,

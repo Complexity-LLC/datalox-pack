@@ -23,6 +23,10 @@ export interface GenericWrapResult {
 }
 
 export async function runGenericWrapper(input: GenericWrapInput): Promise<GenericWrapResult> {
+  if (input.postRunMode === "review") {
+    throw new Error("Generic wrapped commands do not support autonomous review. Use datalox codex or datalox claude for review mode.");
+  }
+
   const envelope = await buildLoopEnvelope(input);
 
   if (!input.command) {
@@ -31,6 +35,11 @@ export async function runGenericWrapper(input: GenericWrapInput): Promise<Generi
       child: null,
       postRun: null,
     };
+  }
+
+  const args = input.args ?? [];
+  if (envelope.active && !args.some((arg) => arg.includes("__DATALOX_PROMPT__"))) {
+    throw new Error("Generic wrapped commands require a __DATALOX_PROMPT__ placeholder when Datalox guidance is active.");
   }
 
   const executed = runWrappedCommand(input.command, input.args ?? [], envelope, {

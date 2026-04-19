@@ -92,6 +92,7 @@ export async function resolveSourceRoute(input: {
   );
   const notes = captures.map((capture) => describeCapturedPdfNote(capture));
   const primaryNote = notes[0];
+  const primaryCapture = captures[0];
 
   return {
     kind: "pdf",
@@ -107,15 +108,17 @@ export async function resolveSourceRoute(input: {
       ],
       whatToDoNow: [
         `Read ${primaryNote.notePath} before answering from the document.`,
+        `Read ${primaryCapture.metadataPath} for normalized page evidence and section labels before extracting exact values.`,
         ...(notes.length > 1
-          ? [`Cross-check the other captured PDF notes: ${notes.slice(1).map((note) => note.notePath).join(", ")}`]
+          ? [`Cross-check the other captured PDF notes and metadata files: ${captures.slice(1).map((capture) => `${capture.notePath} + ${capture.metadataPath}`).join(", ")}`]
           : []),
       ],
       watchFor: [
         "The task depends on document evidence rather than the repo's default skill match.",
-        "Prefer normalized section maps, exact operational facts, and extracted procedure fragments over reopening or dumping binary PDF content.",
+        "Prefer the normalized metadata JSON over reopening or dumping binary PDF content.",
+        "Extract exact values only when the metadata page text shows a real unit or explicit procedure sentence.",
       ],
-      nextReads: notes.map((note) => note.notePath),
+      nextReads: captures.flatMap((capture) => [capture.notePath, capture.metadataPath]),
       supportingNotes: notes.map((note) => ({
         path: note.notePath,
         title: note.title,
