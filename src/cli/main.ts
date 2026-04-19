@@ -9,7 +9,12 @@ import {
   probeBootstrapCandidate,
   syncNoteRetrieval,
 } from "../core/packCore.js";
-import { disableHostIntegrations, installHostIntegrations, type InstallHost } from "../core/installCore.js";
+import {
+  disableHostIntegrations,
+  inspectEnforcementStatus,
+  installHostIntegrations,
+  type InstallHost,
+} from "../core/installCore.js";
 import { runClaudeWrapper } from "../adapters/claude/run.js";
 import { runCodexWrapper } from "../adapters/codex/run.js";
 import { runGenericWrapper } from "../adapters/generic/run.js";
@@ -39,6 +44,7 @@ function usage(): string {
     "Usage:",
     "  datalox install [all|codex|claude] [--json]",
     "  datalox disable [all|codex|claude] [--json]",
+    "  datalox status [--repo <path>] [--json]",
     "  datalox bootstrap [--repo <path>] [--pack-source <path-or-git-url>] [--json]",
     "  datalox setup [all|codex|claude] [--repo <path>] [--pack-source <path-or-git-url>] [--json]",
     "  datalox adopt <host-repo-path> [--pack-source <path-or-git-url>] [--json]",
@@ -51,8 +57,8 @@ function usage(): string {
     "  datalox resolve [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--limit <n>] [--include-content] [--json]",
     "  datalox retrieval sync [--repo <path>] [--json]",
     "  datalox record [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--changed-file <path>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--outcome <text>] [--tag <tag>] [--event-kind <kind>] [--json]",
-    "  datalox patch [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--tag <tag>] [--json]",
-    "  datalox promote [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--changed-file <path>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--outcome <text>] [--tag <tag>] [--event-kind <kind>] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--json]",
+    "  datalox patch [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--event-path <path>] [--session-id <id>] [--host-kind <kind>] [--admin-override] [--tag <tag>] [--json]",
+    "  datalox promote [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--changed-file <path>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--outcome <text>] [--tag <tag>] [--event-kind <kind>] [--event-path <path>] [--session-id <id>] [--host-kind <kind>] [--admin-override] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--json]",
     "  datalox lint [--repo <path>] [--json]",
     "  datalox wrap prompt [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--json]",
     "  datalox wrap command [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote|review>] [--json] -- <command> [args with __DATALOX_PROMPT__ placeholders]",
@@ -211,6 +217,14 @@ async function main(): Promise<void> {
       const result = await disableHostIntegrations({
         host,
         packRootPath: resolveCliPackRoot(),
+      });
+      writeResult(result, true);
+      return;
+    }
+    case "status": {
+      const result = await inspectEnforcementStatus({
+        packRootPath: resolveCliPackRoot(),
+        repoPath: typeof args.repo === "string" ? args.repo : undefined,
       });
       writeResult(result, true);
       return;

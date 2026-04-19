@@ -39,6 +39,10 @@ export interface PatchKnowledgeInput {
   signal?: string;
   interpretation?: string;
   recommendedAction?: string;
+  eventPath?: string;
+  sessionId?: string;
+  hostKind?: string;
+  adminOverride?: boolean;
 }
 
 export interface RecordTurnResultInput {
@@ -67,6 +71,8 @@ export interface RecordTurnResultInput {
 export interface PromoteGapInput extends RecordTurnResultInput {
   minWikiOccurrences?: number;
   minSkillOccurrences?: number;
+  eventPath?: string;
+  adminOverride?: boolean;
 }
 
 export interface CompileRecordedEventInput {
@@ -586,6 +592,41 @@ async function readInstallStamp(installStampPath: string): Promise<InstallStamp 
   return null;
 }
 
+async function validateDurableWriteProvenance(input: {
+  repoPath: string;
+  eventPath?: string;
+  sessionId?: string;
+  hostKind?: string;
+  adminOverride?: boolean;
+}, operation: "patch" | "promote"): Promise<void> {
+  if (input.adminOverride === true) {
+    return;
+  }
+
+  if (typeof input.eventPath === "string" && input.eventPath.trim().length > 0) {
+    const candidate = path.isAbsolute(input.eventPath)
+      ? input.eventPath
+      : path.join(input.repoPath, input.eventPath);
+    if (!await fileExists(candidate)) {
+      throw new Error(`${operation} requires a valid recorded event path when eventPath is provided.`);
+    }
+    return;
+  }
+
+  if (
+    typeof input.sessionId === "string"
+    && input.sessionId.trim().length > 0
+    && typeof input.hostKind === "string"
+    && input.hostKind.trim().length > 0
+  ) {
+    return;
+  }
+
+  throw new Error(
+    `${operation} requires durable-write provenance. Pass eventPath, or both sessionId and hostKind, or set adminOverride=true.`,
+  );
+}
+
 async function writeInstallStamp(
   hostRepoPath: string,
   packRootPath: string,
@@ -969,6 +1010,13 @@ export async function syncNoteRetrieval(input: SyncNoteRetrievalInput = {}) {
 
 export async function patchKnowledge(input: PatchKnowledgeInput) {
   const repoPath = resolveRepoPath(input.repoPath);
+  await validateDurableWriteProvenance({
+    repoPath,
+    eventPath: input.eventPath,
+    sessionId: input.sessionId,
+    hostKind: input.hostKind,
+    adminOverride: input.adminOverride,
+  }, "patch");
   const legacy = await loadLegacyPackModule();
   const result = await legacy.learnFromInteraction(
     {
@@ -1049,6 +1097,13 @@ export async function recordTurnResult(input: RecordTurnResultInput) {
 
 export async function promoteGap(input: PromoteGapInput) {
   const repoPath = resolveRepoPath(input.repoPath);
+  await validateDurableWriteProvenance({
+    repoPath,
+    eventPath: input.eventPath,
+    sessionId: input.sessionId,
+    hostKind: input.hostKind,
+    adminOverride: input.adminOverride,
+  }, "promote");
   const legacy = await loadLegacyPackModule();
   const result = await legacy.promoteGap(
     {

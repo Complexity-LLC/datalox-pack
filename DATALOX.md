@@ -155,6 +155,14 @@ CLI commands mirror the same operations.
 
 Core CLI commands emit JSON for agent consumption. Wrapper commands keep passthrough behavior by default; use `--json` there when you need a structured envelope instead of prompt or child-process output.
 
+Use `datalox status --json` to inspect whether the current repo is on an `enforced`, `conditional`, or `guidance_only` path.
+
+`patch` and `promote` are durable-write surfaces. They now require durable provenance:
+
+- `eventPath`
+- or `sessionId + hostKind`
+- or explicit `adminOverride`
+
 ## Host Integration
 
 Supported default paths:
@@ -163,6 +171,12 @@ Supported default paths:
 - Claude shim when a real `claude` CLI binary exists
 - Claude hook
 - generic CLI wrapper
+
+These are not all equivalent:
+
+- supported host adapters can enforce Datalox automatically
+- MCP-only hosts are guidance-only unless the host actually routes through an adapter
+- repo instruction files are visible protocol, not enforcement
 
 After machine-level install, a clean writable git repo can auto-bootstrap on first use.
 If a repo is already partially adopted or conflicting, do not mutate it blindly. Repair or adopt it explicitly.
@@ -187,6 +201,8 @@ After setup, the user should keep using the host normally:
 The installed shims infer the repo from the current working directory and default post-run review to `review` with `gpt-5.4-mini`.
 
 Only run machine-level setup when the user allows writes under `HOME` such as `~/.local/bin`, `~/.claude`, or `~/.codex`.
+
+For the enforcement model and implementation roadmap, read [docs/automatic-enforcement-plan.md](docs/automatic-enforcement-plan.md).
 
 ## Stop Or Disable
 

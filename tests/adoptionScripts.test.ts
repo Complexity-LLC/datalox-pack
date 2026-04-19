@@ -216,4 +216,58 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(hostDir, "DATALOX.md"), "utf8")).toContain("source kinds: `trace`, `web`, `pdf`");
     expect(await readFile(path.join(hostDir, ".datalox/install.json"), "utf8")).toContain("\"installMode\": \"auto\"");
   }, 60000);
+
+  it("reports enforced host adapters as automatic in status output", async () => {
+    const packDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-status-copy-"));
+    const homeDir = await mkdtemp(path.join(tmpdir(), "datalox-status-home-"));
+    const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-status-host-"));
+    tempDirs.push(packDir, homeDir, hostDir);
+
+    await copyPackSnapshot(repoRoot, packDir);
+
+    const init = spawnSync("git", ["init"], {
+      cwd: hostDir,
+      encoding: "utf8",
+    });
+    expect(init.status).toBe(0);
+
+    const fakeCodex = path.join(homeDir, "fake-codex");
+    await writeFile(fakeCodex, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+    await chmod(fakeCodex, 0o755);
+
+    const install = spawnSync("node", [path.join(packDir, "bin/datalox.js"), "install", "codex", "--json"], {
+      cwd: packDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        DATALOX_REAL_CODEX_BIN: fakeCodex,
+      },
+    });
+    expect(install.status).toBe(0);
+
+    const status = spawnSync("node", [path.join(packDir, "bin/datalox.js"), "status", "--repo", hostDir, "--json"], {
+      cwd: hostDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+      },
+    });
+
+    expect(status.status).toBe(0);
+    const parsed = JSON.parse(status.stdout);
+    expect(parsed.adapters.codex.enforcementLevel).toBe("enforced");
+    expect(parsed.adapters.codex.installed).toBe(true);
+    expect(parsed.adapters.codex.automatic).toBe(true);
+    expect(parsed.adapters.claude.enforcementLevel).toBe("enforced");
+    expect(parsed.adapters.generic_cli.enforcementLevel).toBe("conditional");
+    expect(parsed.adapters.mcp_only.enforcementLevel).toBe("guidance_only");
+    expect(parsed.repo.bootstrapStatus).toBe("bootstrappable");
+    expect(parsed.repo.enforcementLevel).toBe("enforced");
+
+    const installJson = JSON.parse(await readFile(path.join(packDir, ".datalox", "install.json"), "utf8"));
+    expect(installJson.packRootPath).toBe(await realpath(packDir));
+    expect(installJson.enforcement.adapters.codex.automatic).toBe(true);
+  }, 60000);
 });

@@ -173,6 +173,37 @@ const eventKindArg: SharedArgSpec = {
   mcpKey: "event_kind",
 };
 
+const eventPathArg: SharedArgSpec = {
+  key: "eventPath",
+  description: "Relative or absolute path to a previously recorded event that provides durable-write provenance.",
+  kind: "string",
+  cliFlag: "event-path",
+  mcpKey: "event_path",
+};
+
+const sessionIdArg: SharedArgSpec = {
+  key: "sessionId",
+  description: "Session identifier that can be paired with hostKind for durable-write provenance.",
+  kind: "string",
+  cliFlag: "session-id",
+  mcpKey: "session_id",
+};
+
+const hostKindArg: SharedArgSpec = {
+  key: "hostKind",
+  description: "Host kind that can be paired with sessionId for durable-write provenance.",
+  kind: "string",
+  cliFlag: "host-kind",
+  mcpKey: "host_kind",
+};
+
+const adminOverrideArg: SharedArgSpec = {
+  key: "adminOverride",
+  description: "Allow a manual durable write without event provenance.",
+  kind: "boolean",
+  cliFlag: "admin-override",
+  mcpKey: "admin_override",
+};
 const eventClassOptions = [
   { canonical: "trace", cli: "trace" },
   { canonical: "candidate", cli: "candidate" },
@@ -629,6 +660,10 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
       signalArg,
       interpretationArg,
       recommendedActionArg,
+      eventPathArg,
+      sessionIdArg,
+      hostKindArg,
+      adminOverrideArg,
     ],
     async run(input) {
       return patchKnowledge({
@@ -645,6 +680,10 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
         signal: maybeString(input.signal),
         interpretation: maybeString(input.interpretation),
         recommendedAction: maybeString(input.recommendedAction),
+        eventPath: maybeString(input.eventPath),
+        sessionId: maybeString(input.sessionId),
+        hostKind: maybeString(input.hostKind),
+        adminOverride: maybeBoolean(input.adminOverride),
       });
     },
   },
@@ -669,6 +708,10 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
       recommendedActionArg,
       outcomeArg,
       eventKindArg,
+      eventPathArg,
+      sessionIdArg,
+      hostKindArg,
+      adminOverrideArg,
       minWikiOccurrencesArg,
       minSkillOccurrencesArg,
     ],
@@ -690,6 +733,10 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
         recommendedAction: maybeString(input.recommendedAction),
         outcome: maybeString(input.outcome),
         eventKind: maybeString(input.eventKind),
+        eventPath: maybeString(input.eventPath),
+        sessionId: maybeString(input.sessionId),
+        hostKind: maybeString(input.hostKind),
+        adminOverride: maybeBoolean(input.adminOverride),
         minWikiOccurrences: maybeNumber(input.minWikiOccurrences),
         minSkillOccurrences: maybeNumber(input.minSkillOccurrences),
       });

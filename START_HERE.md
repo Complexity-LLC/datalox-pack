@@ -57,4 +57,12 @@ The user's agent can run `bash bin/setup-multi-agent.sh` once. After that, the u
 
 The installed shims route those runs through Datalox automatically and default the second-pass reviewer to `review` mode with `gpt-5.4-mini`.
 
+That automation is only true on supported host adapter paths. If a host only sees repo instructions or MCP tools, Datalox is guidance-only until a wrapper, hook, or plugin owns the loop.
+
 To stop the host interception later, run `bash bin/disable-default-host-integrations.sh`.
+
+To see whether the current repo is actually automatic or only guidance-only, run:
+
+- `node bin/datalox.js status --repo . --json`
+
+For the concrete enforcement roadmap, read [docs/automatic-enforcement-plan.md](docs/automatic-enforcement-plan.md).

@@ -4,6 +4,13 @@ import { access, chmod, copyFile, lstat, mkdir, readFile, readlink, rm, symlink,
 import os from "node:os";
 import path from "node:path";
 
+import {
+  getHostCapability,
+  type EnforcementLevel,
+  type HostSurfaceId,
+} from "../adapters/capabilities.js";
+import { probeBootstrapCandidate } from "./packCore.js";
+
 export type InstallHost = "all" | "codex" | "claude";
 
 export interface InstallHostIntegrationsInput {
@@ -34,6 +41,7 @@ export interface InstallHostIntegrationsResult {
   claudeHookPath: string | null;
   claudeSettingsPath: string | null;
   pathExportsUpdated: string[];
+  status: EnforcementStatusSnapshot;
 }
 
 export interface DisableLinkSummary {
@@ -57,9 +65,46 @@ export interface DisableHostIntegrationsResult {
   claudeHookRemoved: string | null;
   claudeSettingsPath: string | null;
   pathExportsRemoved: string[];
+  status: EnforcementStatusSnapshot;
+}
+
+export interface HostSurfaceStatus {
+  hostId: HostSurfaceId;
+  enforcementLevel: EnforcementLevel;
+  automatic: boolean;
+  available: boolean;
+  installed: boolean;
+  shimPath: string | null;
+  stableLinks: string[];
+  hookInstalled: boolean;
+  supportsPreRunInjection: boolean;
+  supportsPostRunHook: boolean;
+  supportsSecondPassReview: boolean;
+  requiresPromptPlaceholder: boolean;
+  notes: string[];
+}
+
+export interface EnforcementStatusSnapshot {
+  generatedAt: string;
+  packRootPath: string;
+  reviewDefaults: {
+    postRunMode: string;
+    reviewModel: string;
+  };
+  adapters: Record<HostSurfaceId, HostSurfaceStatus>;
+  repo: {
+    repoPath: string;
+    bootstrapStatus: "ready" | "bootstrappable" | "repairable" | "blocked";
+    guidanceSurface: boolean;
+    automaticReady: boolean;
+    enforcementLevel: EnforcementLevel;
+    reasons: string[];
+  };
 }
 
 const STABLE_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin"];
+const PATH_EXPORT_LINE = 'export PATH="$HOME/.local/bin:$PATH"';
+const INSTALL_STATUS_RELATIVE_PATH = path.join(".datalox", "install.json");
 
 function normalizePath(value: string): string {
   return value.replaceAll("\\", "/");
@@ -254,11 +299,10 @@ async function ensurePathExport(filePath: string): Promise<boolean> {
   } catch {
     existing = "";
   }
-  const exportLine = 'export PATH="$HOME/.local/bin:$PATH"';
-  if (existing.includes(exportLine)) {
+  if (existing.includes(PATH_EXPORT_LINE)) {
     return false;
   }
-  const next = `${existing}${existing.endsWith("\n") || existing.length === 0 ? "" : "\n"}# Prefer local host shims such as the Datalox Codex wrapper.\n${exportLine}\n`;
+  const next = `${existing}${existing.endsWith("\n") || existing.length === 0 ? "" : "\n"}# Prefer local host shims such as the Datalox Codex wrapper.\n${PATH_EXPORT_LINE}\n`;
   await writeFile(filePath, next, "utf8");
   return true;
 }
@@ -271,7 +315,7 @@ async function removePathExport(filePath: string): Promise<boolean> {
     return false;
   }
 
-  const block = '# Prefer local host shims such as the Datalox Codex wrapper.\nexport PATH="$HOME/.local/bin:$PATH"\n';
+  const block = `# Prefer local host shims such as the Datalox Codex wrapper.\n${PATH_EXPORT_LINE}\n`;
   if (!existing.includes(block)) {
     return false;
   }
@@ -303,6 +347,96 @@ async function removeManagedShim(filePath: string, marker: string): Promise<bool
   } catch {
     return false;
   }
+}
+
+async function readJsonIfPresent<T>(filePath: string): Promise<T | null> {
+  try {
+    return JSON.parse(await readFile(filePath, "utf8")) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function fileContains(filePath: string, needle: string): Promise<boolean> {
+  try {
+    return (await readFile(filePath, "utf8")).includes(needle);
+  } catch {
+    return false;
+  }
+}
+
+async function hasManagedShim(filePath: string, marker: string): Promise<boolean> {
+  try {
+    const stats = await lstat(filePath);
+    if (!stats.isFile()) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  return fileContains(filePath, marker);
+}
+
+async function stableLinksPointingTo(shimPath: string, hostName: "codex" | "claude"): Promise<string[]> {
+  const linked: string[] = [];
+
+  for (const dir of STABLE_BIN_DIRS) {
+    const target = path.join(dir, hostName);
+    try {
+      const stats = await lstat(target);
+      if (!stats.isSymbolicLink()) {
+        continue;
+      }
+      const existing = await readlink(target);
+      if (path.resolve(path.dirname(target), existing) === path.resolve(shimPath)) {
+        linked.push(target);
+      }
+    } catch {
+      // Ignore missing or unrelated entries.
+    }
+  }
+
+  return linked;
+}
+
+async function pathExportsPresent(): Promise<string[]> {
+  const matches: string[] = [];
+  for (const filePath of [path.join(os.homedir(), ".zshrc"), path.join(os.homedir(), ".zprofile")]) {
+    if (await fileContains(filePath, PATH_EXPORT_LINE)) {
+      matches.push(filePath);
+    }
+  }
+  return matches;
+}
+
+interface InstallStatusFile {
+  version: 1;
+  installedAt?: string;
+  updatedAt?: string;
+  installMode?: "manual" | "auto" | "repair";
+  packRootPath: string;
+  enforcement?: EnforcementStatusSnapshot;
+}
+
+async function writePackInstallStatusFile(
+  packRootPath: string,
+  snapshot: EnforcementStatusSnapshot,
+): Promise<string> {
+  const installPath = path.join(packRootPath, INSTALL_STATUS_RELATIVE_PATH);
+  await mkdir(path.dirname(installPath), { recursive: true });
+  const existing = await readJsonIfPresent<InstallStatusFile>(installPath);
+  const now = new Date().toISOString();
+  const payload: InstallStatusFile = {
+    version: 1,
+    installedAt: existing?.installedAt ?? now,
+    updatedAt: now,
+    installMode: existing?.installMode,
+    packRootPath,
+    enforcement: snapshot,
+  };
+  await writeFile(installPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  return installPath;
 }
 
 function buildCodexShim(realBinary: string, packRootPath: string): string {
@@ -531,6 +665,196 @@ async function uninstallClaudeHook(): Promise<{ hookPath: string | null; setting
   }
 }
 
+async function isClaudeHookInstalled(): Promise<boolean> {
+  const hookPath = path.join(os.homedir(), ".claude", "hooks", "datalox-auto-promote.sh");
+  const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
+  const hookFileMatches = await fileContains(hookPath, "datalox-auto-promote.js");
+  if (!hookFileMatches) {
+    return false;
+  }
+
+  const parsed = await readJsonIfPresent<Record<string, unknown>>(settingsPath);
+  const hooks = parsed?.hooks && typeof parsed.hooks === "object"
+    ? parsed.hooks as Record<string, unknown>
+    : null;
+  if (!hooks) {
+    return false;
+  }
+
+  for (const eventName of ["Stop", "SubagentStop"]) {
+    const entries = Array.isArray(hooks[eventName]) ? hooks[eventName] as Array<Record<string, unknown>> : [];
+    const hasDatalox = entries.some((entry) => Array.isArray(entry.hooks) && entry.hooks.some((hook) => (
+      hook
+      && typeof hook === "object"
+      && (hook as { type?: unknown }).type === "command"
+      && typeof (hook as { command?: unknown }).command === "string"
+      && (hook as { command: string }).command.includes("datalox-auto-promote.sh")
+    )));
+    if (hasDatalox) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function computeRepoEnforcementLevel(
+  automaticReady: boolean,
+  conditionalReady: boolean,
+): EnforcementLevel {
+  if (automaticReady) {
+    return "enforced";
+  }
+  if (conditionalReady) {
+    return "conditional";
+  }
+  return "guidance_only";
+}
+
+export async function inspectEnforcementStatus(input: {
+  packRootPath: string;
+  repoPath?: string;
+}): Promise<EnforcementStatusSnapshot> {
+  const packRootPath = path.resolve(input.packRootPath);
+  const repoPath = path.resolve(input.repoPath ?? packRootPath);
+  const localBin = path.join(os.homedir(), ".local", "bin");
+  const codexShimPath = path.join(localBin, "codex");
+  const claudeShimPath = path.join(localBin, "claude");
+  const pathExportFiles = await pathExportsPresent();
+  const pathActivationAvailable = pathExportFiles.length > 0;
+
+  const codexInstalled = await hasManagedShim(codexShimPath, "datalox-codex.js");
+  const codexStableLinks = await stableLinksPointingTo(codexShimPath, "codex");
+  const codexAutomatic = codexInstalled && (codexStableLinks.length > 0 || pathActivationAvailable);
+
+  const claudeInstalled = await hasManagedShim(claudeShimPath, "datalox-claude.js");
+  const claudeStableLinks = await stableLinksPointingTo(claudeShimPath, "claude");
+  const claudeHookInstalled = await isClaudeHookInstalled();
+  const claudeAutomatic = claudeInstalled && (claudeStableLinks.length > 0 || pathActivationAvailable);
+
+  const repoProbe = await probeBootstrapCandidate(repoPath);
+  const repoReady = repoProbe.status === "ready"
+    || repoProbe.status === "bootstrappable"
+    || repoProbe.status === "repairable";
+  const guidanceSurface = repoProbe.detected.hasDataloxMd
+    || repoProbe.detected.hasConfig
+    || repoProbe.detected.hasAgentWiki
+    || repoProbe.detected.hasInstallStamp;
+
+  const adapters: Record<HostSurfaceId, HostSurfaceStatus> = {
+    codex: {
+      hostId: "codex",
+      enforcementLevel: getHostCapability("codex").enforcementLevel,
+      automatic: codexAutomatic,
+      available: true,
+      installed: codexInstalled,
+      shimPath: normalizePath(codexShimPath),
+      stableLinks: codexStableLinks.map(normalizePath),
+      hookInstalled: false,
+      supportsPreRunInjection: getHostCapability("codex").supportsPreRunInjection,
+      supportsPostRunHook: getHostCapability("codex").supportsPostRunHook,
+      supportsSecondPassReview: getHostCapability("codex").supportsSecondPassReview,
+      requiresPromptPlaceholder: getHostCapability("codex").requiresPromptPlaceholder,
+      notes: codexAutomatic
+        ? []
+        : codexInstalled
+          ? ["Codex shim is installed, but no stable link or shell PATH export was detected yet."]
+          : ["Codex shim is not installed."],
+    },
+    claude: {
+      hostId: "claude",
+      enforcementLevel: getHostCapability("claude").enforcementLevel,
+      automatic: claudeAutomatic,
+      available: true,
+      installed: claudeInstalled,
+      shimPath: normalizePath(claudeShimPath),
+      stableLinks: claudeStableLinks.map(normalizePath),
+      hookInstalled: claudeHookInstalled,
+      supportsPreRunInjection: getHostCapability("claude").supportsPreRunInjection,
+      supportsPostRunHook: getHostCapability("claude").supportsPostRunHook,
+      supportsSecondPassReview: getHostCapability("claude").supportsSecondPassReview,
+      requiresPromptPlaceholder: getHostCapability("claude").requiresPromptPlaceholder,
+      notes: claudeAutomatic
+        ? (claudeHookInstalled ? [] : ["Claude shim is automatic; hook is optional sidecar automation and is not installed."])
+        : claudeInstalled
+          ? ["Claude shim is installed, but no stable link or shell PATH export was detected yet."]
+          : ["Claude shim is not installed."],
+    },
+    generic_cli: {
+      hostId: "generic_cli",
+      enforcementLevel: getHostCapability("generic_cli").enforcementLevel,
+      automatic: false,
+      available: true,
+      installed: true,
+      shimPath: null,
+      stableLinks: [],
+      hookInstalled: false,
+      supportsPreRunInjection: getHostCapability("generic_cli").supportsPreRunInjection,
+      supportsPostRunHook: getHostCapability("generic_cli").supportsPostRunHook,
+      supportsSecondPassReview: getHostCapability("generic_cli").supportsSecondPassReview,
+      requiresPromptPlaceholder: getHostCapability("generic_cli").requiresPromptPlaceholder,
+      notes: ["Generic CLI enforcement only works when the host exposes __DATALOX_PROMPT__."],
+    },
+    mcp_only: {
+      hostId: "mcp_only",
+      enforcementLevel: getHostCapability("mcp_only").enforcementLevel,
+      automatic: false,
+      available: true,
+      installed: true,
+      shimPath: null,
+      stableLinks: [],
+      hookInstalled: false,
+      supportsPreRunInjection: getHostCapability("mcp_only").supportsPreRunInjection,
+      supportsPostRunHook: getHostCapability("mcp_only").supportsPostRunHook,
+      supportsSecondPassReview: getHostCapability("mcp_only").supportsSecondPassReview,
+      requiresPromptPlaceholder: getHostCapability("mcp_only").requiresPromptPlaceholder,
+      notes: ["MCP tools are available, but the model still chooses whether to call them."],
+    },
+    repo_instructions: {
+      hostId: "repo_instructions",
+      enforcementLevel: getHostCapability("repo_instructions").enforcementLevel,
+      automatic: false,
+      available: guidanceSurface,
+      installed: guidanceSurface,
+      shimPath: null,
+      stableLinks: [],
+      hookInstalled: false,
+      supportsPreRunInjection: getHostCapability("repo_instructions").supportsPreRunInjection,
+      supportsPostRunHook: getHostCapability("repo_instructions").supportsPostRunHook,
+      supportsSecondPassReview: getHostCapability("repo_instructions").supportsSecondPassReview,
+      requiresPromptPlaceholder: getHostCapability("repo_instructions").requiresPromptPlaceholder,
+      notes: guidanceSurface
+        ? ["Repo instruction files are visible, but they do not enforce loop boundaries."]
+        : ["No repo instruction surface was detected."],
+    },
+  };
+
+  const automaticReady = repoReady && Object.values(adapters).some((adapter) => (
+    adapter.enforcementLevel === "enforced" && adapter.automatic
+  ));
+  const conditionalReady = repoReady && !automaticReady && Object.values(adapters).some((adapter) => (
+    adapter.enforcementLevel === "conditional" && adapter.available
+  ));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    packRootPath: normalizePath(packRootPath),
+    reviewDefaults: {
+      postRunMode: process.env.DATALOX_DEFAULT_POST_RUN_MODE ?? "review",
+      reviewModel: process.env.DATALOX_DEFAULT_REVIEW_MODEL ?? "gpt-5.4-mini",
+    },
+    adapters,
+    repo: {
+      repoPath: normalizePath(repoPath),
+      bootstrapStatus: repoProbe.status,
+      guidanceSurface,
+      automaticReady,
+      enforcementLevel: computeRepoEnforcementLevel(automaticReady, conditionalReady),
+      reasons: repoProbe.reasons,
+    },
+  };
+}
+
 function createSkippedHostResult(hostName: "codex" | "claude", selected: boolean): InstallHostShimResult {
   return {
     selected,
@@ -605,6 +929,12 @@ export async function installHostIntegrations(input: InstallHostIntegrationsInpu
     pathExportsUpdated.push(path.join(os.homedir(), ".zprofile"));
   }
 
+  const status = await inspectEnforcementStatus({
+    packRootPath,
+    repoPath: packRootPath,
+  });
+  await writePackInstallStatusFile(packRootPath, status);
+
   return {
     host,
     packRootPath: normalizePath(packRootPath),
@@ -628,6 +958,7 @@ export async function installHostIntegrations(input: InstallHostIntegrationsInpu
     claudeHookPath: claudeHookPath ? normalizePath(claudeHookPath) : null,
     claudeSettingsPath: claudeSettingsPath ? normalizePath(claudeSettingsPath) : null,
     pathExportsUpdated: pathExportsUpdated.map(normalizePath),
+    status,
   };
 }
 
@@ -691,6 +1022,12 @@ export async function disableHostIntegrations(input: InstallHostIntegrationsInpu
     }
   }
 
+  const status = await inspectEnforcementStatus({
+    packRootPath,
+    repoPath: packRootPath,
+  });
+  await writePackInstallStatusFile(packRootPath, status);
+
   return {
     host,
     packRootPath: normalizePath(packRootPath),
@@ -711,5 +1048,6 @@ export async function disableHostIntegrations(input: InstallHostIntegrationsInpu
     claudeHookRemoved: claudeHookRemoved ? normalizePath(claudeHookRemoved) : null,
     claudeSettingsPath: claudeSettingsPath ? normalizePath(claudeSettingsPath) : null,
     pathExportsRemoved: pathExportsRemoved.map(normalizePath),
+    status,
   };
 }

@@ -825,6 +825,7 @@ async function runSecondPassReview(
   payloadBase: RecordTurnResultInput,
   reviewer: WrapperReviewRunner | null | undefined,
   changedFiles: string[],
+  eventPath: string,
 ): Promise<WrapperReviewResult> {
   if (!reviewer) {
     return {
@@ -865,6 +866,9 @@ async function runSecondPassReview(
         signal: decision.signal,
         interpretation: decision.interpretation,
         recommendedAction: decision.recommendedAction,
+        eventPath,
+        sessionId: payloadBase.sessionId,
+        hostKind: payloadBase.hostKind,
       })
       : null;
 
@@ -964,6 +968,7 @@ export async function finalizeWrappedRun(
         payloadBase,
         input.reviewer,
         changedFiles,
+        recorded.event.relativePath,
       ),
     };
   }

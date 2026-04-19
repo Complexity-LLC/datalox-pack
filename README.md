@@ -59,6 +59,14 @@ bash bin/adopt-from-github.sh /path/to/your-project
 
 Supported default host paths include the Codex shim, the Claude shim when a real `claude` CLI exists, the Claude hook, and the generic CLI wrapper.
 
+Automatic enforcement only applies on supported host adapter paths. MCP and repo instruction files are still available outside those paths, but they are guidance surfaces, not enforcement.
+
+Inspect the current enforcement state with:
+
+```bash
+node dist/src/cli/main.js status --repo . --json
+```
+
 ## CLI
 
 Resolve the current loop:
@@ -71,9 +79,15 @@ Record and promote:
 
 ```bash
 node dist/src/cli/main.js record --repo . --task "review ambiguous viability gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception note before widening gate" --json
-node dist/src/cli/main.js promote --repo . --task "review ambiguous viability gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception note before widening gate" --json
+node dist/src/cli/main.js promote --repo . --event-path agent-wiki/events/<event>.json --task "review ambiguous viability gate" --workflow flow_cytometry --observation "dim dead tail overlaps live shoulder" --interpretation "likely artifact" --action "review exception note before widening gate" --json
 node dist/src/cli/main.js lint --repo . --json
 ```
+
+Durable writes now require provenance. `patch` and `promote` need one of:
+
+- `--event-path <recorded-event>`
+- both `--session-id` and `--host-kind`
+- `--admin-override` for an explicit maintainer bypass
 
 Wrapper entrypoints:
 
@@ -203,5 +217,6 @@ Keep the pack minimal:
 
 - [DATALOX.md](DATALOX.md)
 - [docs/agent-configuration.md](docs/agent-configuration.md)
+- [docs/automatic-enforcement-plan.md](docs/automatic-enforcement-plan.md)
 - [docs/project-overview.md](docs/project-overview.md)
 - [docs/implementation-checklist.md](docs/implementation-checklist.md)

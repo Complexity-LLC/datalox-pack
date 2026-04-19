@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { compileRecordedEvent, recordTurnResult } from "../src/core/packCore.js";
+import { compileRecordedEvent, patchKnowledge, promoteGap, recordTurnResult } from "../src/core/packCore.js";
 
 const repoRoot = process.cwd();
 const builtCliPath = path.join(repoRoot, "dist", "src", "cli", "main.js");
@@ -677,8 +677,27 @@ describe("bridge surfaces", () => {
     const resolved = JSON.parse(resolveResult.stdout);
     expect(resolved.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
 
+    const recordResult = runBuiltCli(tempDir, [
+      "record",
+      "--task",
+      "review ambiguous live dead gate",
+      "--workflow",
+      "flow_cytometry",
+      "--observation",
+      "dim dead tail overlaps live shoulder",
+      "--interpretation",
+      "likely staining artifact",
+      "--action",
+      "review exception pattern before widening gate",
+      "--json",
+    ]);
+    expect(recordResult.status).toBe(0);
+    const recorded = JSON.parse(recordResult.stdout);
+
     const patchResult = runBuiltCli(tempDir, [
       "patch",
+      "--event-path",
+      recorded.event.relativePath,
       "--task",
       "review ambiguous live dead gate",
       "--workflow",
@@ -761,6 +780,59 @@ describe("bridge surfaces", () => {
     expect(await readFile(path.join(hostDir, "skills/evolve-portable-pack/SKILL.md"), "utf8")).toContain("## Workflow");
   }, 20000);
 
+  it("injects Datalox adapters into existing instruction files during adopt", async () => {
+    const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-host-existing-instructions-"));
+    tempDirs.push(hostDir);
+    await createHostRepo(hostDir);
+    await mkdir(path.join(hostDir, ".github"), { recursive: true });
+    await writeFile(path.join(hostDir, "AGENTS.md"), "# Host agent instructions\n", "utf8");
+    await writeFile(path.join(hostDir, "CLAUDE.md"), "# Host claude instructions\n", "utf8");
+    await writeFile(path.join(hostDir, ".github", "copilot-instructions.md"), "# Host copilot instructions\n", "utf8");
+
+    const firstAdopt = runBuiltCli(repoRoot, [
+      "adopt",
+      hostDir,
+      "--pack-source",
+      repoRoot,
+      "--json",
+    ]);
+    expect(firstAdopt.status).toBe(0);
+
+    const adopted = JSON.parse(firstAdopt.stdout);
+    expect(adopted.injected).toEqual(expect.arrayContaining([
+      "AGENTS.md",
+      "CLAUDE.md",
+      ".github/copilot-instructions.md",
+    ]));
+
+    const agentsFile = await readFile(path.join(hostDir, "AGENTS.md"), "utf8");
+    expect(agentsFile).toContain("# Host agent instructions");
+    expect(agentsFile).toContain("DATALOX_PACK:BEGIN");
+    expect(agentsFile).toContain("read it after this file");
+
+    const claudeFile = await readFile(path.join(hostDir, "CLAUDE.md"), "utf8");
+    expect(claudeFile).toContain("# Host claude instructions");
+    expect(claudeFile).toContain("@DATALOX.md");
+    expect(claudeFile).toContain("DATALOX_PACK:BEGIN");
+
+    const copilotFile = await readFile(path.join(hostDir, ".github", "copilot-instructions.md"), "utf8");
+    expect(copilotFile).toContain("# Host copilot instructions");
+    expect(copilotFile).toContain("Also consult `AGENTS.md` and `DATALOX.md`");
+
+    const secondAdopt = runBuiltCli(repoRoot, [
+      "adopt",
+      hostDir,
+      "--pack-source",
+      repoRoot,
+      "--json",
+    ]);
+    expect(secondAdopt.status).toBe(0);
+
+    const readopted = JSON.parse(secondAdopt.stdout);
+    expect(readopted.injected).toEqual([]);
+    expect((await readFile(path.join(hostDir, "AGENTS.md"), "utf8")).match(/DATALOX_PACK:BEGIN/gu)?.length ?? 0).toBe(1);
+  }, 20000);
+
   it("runs the full loop through the MCP server", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-mcp-"));
     tempDirs.push(tempDir);
@@ -819,11 +891,13 @@ describe("bridge surfaces", () => {
       const recorded = extractStructuredResult(recordedResult) as any;
       expect(recorded.occurrenceCount).toBe(1);
       expect(recorded.event.relativePath).toContain("agent-wiki/events/");
+      expect(recorded.event.payload.eventClass).toBe("trace");
 
       const promoteResult = await client.callTool({
         name: "promote_gap",
         arguments: {
           repo_path: tempDir,
+          event_path: recorded.event.relativePath,
           task: "review ambiguous live dead gate",
           workflow: "flow_cytometry",
           observations: ["dim dead tail overlaps live shoulder"],
@@ -832,8 +906,24 @@ describe("bridge surfaces", () => {
         },
       });
       const promoted = extractStructuredResult(promoteResult) as any;
-      expect(promoted.decision.action).toBe("patch_skill_with_note");
-      expect(promoted.promotion.skill.operation).toBe("update_skill");
+      expect(promoted.decision.action).toBe("record_only");
+      expect(promoted.event.payload.eventClass).toBe("candidate");
+
+      const secondPromoteResult = await client.callTool({
+        name: "promote_gap",
+        arguments: {
+          repo_path: tempDir,
+          event_path: recorded.event.relativePath,
+          task: "review ambiguous live dead gate",
+          workflow: "flow_cytometry",
+          observations: ["dim dead tail overlaps live shoulder"],
+          interpretation: "likely staining artifact",
+          recommended_action: "review exception pattern before widening gate",
+        },
+      });
+      const secondPromoted = extractStructuredResult(secondPromoteResult) as any;
+      expect(secondPromoted.decision.action).toBe("patch_skill_with_note");
+      expect(secondPromoted.promotion.skill.operation).toBe("update_skill");
 
       const lintResult = await client.callTool({
         name: "lint_pack",
@@ -856,8 +946,29 @@ describe("bridge surfaces", () => {
     tempDirs.push(tempDir);
     await createPack(tempDir);
 
+    const seed = runBuiltCli(tempDir, [
+      "record",
+      "--task",
+      "stabilize manual pack adoption in non technical repos",
+      "--workflow",
+      "agent_adoption",
+      "--summary",
+      "Users need the pack to be visible and reversible during setup",
+      "--observation",
+      "new repos need a visible onboarding flow and trust controls",
+      "--interpretation",
+      "this is a recurring adoption workflow rather than a one-off note",
+      "--action",
+      "create a skill that guides adoption and points to the pattern doc",
+      "--json",
+    ]);
+    expect(seed.status).toBe(0);
+    const seedBody = JSON.parse(seed.stdout);
+
     const first = runBuiltCli(tempDir, [
       "promote",
+      "--event-path",
+      seedBody.event.relativePath,
       "--task",
       "stabilize manual pack adoption in non technical repos",
       "--workflow",
@@ -878,6 +989,8 @@ describe("bridge surfaces", () => {
 
     const second = runBuiltCli(tempDir, [
       "promote",
+      "--event-path",
+      seedBody.event.relativePath,
       "--task",
       "stabilize manual pack adoption in non technical repos",
       "--workflow",
@@ -900,6 +1013,8 @@ describe("bridge surfaces", () => {
 
     const third = runBuiltCli(tempDir, [
       "promote",
+      "--event-path",
+      seedBody.event.relativePath,
       "--task",
       "stabilize manual pack adoption in non technical repos",
       "--workflow",
@@ -928,6 +1043,31 @@ describe("bridge surfaces", () => {
     tempDirs.push(tempDir);
     await createPack(tempDir);
 
+    const traceInput = {
+      repoPath: tempDir,
+      task: "stabilize release onboarding in agent-managed repos",
+      workflow: "agent_adoption",
+      summary: "new repos need a reversible onboarding path before first agent run",
+      observations: [
+        "release onboarding keeps failing because repos have no visible install surface",
+      ],
+      interpretation: "this is a reusable onboarding gap rather than a one-off setup note",
+      recommendedAction: "create an onboarding playbook and attach it to a reusable skill",
+      outcome: "failure",
+      eventKind: "implementation",
+    };
+
+    const firstTrace = await recordTurnResult(traceInput);
+    expect(firstTrace.event.payload.eventClass).toBe("trace");
+    const secondTrace = await recordTurnResult(traceInput);
+    const compiledTrace = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: secondTrace.event.relativePath,
+    });
+    expect(compiledTrace.decision.action).toBe("record_only");
+    expect(compiledTrace.decision.reason).toContain("trace events");
+    expect(compiledTrace.promotion).toBeNull();
+
     const input = {
       repoPath: tempDir,
       task: "stabilize release onboarding in agent-managed repos",
@@ -940,10 +1080,12 @@ describe("bridge surfaces", () => {
       recommendedAction: "create an onboarding playbook and attach it to a reusable skill",
       outcome: "failure",
       eventKind: "wrapper:generic:failure",
+      eventClass: "candidate" as const,
     };
 
     const firstRecorded = await recordTurnResult(input);
     expect(firstRecorded.event.relativePath).toContain("agent-wiki/events/");
+    expect(firstRecorded.event.payload.eventClass).toBe("candidate");
     const firstCompiled = await compileRecordedEvent({
       repoPath: tempDir,
       eventPath: firstRecorded.event.relativePath,
@@ -977,5 +1119,84 @@ describe("bridge surfaces", () => {
     expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
     expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("create_note");
     expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("create_skill");
+  }, 20000);
+
+  it("requires provenance for durable writes unless an explicit override is provided", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-provenance-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+
+    await expect(patchKnowledge({
+      repoPath: tempDir,
+      task: "document a reusable onboarding correction",
+      workflow: "agent_adoption",
+      summary: "future agents need a committed onboarding step",
+      title: "Committed onboarding step",
+      signal: "onboarding kept depending on hidden setup",
+      interpretation: "the setup correction is reusable across repos",
+      recommendedAction: "write the onboarding step into repo guidance",
+    })).rejects.toThrow("requires durable-write provenance");
+
+    const recorded = await recordTurnResult({
+      repoPath: tempDir,
+      task: "document a reusable onboarding correction",
+      workflow: "agent_adoption",
+      summary: "future agents need a committed onboarding step",
+      observations: ["onboarding kept depending on hidden setup"],
+      eventClass: "candidate",
+      eventKind: "wrapper:generic:failure",
+    });
+
+    const patched = await patchKnowledge({
+      repoPath: tempDir,
+      task: "document a reusable onboarding correction",
+      workflow: "agent_adoption",
+      summary: "future agents need a committed onboarding step",
+      title: "Committed onboarding step",
+      signal: "onboarding kept depending on hidden setup",
+      interpretation: "the setup correction is reusable across repos",
+      recommendedAction: "write the onboarding step into repo guidance",
+      eventPath: recorded.event.relativePath,
+    });
+    expect(patched.note.relativePath).toContain("agent-wiki/notes/");
+
+    const overridePatched = await patchKnowledge({
+      repoPath: tempDir,
+      task: "document a manual maintainer correction",
+      workflow: "agent_adoption",
+      summary: "maintainer wrote an explicit correction without a wrapper event",
+      title: "Maintainer correction",
+      signal: "manual maintenance path was used intentionally",
+      interpretation: "the maintainer intentionally bypassed wrapper provenance",
+      recommendedAction: "allow the correction because the maintainer explicitly overrode provenance checks",
+      adminOverride: true,
+    });
+    expect(overridePatched.note.relativePath).toContain("agent-wiki/notes/");
+
+    await expect(promoteGap({
+      repoPath: tempDir,
+      task: "promote a reusable onboarding correction",
+      workflow: "agent_adoption",
+      summary: "future agents need a committed onboarding step",
+      observations: ["onboarding kept depending on hidden setup"],
+      interpretation: "the setup correction is reusable across repos",
+      recommendedAction: "write the onboarding step into repo guidance",
+      outcome: "failure",
+      eventKind: "wrapper:generic:failure",
+    })).rejects.toThrow("requires durable-write provenance");
+
+    const promoted = await promoteGap({
+      repoPath: tempDir,
+      task: "promote a reusable onboarding correction",
+      workflow: "agent_adoption",
+      summary: "future agents need a committed onboarding step",
+      observations: ["onboarding kept depending on hidden setup"],
+      interpretation: "the setup correction is reusable across repos",
+      recommendedAction: "write the onboarding step into repo guidance",
+      outcome: "failure",
+      eventKind: "wrapper:generic:failure",
+      eventPath: recorded.event.relativePath,
+    });
+    expect(promoted.event.relativePath).toContain("agent-wiki/events/");
   }, 20000);
 });
