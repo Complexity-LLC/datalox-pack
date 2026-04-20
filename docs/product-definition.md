@@ -6,7 +6,7 @@ If other docs drift, this document wins.
 
 ## One-Sentence Definition
 
-`datalox-pack` is a knowledge base for agents plus the tooling that captures, curates, retrieves, and applies that knowledge when the environment itself does not provide enough feedback.
+`datalox-pack` is a knowledge system for agents that helps them build and use reusable skills backed by grounded notes when the environment itself does not provide enough feedback.
 
 ## Why This Exists
 
@@ -31,21 +31,29 @@ Datalox exists to help create that missing feedback loop.
 
 The product has two tightly connected parts:
 
-1. A knowledge base for agents.
+1. A portable knowledge base for agents.
 2. The tooling that captures, promotes, retrieves, and applies that knowledge.
 
-The knowledge base stores reusable, agent-readable knowledge such as:
+The knowledge base is not a flat pile of memories. Its main durable forms are:
 
-- notes
-- skills
-- captures grounded in trace, web, or PDF sources
+- `skill`
+  A reusable operational entrypoint or workflow the agent can invoke again.
+- `note`
+  A grounded local pattern, exception, rule, or evidence document that supports a skill or stands on its own until a reusable workflow emerges.
 
-The tooling does the operational work around that knowledge:
+The normal structure is:
+
+- agents detect the relevant `skill` first
+- that `skill` points to one or more supporting `notes`
+- the agent reads the linked notes before acting
+
+Captures grounded in `trace`, `web`, or `pdf` sources feed that system. The tooling does the operational work around it:
 
 - observe traces, artifacts, and corrections
 - record grounded evidence
-- promote repeated or reusable patterns into durable knowledge
-- retrieve the right knowledge at the right loop boundary
+- promote repeated local patterns into `note`
+- promote repeated reusable workflows into `skill`
+- retrieve the right skill and linked notes at the right loop boundary
 - keep setup simple enough that the user's agent can do it
 
 ## Product Boundary
@@ -62,8 +70,8 @@ The intended progression is:
 
 - `trace` = what happened
 - `candidate` = a grounded reusable pattern worth watching
-- `note` = repeated local knowledge
-- `skill` = repeated reusable workflow
+- `note` = repeated grounded local knowledge
+- `skill` = repeated reusable workflow that can point to one or more notes
 
 The system should prefer:
 
@@ -85,13 +93,14 @@ We are not building:
 
 Use this sentence when describing the project:
 
-> Datalox is a knowledge system for agents that turns traces, artifacts, and corrections into reusable, high-quality, agent-readable knowledge when the environment itself does not provide enough feedback.
+> Datalox is a knowledge system for agents that turns traces, artifacts, and corrections into reusable skills backed by grounded notes when the environment itself does not provide enough feedback.
 
 ## Repo Rule
 
 When repo docs talk about Datalox, they should stay consistent with this definition:
 
-- knowledge base first
-- tooling around capture/promotion/retrieval second
+- skills first, linked notes second
+- knowledge base plus tooling, not a flat memory blob
+- tooling around capture/promotion/retrieval after the skill-note structure
 - missing feedback loops as the reason the product exists
 - agent-first operation and setup

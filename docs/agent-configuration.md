@@ -2,6 +2,18 @@
 
 The agent-facing contract is intentionally small.
 
+## Main Model
+
+- `skill` = the primary reusable workflow entrypoint
+- `note` = grounded supporting knowledge that a skill can point to
+
+Normal agent behavior should be:
+
+1. detect the relevant skill
+2. read `skills/<name>/SKILL.md`
+3. read the linked `metadata.datalox.note_paths`
+4. act from the skill plus its linked notes
+
 ## Main Surfaces
 
 ```text
@@ -46,8 +58,8 @@ Concrete source kinds only:
 
 ## Durable Outputs
 
-- `note`
 - `skill`
+- `note`
 
 ## Capture
 

@@ -21,6 +21,17 @@
     "hostSkillsDir": null,
     "hostNotesDir": null
   },
+  "knowledgeModel": {
+    "primaryDurableEntry": "skill",
+    "supportingDurableEntry": "note",
+    "normalReadPath": [
+      "detect_skill",
+      "read_skill",
+      "read_linked_notes",
+      "act"
+    ],
+    "noteLinkField": "metadata.datalox.note_paths"
+  },
   "controlArtifacts": {
     "indexPath": "agent-wiki/index.md",
     "logPath": "agent-wiki/log.md",

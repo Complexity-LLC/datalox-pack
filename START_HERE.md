@@ -4,12 +4,21 @@ This pack is for one simple outcome:
 
 your agent gets better after one correction, and you can see what it learned.
 
+The main structure is:
+
+- `skill` first
+- linked `note` second
+
 ## Fastest Path
 
 1. Put this pack in the repo you want the agent to work on.
 2. Tell the agent once:
    `Read DATALOX.md and use the Datalox pack.`
-3. Watch these files:
+3. The normal read path should be:
+   - detect the relevant `skill`
+   - read `skills/<name>/SKILL.md`
+   - follow the linked notes in `metadata.datalox.note_paths`
+4. Watch these files:
    - `agent-wiki/index.md`
    - `agent-wiki/log.md`
    - `agent-wiki/lint.md`
@@ -18,6 +27,7 @@ your agent gets better after one correction, and you can see what it learned.
 
 ## What You Should See
 
+- `skills/`: reusable workflows
 - `index.md`: what the agent currently knows
 - `log.md`: what it changed
 - `lint.md`: whether the pack is still healthy
@@ -27,8 +37,11 @@ your agent gets better after one correction, and you can see what it learned.
 
 1. `.datalox/manifest.json`
 2. `.datalox/config.json`
-3. `DATALOX.md`
-4. `agent-wiki/hot.md` if it exists
+3. `docs/product-definition.md` when it exists
+4. `DATALOX.md`
+5. `agent-wiki/hot.md` if it exists
+6. the selected `skills/<name>/SKILL.md`
+7. the linked notes for that skill
 
 ## One-Click Options
 

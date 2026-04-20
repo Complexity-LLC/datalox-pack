@@ -1,6 +1,11 @@
 # datalox-pack
 
-`datalox-pack` is a repo-local memory and skill layer for code agents.
+`datalox-pack` is a repo-local knowledge and skill layer for agents.
+
+The main model is:
+
+- `skill` = reusable workflow entrypoint
+- `note` = grounded supporting knowledge a skill can point to
 
 It keeps the model small:
 
