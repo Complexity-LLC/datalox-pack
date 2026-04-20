@@ -1,6 +1,12 @@
 # Project Overview
 
-`datalox-pack` is a portable agent memory and skill layer.
+The canonical product definition lives in [product-definition.md](./product-definition.md).
+
+Short version:
+
+- `datalox-pack` is a knowledge base for agents plus the tooling that captures, curates, retrieves, and applies that knowledge
+- the repo stays the source of truth for portable knowledge
+- the loop is `detect -> use -> record -> promote -> lint`
 
 The repo is centered on:
 
@@ -8,20 +14,15 @@ The repo is centered on:
 - `agent-wiki/notes/`
 - `agent-wiki/events/`
 
-The runtime loop is:
-
-`detect -> use -> record -> promote -> lint`
-
-The current concrete source kinds are:
+Current source kinds:
 
 - `trace`
 - `web`
 - `pdf`
 
-The current durable outputs are:
+Current durable outputs:
 
 - `note`
 - `skill`
 
-That is the core product boundary.
 Avoid expanding taxonomy unless real usage proves another generated page type is necessary.
