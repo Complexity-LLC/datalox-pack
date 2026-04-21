@@ -584,10 +584,12 @@ describe("agent scripts", () => {
     expect(body.runtimeEnabled).toBe(false);
     expect(body.detectOnEveryLoop).toBe(true);
     expect(body.counts.skills).toBe(2);
-    expect(body.counts.patterns).toBe(3);
-    expect(body.counts.wikiPages).toBeGreaterThan(body.counts.patterns);
+    expect(body.counts.notes).toBe(3);
+    expect(body.counts.wikiPages).toBeGreaterThan(body.counts.notes);
     expect(body.counts.hostSkills).toBe(2);
     expect(body.counts.seedSkills).toBe(0);
+    expect(body.paths.hostNotesDir).toContain("agent-wiki/notes");
+    expect(body.paths.seedNotesDir).toContain("agent-wiki/notes");
   });
 
   it("resolves a local skill and its notes", async () => {
@@ -606,7 +608,7 @@ describe("agent scripts", () => {
 
     const body = JSON.parse(result.stdout);
     expect(body.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
-    expect(body.matches[0].patternDocs[0].path).toBe("agent-wiki/notes/viability-gate-review.md");
+    expect(body.matches[0].linkedNotes[0].path).toBe("agent-wiki/notes/viability-gate-review.md");
     expect(body.matches[0].loopGuidance.whyMatched).toContain("workflow match: flow_cytometry");
     expect(body.matches[0].loopGuidance.whatToDoNow[0]).toContain("Review the linked exception pattern");
     expect(body.matches[0].loopGuidance.watchFor[0]).toContain("Live and dead populations");
@@ -678,7 +680,7 @@ Make the onboarding path visible and reversible before asking the next agent to 
     const body = JSON.parse(result.stdout);
     expect(body.selectionBasis).toBe("direct_note_query");
     expect(body.matches).toHaveLength(0);
-    expect(body.directNotes[0].noteDoc.path).toBe("agent-wiki/notes/reversible-onboarding.md");
+    expect(body.directNoteMatches[0].note.path).toBe("agent-wiki/notes/reversible-onboarding.md");
     expect(body.loopGuidance.whatToDoNow[0]).toContain("visible and reversible");
     expect(body.loopGuidance.watchFor[0]).toContain("install surface is hidden or irreversible");
   });
@@ -728,11 +730,11 @@ Make the onboarding path visible and reversible before asking the next agent to 
     const logFile = await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8");
     const hotFile = await readFile(path.join(tempDir, "agent-wiki/hot.md"), "utf8");
 
-    expect(patternBody.pattern.relativePath).toContain("agent-wiki/notes/");
-    expect(skillFile).toContain(patternBody.pattern.relativePath);
+    expect(patternBody.note.relativePath).toContain("agent-wiki/notes/");
+    expect(skillFile).toContain(patternBody.note.relativePath);
     expect(skillFile).toContain("## Workflow");
     expect(indexFile).toContain("## Skills");
-    expect(indexFile).toContain(patternBody.pattern.relativePath);
+    expect(indexFile).toContain(patternBody.note.relativePath);
     expect(logFile).toContain("update_note");
     expect(logFile).toContain("update_skill");
     expect(hotFile).toContain("Agent Wiki Hot Cache");
@@ -761,12 +763,12 @@ Make the onboarding path visible and reversible before asking the next agent to 
     expect(learnResult.status).toBe(0);
 
     const body = JSON.parse(learnResult.stdout);
-    expect(body.pattern.relativePath).toContain("agent-wiki/notes/");
+    expect(body.note.relativePath).toContain("agent-wiki/notes/");
     expect(body.skill.payload.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
     expect(body.skill.operation).toBe("update_skill");
     const indexFile = await readFile(path.join(tempDir, "agent-wiki/index.md"), "utf8");
     const logFile = await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8");
-    expect(indexFile).toContain(body.pattern.relativePath);
+    expect(indexFile).toContain(body.note.relativePath);
     expect(logFile).toContain("update_skill");
 
     const resolveResult = runNodeScript(tempDir, "scripts/agent-resolve.mjs", [
@@ -780,7 +782,7 @@ Make the onboarding path visible and reversible before asking the next agent to 
 
     const resolved = JSON.parse(resolveResult.stdout);
     expect(resolved.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
-    expect(resolved.matches[0].patternDocs.length).toBeGreaterThan(1);
+    expect(resolved.matches[0].linkedNotes.length).toBeGreaterThan(1);
     expect(
       resolved.matches[0].loopGuidance.whatToDoNow.some((value: string) =>
         value.toLowerCase().includes("widening gate") || value.toLowerCase().includes("exception path")
@@ -817,13 +819,13 @@ Make the onboarding path visible and reversible before asking the next agent to 
     expect(second.status).toBe(0);
     const secondBody = JSON.parse(second.stdout);
 
-    expect(secondBody.pattern.relativePath).toBe(firstBody.pattern.relativePath);
+    expect(secondBody.note.relativePath).toBe(firstBody.note.relativePath);
     const generatedNoteReferences = secondBody.skill.payload.notePaths.filter(
-      (value: string) => value === firstBody.pattern.relativePath,
+      (value: string) => value === firstBody.note.relativePath,
     );
     expect(generatedNoteReferences.length).toBe(1);
 
-    const noteFile = await readFile(path.join(tempDir, firstBody.pattern.relativePath), "utf8");
+    const noteFile = await readFile(path.join(tempDir, firstBody.note.relativePath), "utf8");
     expect(noteFile).toContain("Repeated dim-dead-tail overlap during viability review");
     expect(noteFile).toContain("dim dead tail overlaps live shoulder");
   }, 10000);
@@ -862,8 +864,8 @@ Make the onboarding path visible and reversible before asking the next agent to 
     expect(patch.status).toBe(0);
 
     const patched = JSON.parse(patch.stdout);
-    expect(patched.pattern.relativePath).toContain("agent-wiki/notes/");
-    expect(patched.skill.payload.patternPaths).toContain(patched.pattern.relativePath);
+    expect(patched.note.relativePath).toContain("agent-wiki/notes/");
+    expect(patched.skill.payload.notePaths).toContain(patched.note.relativePath);
     expect(patched.skill.operation).toBe("update_skill");
 
     const lint = runNodeScript(tempDir, "scripts/agent-lint.mjs", ["--json"]);
@@ -980,7 +982,7 @@ Use when the pack is broken.
 
     const patched = JSON.parse(patchResult.stdout);
     const hostSkillPath = path.join(hostDir, "skills/review-ambiguous-viability-gate/SKILL.md");
-    const hostPatternPath = path.join(hostDir, patched.pattern.relativePath);
+    const hostPatternPath = path.join(hostDir, patched.note.relativePath);
     const seedSkill = await readFile(
       path.join(packDir, "skills/review-ambiguous-viability-gate/SKILL.md"),
       "utf8",
@@ -989,11 +991,11 @@ Use when the pack is broken.
     const hostIndex = await readFile(path.join(hostDir, "agent-wiki/index.md"), "utf8");
     const hostLog = await readFile(path.join(hostDir, "agent-wiki/log.md"), "utf8");
 
-    expect(hostSkill).toContain(patched.pattern.relativePath);
+    expect(hostSkill).toContain(patched.note.relativePath);
     expect(hostSkill).toContain("## Workflow");
-    expect(seedSkill).not.toContain(patched.pattern.relativePath);
+    expect(seedSkill).not.toContain(patched.note.relativePath);
     expect(await readFile(hostPatternPath, "utf8")).toContain("Review the exception path before widening the gate");
-    expect(hostIndex).toContain(patched.pattern.relativePath);
+    expect(hostIndex).toContain(patched.note.relativePath);
     expect(hostLog).toContain("update_skill");
 
     const resolveAgain = runNodeScript(
@@ -1012,7 +1014,7 @@ Use when the pack is broken.
 
     const resolvedAgain = JSON.parse(resolveAgain.stdout);
     expect(resolvedAgain.matches[0].skillOrigin).toBe("host");
-    expect(resolvedAgain.matches[0].patternDocs.length).toBe(2);
+    expect(resolvedAgain.matches[0].linkedNotes.length).toBe(2);
   }, 15000);
 
   it("creates a new skill when no existing skill matches the interaction", async () => {

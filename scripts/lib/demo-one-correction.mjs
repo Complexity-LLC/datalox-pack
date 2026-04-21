@@ -384,7 +384,7 @@ export async function runDemoFlow() {
     logTail,
     beforeMatch,
     afterMatch,
-    notePath: patched.note?.relativePath ?? patched.pattern?.relativePath ?? "unknown",
+    notePath: patched.note?.relativePath ?? "unknown",
     skillPath: patched.skill?.relativePath ?? patched.skill?.filePath ?? "unknown",
   };
 }

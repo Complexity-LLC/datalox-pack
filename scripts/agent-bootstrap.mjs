@@ -4,8 +4,15 @@ import { countPackFiles, loadAgentConfig, parseArgs, resolvePackPaths } from "./
 
 const args = parseArgs(process.argv.slice(2));
 const { config, sourcePath, localOverridePath } = await loadAgentConfig(process.cwd());
-const paths = resolvePackPaths(config, { cwd: process.cwd(), sourcePath });
+const resolvedPaths = resolvePackPaths(config, { cwd: process.cwd(), sourcePath });
 const counts = await countPackFiles(config, process.cwd(), sourcePath);
+const paths = {
+  hostSkillsDir: resolvedPaths.hostSkillsDir,
+  hostNotesDir: resolvedPaths.hostNotesDir,
+  seedSkillsDir: resolvedPaths.seedSkillsDir,
+  seedNotesDir: resolvedPaths.seedNotesDir,
+  hostWikiDir: resolvedPaths.hostWikiDir,
+};
 
 const payload = {
   mode: config.mode,
@@ -35,11 +42,11 @@ if (args.json) {
   process.stdout.write(`Detect on every loop: ${payload.detectOnEveryLoop}\n`);
   process.stdout.write(`Native skill policy: ${payload.nativeSkillPolicy}\n`);
   process.stdout.write(`Skills: ${payload.counts.skills}\n`);
-  process.stdout.write(`Patterns: ${payload.counts.patterns}\n`);
+  process.stdout.write(`Notes: ${payload.counts.notes}\n`);
   process.stdout.write(`Seed skills dir: ${payload.paths.seedSkillsDir}\n`);
-  process.stdout.write(`Seed patterns dir: ${payload.paths.seedPatternsDir}\n`);
+  process.stdout.write(`Seed notes dir: ${payload.paths.seedNotesDir}\n`);
   process.stdout.write(`Host skills dir: ${payload.paths.hostSkillsDir}\n`);
-  process.stdout.write(`Host patterns dir: ${payload.paths.hostPatternsDir}\n`);
+  process.stdout.write(`Host notes dir: ${payload.paths.hostNotesDir}\n`);
   process.stdout.write(`Index: ${payload.artifacts.indexPath}\n`);
   process.stdout.write(`Log: ${payload.artifacts.logPath}\n`);
   process.stdout.write(`Lint snapshot: ${payload.artifacts.lintPath}\n`);

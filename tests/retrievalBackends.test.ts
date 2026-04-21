@@ -461,7 +461,7 @@ describe("retrieval backends", () => {
     });
 
     expect(result.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
-    expect(result.matches[0].noteDocs[0].path).toBe("agent-wiki/notes/viability-gate-review.md");
+    expect(result.matches[0].linkedNotes[0].path).toBe("agent-wiki/notes/viability-gate-review.md");
 
     const state = await readQmdState(fakeQmd.statePath).catch(() => ({ calls: [] }));
     expect(state.calls ?? []).toHaveLength(0);
@@ -487,8 +487,8 @@ describe("retrieval backends", () => {
     expect(result.directNoteBackend).toBe("qmd");
     expect(result.selectionBasis).toBe("direct_note_query");
     expect(result.matches).toHaveLength(0);
-    expect(result.directNotes[0].noteDoc.path).toBe("agent-wiki/notes/reversible-onboarding.md");
-    expect(result.directNotes[0].whyMatched).toContain("qmd candidate score: 0.91");
+    expect(result.directNoteMatches[0].note.path).toBe("agent-wiki/notes/reversible-onboarding.md");
+    expect(result.directNoteMatches[0].whyMatched).toContain("qmd candidate score: 0.91");
     expect(result.loopGuidance.whatToDoNow[0]).toContain("visible and reversible");
     expect(result.loopGuidance.watchFor[0]).toContain("install surface is hidden or irreversible");
   });
@@ -505,9 +505,9 @@ describe("retrieval backends", () => {
     });
 
     expect(result.directNoteBackend).toBe("native");
-    expect(result.directNotes[0].noteDoc.path).toBe("agent-wiki/notes/reversible-onboarding.md");
-    expect(result.directNotes.some((entry: { noteDoc: { path: string } }) =>
-      entry.noteDoc.path === "agent-wiki/notes/archived-onboarding.md")).toBe(false);
+    expect(result.directNoteMatches[0].note.path).toBe("agent-wiki/notes/reversible-onboarding.md");
+    expect(result.directNoteMatches.some((entry: { note: { path: string } }) =>
+      entry.note.path === "agent-wiki/notes/archived-onboarding.md")).toBe(false);
   });
 
   it("reranks qmd candidates with Datalox note structure instead of raw qmd order", async () => {
@@ -540,8 +540,8 @@ describe("retrieval backends", () => {
     });
 
     expect(result.directNoteBackend).toBe("qmd");
-    expect(result.directNotes[0].noteDoc.path).toBe("agent-wiki/notes/reversible-onboarding.md");
-    expect(result.directNotes[0].whyMatched).toContain("qmd candidate score: 0.41");
+    expect(result.directNoteMatches[0].note.path).toBe("agent-wiki/notes/reversible-onboarding.md");
+    expect(result.directNoteMatches[0].whyMatched).toContain("qmd candidate score: 0.41");
   });
 
   it("tracks read and apply usage for qmd direct notes through the wrapped loop", async () => {

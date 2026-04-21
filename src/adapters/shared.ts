@@ -190,8 +190,8 @@ function summarizeResolution(
     };
   }
   const topMatch = resolution.matches[0];
-  const directNotes = Array.isArray((resolution as { directNotes?: Array<{ noteDoc?: unknown }> }).directNotes)
-    ? ((resolution as { directNotes?: Array<{ noteDoc?: {
+  const directNotes = Array.isArray((resolution as { directNoteMatches?: Array<{ note?: unknown }> }).directNoteMatches)
+    ? ((resolution as { directNoteMatches?: Array<{ note?: {
       path: string;
       title: string;
       whenToUse?: string | null;
@@ -199,9 +199,9 @@ function summarizeResolution(
       interpretation?: string | null;
       action?: string | null;
       examples?: string[] | null;
-    } }> }).directNotes ?? []).map((entry) => entry.noteDoc).filter(Boolean)
+    } }> }).directNoteMatches ?? []).map((entry) => entry.note).filter(Boolean)
     : [];
-  const noteDocs = topMatch?.noteDocs ?? directNotes;
+  const noteDocs = topMatch?.linkedNotes ?? directNotes;
   const supportingNotes = noteDocs.map((noteDoc: {
     path: string;
     title: string;

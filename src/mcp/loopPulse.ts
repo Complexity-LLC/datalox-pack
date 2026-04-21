@@ -29,12 +29,12 @@ function deriveLoopHint(command: string, result: unknown, state: {
       recommended_next_tool: "adopt_pack",
       action_hint: "Repo-local Datalox surfaces are missing; adopt or bootstrap the repo before relying on pack state.",
     };
-  }
+    }
 
-  switch (command) {
+    switch (command) {
     case "resolve_loop": {
-      const typed = result as { matches?: unknown[]; directNotes?: unknown[] } | null;
-      const hasMatches = (typed?.matches?.length ?? 0) > 0 || (typed?.directNotes?.length ?? 0) > 0;
+      const typed = result as { matches?: unknown[]; directNoteMatches?: unknown[] } | null;
+      const hasMatches = (typed?.matches?.length ?? 0) > 0 || (typed?.directNoteMatches?.length ?? 0) > 0;
       return hasMatches
         ? {
             recommended_next_tool: "record_turn_result",
@@ -42,7 +42,7 @@ function deriveLoopHint(command: string, result: unknown, state: {
           }
         : {
             recommended_next_tool: "record_turn_result",
-            action_hint: "No skill or note matched. If the turn uncovers a reusable pattern, record the gap so it can accumulate evidence.",
+            action_hint: "No skill or supporting note matched. If the turn uncovers a reusable gap, record it so it can accumulate evidence into a note or skill.",
           };
     }
     case "record_turn_result": {

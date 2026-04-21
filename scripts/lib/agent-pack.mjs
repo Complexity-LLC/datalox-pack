@@ -27,6 +27,12 @@ const DEFAULT_COMPARISON_DIR = `${DEFAULT_WIKI_DIR}/comparisons`;
 const DEFAULT_QUESTION_DIR = `${DEFAULT_WIKI_DIR}/questions`;
 const DEFAULT_EVENTS_DIR = `${DEFAULT_WIKI_DIR}/events`;
 const WIKI_PAGE_TYPES = ["note", "meta", "source", "concept", "comparison", "question"];
+const KNOWLEDGE_MODEL = Object.freeze({
+  primaryDurableEntry: "skill",
+  supportingDurableEntry: "note",
+  normalReadPath: ["detect_skill", "read_skill", "read_linked_notes", "act"],
+  noteLinkField: "metadata.datalox.note_paths",
+});
 
 async function fileExists(filePath) {
   try {
@@ -1044,15 +1050,12 @@ export async function countPackFiles(config, cwd = process.cwd(), sourcePath) {
   return {
     skills: skills.length,
     notes: wikiEntries.filter((entry) => entry.pageType === "note").length,
-    patterns: wikiEntries.filter((entry) => entry.pageType === "note").length,
     wikiPages: wikiEntries.length,
     events: hostEvents.length,
     hostSkills: hostSkills.length,
     seedSkills: seedSkills.length,
     hostNotes: hostNotes.length,
     seedNotes: seedNotes.length,
-    hostPatterns: hostNotes.length,
-    seedPatterns: seedNotes.length,
   };
 }
 
@@ -1871,7 +1874,6 @@ function buildLoopGuidance(noteDocs, whyMatched) {
       noteDocs.flatMap((doc) => [...(doc.related ?? []), ...(doc.sources ?? [])]),
     ),
     supportingNotes,
-    supportingPatterns: supportingNotes,
   };
 }
 
@@ -2479,7 +2481,7 @@ export async function resolveLocalKnowledge(
 
   const matches = await Promise.all(
     ranked.map(async (item) => {
-      const noteDocs = await Promise.all(
+      const linkedNotes = await Promise.all(
         toArray(item.skill.notePaths).map((notePath) =>
           loadNoteDoc(cwd, sourcePath, notePath, includeContent)
         ),
@@ -2500,12 +2502,21 @@ export async function resolveLocalKnowledge(
         skillPath: item.filePath,
         skillOrigin: item.origin,
         skill: item.skill,
-        noteDocs,
-        patternDocs: noteDocs,
-        loopGuidance: buildLoopGuidance(noteDocs, whyMatched),
+        linkedNotes,
+        readPath: KNOWLEDGE_MODEL.normalReadPath,
+        loopGuidance: buildLoopGuidance(linkedNotes, whyMatched),
       };
     }),
   );
+
+  const directNoteMatches = directNotes.map((entry) => ({
+    score: entry.score,
+    backendScore: entry.backendScore,
+    notePath: entry.notePath,
+    noteOrigin: entry.noteOrigin,
+    note: entry.noteDoc ?? entry.note,
+    whyMatched: entry.whyMatched,
+  }));
 
   return {
     mode: config.mode,
@@ -2517,13 +2528,14 @@ export async function resolveLocalKnowledge(
     configPath: sourcePath,
     localOverridePath,
     workflow: effectiveWorkflow,
+    knowledgeModel: KNOWLEDGE_MODEL,
     repoContext,
     matches,
-    directNotes,
+    directNoteMatches,
     loopGuidance: ranked.length === 0
       ? buildLoopGuidance(
-        directNotes.map((entry) => entry.noteDoc),
-        unique(directNotes.flatMap((entry) => entry.whyMatched)),
+        directNoteMatches.map((entry) => entry.note),
+        unique(directNoteMatches.flatMap((entry) => entry.whyMatched)),
       )
       : null,
   };
@@ -2789,7 +2801,6 @@ export async function writeSkill(
     author: resolveAuthor(),
     updatedAt: new Date().toISOString(),
   };
-  payload.patternPaths = payload.notePaths;
 
   await ensureDir(path.dirname(resolvedFilePath));
   const content = renderSkillMarkdown(payload);
@@ -3100,8 +3111,7 @@ export async function recordTurnResult(
       explicitSkillId: skillId ?? null,
       matchedSkillId: reusableMatch?.skill.id ?? null,
       matchedSkillScore: reusableMatch?.score ?? null,
-      matchedNotePaths: reusableMatch?.noteDocs?.map((doc) => doc.path) ?? [],
-      matchedPatternPaths: reusableMatch?.noteDocs?.map((doc) => doc.path) ?? [],
+      matchedNotePaths: reusableMatch?.linkedNotes?.map((doc) => doc.path) ?? [],
     },
     cwd,
     sourcePath,
@@ -3261,7 +3271,6 @@ export async function compileRecordedEvent(
       promotion: {
         note,
         skill: null,
-        pattern: note,
       },
     };
   }
@@ -3529,7 +3538,6 @@ export async function learnFromInteraction(
     note,
     skill,
     resolution,
-    pattern: note,
   };
 }
 

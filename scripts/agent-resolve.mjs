@@ -52,10 +52,10 @@ if (args.json) {
         process.stdout.write(`- ${signal}\n`);
       }
     }
-    for (const patternDoc of first.patternDocs) {
-      process.stdout.write(`Pattern doc: ${patternDoc.path}\n`);
-      if (patternDoc.title) {
-        process.stdout.write(`- ${patternDoc.title}: ${patternDoc.summary}\n`);
+    for (const linkedNote of first.linkedNotes) {
+      process.stdout.write(`Linked note: ${linkedNote.path}\n`);
+      if (linkedNote.title) {
+        process.stdout.write(`- ${linkedNote.title}: ${linkedNote.summary}\n`);
       }
     }
   }

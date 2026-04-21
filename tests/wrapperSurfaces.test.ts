@@ -78,8 +78,10 @@ describe("wrapper surfaces", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("# Datalox Loop Guidance");
     expect(result.stdout).toContain("Matched skill: flow-cytometry.review-ambiguous-viability-gate");
-    expect(result.stdout).toContain("Signal: Live and dead populations are not cleanly separated during viability gate review.");
-    expect(result.stdout).toContain("Action: Check the exception and escalation pattern docs before widening the gate");
+    expect(result.stdout).toContain("Watch for:");
+    expect(result.stdout).toContain("Live and dead populations are not cleanly separated during viability gate review.");
+    expect(result.stdout).toContain("What to do now:");
+    expect(result.stdout).toContain("Check the exception and escalation pattern docs before widening the gate");
     expect(result.stdout).toContain("# Original Prompt");
     expect(result.stdout).toContain("Review the current viability gate and tell me what to do.");
   });

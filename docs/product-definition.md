@@ -56,6 +56,19 @@ Captures grounded in `trace`, `web`, or `pdf` sources feed that system. The tool
 - retrieve the right skill and linked notes at the right loop boundary
 - keep setup simple enough that the user's agent can do it
 
+## Source Rules
+
+The knowledge system has two acquisition paths and they should stay distinct:
+
+- `pdf` / `web` / other `source` inputs can create `evidence notes`
+- `trace` inputs can create `operational notes`
+- only repeated operational evidence should create or patch a `skill`
+
+A `skill` can link both kinds of notes:
+
+- operational notes for action
+- source notes for grounding
+
 ## Product Boundary
 
 - `pack` = portable protocol and durable knowledge inside the repo

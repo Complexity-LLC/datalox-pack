@@ -531,12 +531,12 @@ async function patchRecordedEvent(
 
 function collectSupportingNotePaths(result: any): string[] {
   const topMatch = result?.matches?.[0];
-  const noteDocs = Array.isArray(topMatch?.noteDocs)
-    ? topMatch.noteDocs
-    : Array.isArray(result?.directNotes)
-      ? result.directNotes.map((entry: { noteDoc?: unknown }) => entry.noteDoc).filter(Boolean)
+  const linkedNotes = Array.isArray(topMatch?.linkedNotes)
+    ? topMatch.linkedNotes
+    : Array.isArray(result?.directNoteMatches)
+      ? result.directNoteMatches.map((entry: { note?: unknown }) => entry.note).filter(Boolean)
       : [];
-  return noteDocs
+  return linkedNotes
     .map((noteDoc: { path?: string }) => noteDoc?.path)
     .filter((value: unknown): value is string => typeof value === "string" && value.length > 0);
 }
@@ -1037,7 +1037,7 @@ export async function patchKnowledge(input: PatchKnowledgeInput) {
   );
   return {
     ...result,
-    note: result.pattern,
+    note: result.note,
   };
 }
 
@@ -1160,7 +1160,7 @@ export async function promoteGap(input: PromoteGapInput) {
     promotion: result.promotion
       ? {
         ...result.promotion,
-        note: result.promotion.pattern ?? null,
+        note: result.promotion.note ?? null,
       }
       : null,
     traceBundle: extractTraceSource({
@@ -1207,7 +1207,7 @@ export async function compileRecordedEvent(input: CompileRecordedEventInput) {
     promotion: result.promotion
       ? {
         ...result.promotion,
-        note: result.promotion.pattern ?? result.promotion.note ?? null,
+        note: result.promotion.note ?? null,
       }
       : null,
   };

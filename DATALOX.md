@@ -61,6 +61,19 @@ Notes should hold both:
 
 Skills should hold the actual workflow and link to notes through `note_paths`.
 
+## Source-To-Knowledge Rule
+
+Keep the two acquisition paths distinct:
+
+- `pdf`, `web`, and other `source` inputs can create evidence notes
+- `trace` inputs can create operational notes
+- only repeated operational evidence should create or patch a skill
+
+When a skill links notes, use:
+
+- operational notes for action
+- source notes for grounding
+
 ## Lint Rule
 
 Lint checks:

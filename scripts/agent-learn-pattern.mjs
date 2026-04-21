@@ -33,12 +33,12 @@ const skill = typeof args.skill === "string"
   )
   : null;
 
-const result = { pattern, skill };
+const result = { note: pattern, skill };
 
 if (args.json) {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 } else {
-  process.stdout.write(`Pattern doc written: ${pattern.filePath}\n`);
+  process.stdout.write(`Note written: ${pattern.filePath}\n`);
   if (skill) {
     process.stdout.write(`Skill updated: ${skill.filePath}\n`);
   }
