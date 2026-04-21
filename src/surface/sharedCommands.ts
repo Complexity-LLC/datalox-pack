@@ -218,6 +218,22 @@ const eventClassArg: SharedArgSpec = {
   options: eventClassOptions,
 };
 
+const adjudicationDecisionArg: SharedArgSpec = {
+  key: "adjudicationDecision",
+  description: "Structured promotion decision: record_trace, create_operational_note, patch_existing_skill, create_new_skill, or needs_more_evidence.",
+  kind: "string",
+  cliFlag: "decision",
+  mcpKey: "adjudication_decision",
+};
+
+const adjudicationSkillIdArg: SharedArgSpec = {
+  key: "adjudicationSkillId",
+  description: "Optional skill id selected by the agent when the adjudication decision is patch_existing_skill.",
+  kind: "string",
+  cliFlag: "decision-skill",
+  mcpKey: "adjudication_skill_id",
+};
+
 const skillArg: SharedArgSpec = {
   key: "skill",
   description: "Skill identifier to resolve directly.",
@@ -619,6 +635,8 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
       outcomeArg,
       eventKindArg,
       eventClassArg,
+      adjudicationDecisionArg,
+      adjudicationSkillIdArg,
     ],
     async run(input) {
       return recordTurnResult({
@@ -639,6 +657,8 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
         outcome: maybeString(input.outcome),
         eventKind: maybeString(input.eventKind),
         eventClass: maybeString(input.eventClass) as "trace" | "candidate" | undefined,
+        adjudicationDecision: maybeString(input.adjudicationDecision),
+        adjudicationSkillId: maybeString(input.adjudicationSkillId),
       });
     },
   },
@@ -714,6 +734,8 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
       adminOverrideArg,
       minWikiOccurrencesArg,
       minSkillOccurrencesArg,
+      adjudicationDecisionArg,
+      adjudicationSkillIdArg,
     ],
     async run(input) {
       return promoteGap({
@@ -739,6 +761,8 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
         adminOverride: maybeBoolean(input.adminOverride),
         minWikiOccurrences: maybeNumber(input.minWikiOccurrences),
         minSkillOccurrences: maybeNumber(input.minSkillOccurrences),
+        adjudicationDecision: maybeString(input.adjudicationDecision),
+        adjudicationSkillId: maybeString(input.adjudicationSkillId),
       });
     },
   },

@@ -9,6 +9,16 @@ export interface SourceRouteResolution {
     workflow: string;
     selectionBasis: string;
     matchedSkillId: string | null;
+    candidateSkills: Array<{
+      skillId: string;
+      displayName: string;
+      workflow: string | null;
+      score: number;
+      supportingNotes: Array<{
+        path: string;
+        title: string;
+      }>;
+    }>;
     whyMatched: string[];
     whatToDoNow: string[];
     watchFor: string[];
@@ -100,6 +110,7 @@ export async function resolveSourceRoute(input: {
       workflow: "pdf_capture",
       selectionBasis: "source_kind_pdf",
       matchedSkillId: null,
+      candidateSkills: [],
       whyMatched: [
         pdfPaths.length === 1
           ? `Prompt referenced a concrete PDF path: ${pdfPaths[0]}`

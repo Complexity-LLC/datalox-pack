@@ -77,6 +77,68 @@ function truncate(value, maxLength = 240) {
   return `${normalized.slice(0, maxLength - 1).trim()}…`;
 }
 
+function parseDataloxMarkers(text) {
+  const normalizedText = typeof text === "string"
+    ? text.replaceAll("\\r\\n", "\n").replaceAll("\\n", "\n")
+    : "";
+  const parsed = {
+    cleanedText: normalizedText,
+    adjudicationDecision: undefined,
+    adjudicationSkillId: undefined,
+    title: undefined,
+    signal: undefined,
+    interpretation: undefined,
+    recommendedAction: undefined,
+    observations: [],
+  };
+
+  if (normalizedText.trim().length === 0) {
+    return parsed;
+  }
+
+  const keptLines = [];
+  for (const rawLine of normalizedText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const match = line.match(/^DATALOX_([A-Z_]+):\s*(.+)$/);
+    if (!match) {
+      keptLines.push(rawLine);
+      continue;
+    }
+
+    const [, key, rawValue] = match;
+    const value = rawValue.trim();
+    switch (key) {
+      case "DECISION":
+        parsed.adjudicationDecision = value;
+        break;
+      case "SKILL":
+        parsed.adjudicationSkillId = value;
+        break;
+      case "TITLE":
+        parsed.title = value;
+        break;
+      case "SIGNAL":
+        parsed.signal = value;
+        break;
+      case "INTERPRETATION":
+        parsed.interpretation = value;
+        break;
+      case "ACTION":
+      case "RECOMMENDED_ACTION":
+        parsed.recommendedAction = value;
+        break;
+      case "OBSERVATION":
+        parsed.observations.push(value);
+        break;
+      default:
+        break;
+    }
+  }
+
+  parsed.cleanedText = keptLines.join("\n").trim();
+  return parsed;
+}
+
 function firstTextContent(message) {
   const content = message?.message?.content;
   if (!Array.isArray(content)) {
@@ -125,7 +187,9 @@ function parseTranscript(transcriptPath) {
     );
 
   const task = firstTextContent(lastUser);
-  const summary = firstTextContent(lastAssistant);
+  const assistantText = firstTextContent(lastAssistant);
+  const markers = parseDataloxMarkers(assistantText);
+  const summary = markers.cleanedText || assistantText;
   const transcript = [
     task ? `User: ${task}` : null,
     summary ? `Assistant: ${summary}` : null,
@@ -137,6 +201,7 @@ function parseTranscript(transcriptPath) {
     task: task ? truncate(task, 400) : null,
     summary: summary ? truncate(summary, 400) : null,
     transcript: transcript || null,
+    markers,
   };
 }
 
@@ -309,17 +374,23 @@ async function main() {
     workflow,
     step: typeof args.step === "string" ? args.step : undefined,
     summary: summary ?? undefined,
-    observations,
+    observations: [...observations, ...(transcript.markers?.observations ?? [])],
     transcript: transcript.transcript ?? undefined,
     changedFiles: changedPaths,
     tags: [
       "auto_hook",
       payload?.hook_event_name ? `hook:${String(payload.hook_event_name).toLowerCase()}` : null,
     ].filter(Boolean),
-    title: typeof args.title === "string" ? args.title : undefined,
-    signal: typeof args.signal === "string" ? args.signal : undefined,
-    interpretation,
-    recommendedAction,
+    title: typeof args.title === "string" ? args.title : transcript.markers?.title,
+    signal: typeof args.signal === "string" ? args.signal : transcript.markers?.signal,
+    interpretation: typeof args.interpretation === "string"
+      ? args.interpretation
+      : transcript.markers?.interpretation ?? interpretation,
+    recommendedAction: typeof args.action === "string"
+      ? args.action
+      : transcript.markers?.recommendedAction ?? recommendedAction,
+    adjudicationDecision: transcript.markers?.adjudicationDecision,
+    adjudicationSkillId: transcript.markers?.adjudicationSkillId,
     eventKind: typeof args["event-kind"] === "string"
       ? args["event-kind"]
       : payload?.hook_event_name

@@ -149,7 +149,7 @@ export async function runClaudeWrapper(input: ClaudeWrapperInput) {
       task: input.task,
       workflow: input.workflow,
       step: input.step,
-      skillId: input.skillId,
+      skillId: input.skillId ?? input.skill,
       summary: input.summary,
       tags: input.tags,
       eventKind: input.eventKind,

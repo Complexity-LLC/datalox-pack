@@ -545,6 +545,25 @@ Design notes behind the pack loop.
   );
 }
 
+async function createMinimalPack(tempDir: string) {
+  await mkdir(path.join(tempDir, ".datalox"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/notes"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/patterns"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/meta"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/sources"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/concepts"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/comparisons"), { recursive: true });
+  await mkdir(path.join(tempDir, "agent-wiki/questions"), { recursive: true });
+
+  await writeFile(path.join(tempDir, ".datalox/config.json"), JSON.stringify(baseConfig, null, 2));
+  await writeFile(path.join(tempDir, "AGENTS.md"), "# Demo agent instructions\n");
+  await writeFile(path.join(tempDir, "CLAUDE.md"), "# Demo claude instructions\n");
+  await writeFile(
+    path.join(tempDir, "package.json"),
+    JSON.stringify({ name: "minimal-demo-pack", dependencies: {} }, null, 2),
+  );
+}
+
 async function addFlowStyleSkill(tempDir: string) {
   await mkdir(path.join(tempDir, "skills/github"), { recursive: true });
   await writeFile(
@@ -903,10 +922,12 @@ describe("bridge surfaces", () => {
           observations: ["dim dead tail overlaps live shoulder"],
           interpretation: "likely staining artifact",
           recommended_action: "review exception pattern before widening gate",
+          adjudication_decision: "patch_existing_skill",
+          adjudication_skill_id: "flow-cytometry.review-ambiguous-viability-gate",
         },
       });
       const promoted = extractStructuredResult(promoteResult) as any;
-      expect(promoted.decision.action).toBe("record_only");
+      expect(promoted.decision.action).toBe("create_note_from_gap");
       expect(promoted.event.payload.eventClass).toBe("candidate");
 
       const secondPromoteResult = await client.callTool({
@@ -919,6 +940,8 @@ describe("bridge surfaces", () => {
           observations: ["dim dead tail overlaps live shoulder"],
           interpretation: "likely staining artifact",
           recommended_action: "review exception pattern before widening gate",
+          adjudication_decision: "patch_existing_skill",
+          adjudication_skill_id: "flow-cytometry.review-ambiguous-viability-gate",
         },
       });
       const secondPromoted = extractStructuredResult(secondPromoteResult) as any;
@@ -969,6 +992,8 @@ describe("bridge surfaces", () => {
       "promote",
       "--event-path",
       seedBody.event.relativePath,
+      "--decision",
+      "create_operational_note",
       "--task",
       "stabilize manual pack adoption in non technical repos",
       "--workflow",
@@ -985,12 +1010,16 @@ describe("bridge surfaces", () => {
     ]);
     expect(first.status).toBe(0);
     const firstBody = JSON.parse(first.stdout);
-    expect(firstBody.decision.action).toBe("record_only");
+    expect(firstBody.decision.action).toBe("create_note_from_gap");
+    expect(firstBody.promotion.note.relativePath).toContain("agent-wiki/notes/");
+    expect(firstBody.promotion.skill).toBeNull();
 
     const second = runBuiltCli(tempDir, [
       "promote",
       "--event-path",
       seedBody.event.relativePath,
+      "--decision",
+      "create_new_skill",
       "--task",
       "stabilize manual pack adoption in non technical repos",
       "--workflow",
@@ -1007,33 +1036,9 @@ describe("bridge surfaces", () => {
     ]);
     expect(second.status).toBe(0);
     const secondBody = JSON.parse(second.stdout);
-    expect(secondBody.decision.action).toBe("create_note_from_gap");
-    expect(secondBody.promotion.note.relativePath).toContain("agent-wiki/notes/");
-    expect(secondBody.promotion.skill).toBeNull();
-
-    const third = runBuiltCli(tempDir, [
-      "promote",
-      "--event-path",
-      seedBody.event.relativePath,
-      "--task",
-      "stabilize manual pack adoption in non technical repos",
-      "--workflow",
-      "agent_adoption",
-      "--summary",
-      "Users need the pack to be visible and reversible during setup",
-      "--observation",
-      "new repos need a visible onboarding flow and trust controls",
-      "--interpretation",
-      "this is a recurring adoption workflow rather than a one-off note",
-      "--action",
-      "create a skill that guides adoption and points to the pattern doc",
-      "--json",
-    ]);
-    expect(third.status).toBe(0);
-    const thirdBody = JSON.parse(third.stdout);
-    expect(thirdBody.decision.action).toBe("create_skill_from_gap");
-    expect(thirdBody.promotion.skill.operation).toBe("create_skill");
-    expect(thirdBody.promotion.skill.payload.maturity).toBe("stable");
+    expect(secondBody.decision.action).toBe("create_skill_from_gap");
+    expect(secondBody.promotion.skill.operation).toBe("create_skill");
+    expect(secondBody.promotion.skill.payload.maturity).toBe("draft");
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("record_event");
     expect(await readFile(path.join(tempDir, "agent-wiki/log.md"), "utf8")).toContain("create_skill");
   }, 60000);
@@ -1081,6 +1086,7 @@ describe("bridge surfaces", () => {
       outcome: "failure",
       eventKind: "wrapper:generic:failure",
       eventClass: "candidate" as const,
+      adjudicationDecision: "create_operational_note",
     };
 
     const firstRecorded = await recordTurnResult(input);
@@ -1090,36 +1096,196 @@ describe("bridge surfaces", () => {
       repoPath: tempDir,
       eventPath: firstRecorded.event.relativePath,
     });
-    expect(firstCompiled.decision.action).toBe("record_only");
-    expect(firstCompiled.promotion).toBeNull();
+    expect(firstCompiled.decision.action).toBe("create_note_from_gap");
+    expect(firstCompiled.promotion?.note?.relativePath).toContain("agent-wiki/notes/");
+    expect(firstCompiled.promotion?.skill).toBeNull();
 
-    const secondRecorded = await recordTurnResult(input);
+    const secondRecorded = await recordTurnResult({
+      ...input,
+      adjudicationDecision: "create_new_skill",
+    });
     const secondCompiled = await compileRecordedEvent({
       repoPath: tempDir,
       eventPath: secondRecorded.event.relativePath,
     });
-    expect(secondCompiled.decision.action).toBe("create_note_from_gap");
-    expect(secondCompiled.promotion?.note?.relativePath).toContain("agent-wiki/notes/");
-    expect(secondCompiled.promotion?.skill).toBeNull();
-    const promotedNote = await readFile(
-      path.join(tempDir, secondCompiled.promotion.note.relativePath),
-      "utf8",
-    );
+    expect(secondCompiled.decision.action).toBe("create_skill_from_gap");
+    expect(secondCompiled.promotion?.skill?.operation).toBe("create_skill");
+    const promotedNote = await readFile(path.join(tempDir, firstCompiled.promotion.note.relativePath), "utf8");
     expect(promotedNote).toContain("Use this note when stabilize release onboarding in agent-managed repos and the same signal reappears");
     expect(promotedNote).toContain("create an onboarding playbook and attach it to a reusable skill");
     expect(promotedNote).not.toContain("Reuse this note before changing the current workflow.");
-
-    const thirdRecorded = await recordTurnResult(input);
-    const thirdCompiled = await compileRecordedEvent({
-      repoPath: tempDir,
-      eventPath: thirdRecorded.event.relativePath,
-    });
-    expect(thirdCompiled.decision.action).toBe("create_skill_from_gap");
-    expect(thirdCompiled.promotion?.skill?.operation).toBe("create_skill");
     expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
     expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("create_note");
     expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("create_skill");
   }, 20000);
+
+  it("keeps weak evidence as trace history only", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-trace-only-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    const recorded = await recordTurnResult({
+      repoPath: tempDir,
+      task: "inspect a one-off onboarding failure",
+      workflow: "agent_adoption",
+      summary: "a one-off onboarding failure appeared once",
+      observations: ["single weak signal"],
+      interpretation: "not enough evidence yet",
+      recommendedAction: "watch the next run before writing anything durable",
+      eventKind: "implementation",
+      eventClass: "trace",
+    });
+    const compiled = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: recorded.event.relativePath,
+    });
+
+    expect(compiled.decision.action).toBe("record_only");
+    expect(compiled.decision.reason).toContain("trace events");
+    expect(compiled.promotion).toBeNull();
+  });
+
+  it("creates the first operational note from a single strong run even with zero existing notes", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-first-note-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    const recorded = await recordTurnResult({
+      repoPath: tempDir,
+      task: "stabilize first-run onboarding in agent-managed repos",
+      workflow: "agent_adoption",
+      summary: "new repos need a committed onboarding step before autonomous edits",
+      observations: ["fresh repos cannot recover when onboarding is hidden"],
+      interpretation: "this is a reusable operational gap",
+      recommendedAction: "write the onboarding step into a durable note before changing the workflow",
+      eventKind: "wrapper:generic:failure",
+      eventClass: "candidate",
+      adjudicationDecision: "create_operational_note",
+    });
+    const compiled = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: recorded.event.relativePath,
+    });
+
+    expect(compiled.decision.action).toBe("create_note_from_gap");
+    expect(compiled.promotion?.note?.relativePath).toContain("agent-wiki/notes/");
+    expect(compiled.promotion?.skill).toBeNull();
+    expect(compiled.adjudicationPacket.candidateSkills).toHaveLength(0);
+    expect(compiled.adjudicationPacket.linkedOperationalNotes).toHaveLength(0);
+  });
+
+  it("does not let a single run create a skill before the note stage", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-single-run-skill-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    const recorded = await recordTurnResult({
+      repoPath: tempDir,
+      task: "stabilize first-run onboarding in agent-managed repos",
+      workflow: "agent_adoption",
+      summary: "new repos need a committed onboarding step before autonomous edits",
+      observations: ["fresh repos cannot recover when onboarding is hidden"],
+      interpretation: "this is a reusable operational gap",
+      recommendedAction: "write the onboarding step into a durable note before changing the workflow",
+      eventKind: "wrapper:generic:failure",
+      eventClass: "candidate",
+      adjudicationDecision: "create_new_skill",
+    });
+    const compiled = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: recorded.event.relativePath,
+    });
+
+    expect(compiled.decision.action).toBe("create_note_from_gap");
+    expect(compiled.promotion?.note?.relativePath).toContain("agent-wiki/notes/");
+    expect(compiled.promotion?.skill).toBeNull();
+  });
+
+  it("blocks weak cross-workflow lexical matches from patching unrelated skills", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-weak-match-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+
+    const recorded = await recordTurnResult({
+      repoPath: tempDir,
+      task: "review live delivery order status",
+      workflow: "flow_cytometry",
+      summary: "mixed words overlapped with an unrelated order workflow",
+      observations: ["the task text mentions order status but the workflow is flow cytometry"],
+      interpretation: "weak lexical overlap should not patch an unrelated host skill",
+      recommendedAction: "record only until a real workflow match exists",
+      eventKind: "wrapper:generic:failure",
+      eventClass: "candidate",
+      adjudicationDecision: "patch_existing_skill",
+      adjudicationSkillId: "ordercli",
+    });
+    const compiled = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: recorded.event.relativePath,
+    });
+
+    expect(compiled.decision.action).toBe("record_only");
+    expect(compiled.decision.reason).toContain("valid explicit or candidate skill target");
+    expect(compiled.promotion).toBeNull();
+  });
+
+  it("lets source-derived inputs create notes but not patch skills directly", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-source-note-only-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+
+    const recorded = await recordTurnResult({
+      repoPath: tempDir,
+      sourceKind: "pdf",
+      task: "extract onboarding protocol details from a paper",
+      workflow: "repo_engineering",
+      summary: "the PDF described a reusable onboarding protocol",
+      observations: ["source-derived protocol evidence should be grounded before workflow changes"],
+      interpretation: "this is evidence worth keeping but not enough to patch a skill directly",
+      recommendedAction: "record the evidence note and let later trace evidence decide any workflow change",
+      eventKind: "capture:pdf",
+      eventClass: "candidate",
+      adjudicationDecision: "patch_existing_skill",
+      adjudicationSkillId: "repo-engineering.evolve-portable-pack",
+    });
+    const compiled = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: recorded.event.relativePath,
+    });
+
+    expect(compiled.decision.action).toBe("create_note_from_gap");
+    expect(compiled.decision.reason).toContain("source-derived inputs can create notes");
+    expect(compiled.promotion?.note?.relativePath).toContain("agent-wiki/notes/");
+    expect(compiled.promotion?.skill).toBeNull();
+  });
+
+  it("keeps the adjudication packet bounded for normal runs", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-bounded-packet-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+
+    const recorded = await recordTurnResult({
+      repoPath: tempDir,
+      task: "review ambiguous live dead gate",
+      workflow: "flow_cytometry",
+      summary: "dim dead tail overlaps live shoulder during viability review",
+      observations: ["obs-1", "obs-2", "obs-3", "obs-4 should be trimmed"],
+      interpretation: "likely staining artifact",
+      recommendedAction: "review exception pattern before widening gate",
+      eventKind: "wrapper:generic:failure",
+      eventClass: "candidate",
+      adjudicationDecision: "create_operational_note",
+    });
+    const compiled = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: recorded.event.relativePath,
+    });
+
+    expect(compiled.adjudicationPacket.candidateSkills.length).toBeLessThanOrEqual(3);
+    expect(compiled.adjudicationPacket.linkedOperationalNotes.length).toBeLessThanOrEqual(3);
+    expect(compiled.adjudicationPacket.repeatedEventSummary.recentObservations.length).toBeLessThanOrEqual(3);
+    expect(JSON.stringify(compiled.adjudicationPacket).length).toBeLessThan(2500);
+  });
 
   it("requires provenance for durable writes unless an explicit override is provided", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-provenance-"));

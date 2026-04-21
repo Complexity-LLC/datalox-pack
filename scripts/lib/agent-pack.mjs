@@ -2629,6 +2629,7 @@ export async function writeNoteDoc(
     step ? `${step.toLowerCase()} and the same signal reappears` : null,
     `${signalText.replace(/[.]+$/, "").toLowerCase()} reappears`,
   ]) ?? "this note applies";
+  const normalizedWhenToUseText = whenToUseText.replace(/^use this note when\s+/i, "");
   const mergedRelated = unique([...(related ?? []), ...(existingNote?.related ?? [])]);
   const mergedSources = unique([...(sources ?? []), ...(existingNote?.sources ?? [])]);
   const mergedTags = unique([...(existingNote?.tags ?? []), ...(tags ?? [])]);
@@ -2664,7 +2665,7 @@ export async function writeNoteDoc(
     "",
     "## When to Use",
     "",
-    `Use this note when ${whenToUseText.charAt(0).toLowerCase()}${whenToUseText.slice(1)}`,
+    `Use this note when ${normalizedWhenToUseText.charAt(0).toLowerCase()}${normalizedWhenToUseText.slice(1)}`,
     "",
     "## Signal",
     "",
@@ -2972,6 +2973,258 @@ function buildEventFingerprint({
   return `${workflow ?? "unknown"}::${slugify(seed)}`;
 }
 
+const ADJUDICATION_DECISIONS = new Set([
+  "record_trace",
+  "create_operational_note",
+  "patch_existing_skill",
+  "create_new_skill",
+  "needs_more_evidence",
+]);
+
+function normalizeAdjudicationDecision(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  return ADJUDICATION_DECISIONS.has(normalized) ? normalized : null;
+}
+
+function sanitizeCandidateSkillSummary(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const skillId = typeof value.skillId === "string" && value.skillId.trim().length > 0
+    ? value.skillId.trim()
+    : null;
+
+  if (!skillId) {
+    return null;
+  }
+
+  return {
+    skillId,
+    displayName: typeof value.displayName === "string" && value.displayName.trim().length > 0
+      ? value.displayName.trim()
+      : skillId,
+    workflow: typeof value.workflow === "string" && value.workflow.trim().length > 0
+      ? value.workflow.trim()
+      : null,
+    score: Number.isFinite(value.score) ? value.score : null,
+    supportingNotes: Array.isArray(value.supportingNotes)
+      ? value.supportingNotes
+          .filter((note) => note && typeof note === "object")
+          .map((note) => ({
+            path: typeof note.path === "string" ? note.path : null,
+            title: typeof note.title === "string" ? note.title : null,
+          }))
+          .filter((note) => note.path && note.title)
+          .slice(0, 2)
+      : [],
+  };
+}
+
+function normalizeCandidateSkillSummaries(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => sanitizeCandidateSkillSummary(item))
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function buildCandidateSkillSummariesFromResolution(resolution) {
+  return normalizeCandidateSkillSummaries(
+    (resolution?.matches ?? []).map((match) => ({
+      skillId: match.skill.id,
+      displayName: match.skill.displayName ?? match.skill.name ?? match.skill.id,
+      workflow: match.skill.workflow ?? null,
+      score: match.score,
+      supportingNotes: (match.linkedNotes ?? []).slice(0, 2).map((note) => ({
+        path: note.path,
+        title: note.title,
+      })),
+    })),
+  );
+}
+
+function buildPromotionLookupKey(payload) {
+  return [
+    payload.workflow ?? "unknown",
+    slugify(firstNonEmpty([
+      payload.title,
+      payload.signal,
+      payload.summary,
+      payload.task,
+      payload.step,
+      "event",
+    ]) ?? "event"),
+  ].join("::");
+}
+
+async function findOperationalNoteForPayload(config, cwd, sourcePath, payload) {
+  const lookupKey = buildPromotionLookupKey(payload);
+  const wikiEntries = await listWikiEntries(config, cwd, sourcePath);
+  for (const entry of wikiEntries) {
+    if (entry.pageType !== "note") {
+      continue;
+    }
+    const parsed = parseNoteDoc(entry.relativePath, await readFile(entry.filePath, "utf8"), false);
+    const parsedKey = [
+      parsed.workflow ?? "unknown",
+      slugify(firstNonEmpty([
+        parsed.title,
+        parsed.signal,
+        parsed.summary,
+        "note",
+      ]) ?? "note"),
+    ].join("::");
+    if (parsedKey === lookupKey) {
+      return {
+        filePath: entry.filePath,
+        relativePath: entry.relativePath,
+        note: parsed,
+      };
+    }
+  }
+  return null;
+}
+
+function buildAdjudicationPacket(payload, occurrenceCount) {
+  const recentObservations = Array.isArray(payload.observations)
+    ? payload.observations.filter(Boolean).slice(0, 3)
+    : [];
+  return {
+    traceSummary: firstNonEmpty([payload.summary, payload.signal, payload.title]) ?? null,
+    repeatedEventSummary: {
+      occurrenceCount,
+      eventKind: payload.eventKind ?? null,
+      recentObservations,
+    },
+    candidateSkills: normalizeCandidateSkillSummaries(payload.candidateSkills),
+    linkedOperationalNotes: Array.isArray(payload.matchedNotePaths)
+      ? payload.matchedNotePaths.filter(Boolean).slice(0, 3)
+      : [],
+    linkedSourceNotes: [],
+  };
+}
+
+function resolveAdjudicatedSkillTarget(payload) {
+  const explicitSkillId = typeof payload.explicitSkillId === "string" && payload.explicitSkillId.trim().length > 0
+    ? payload.explicitSkillId.trim()
+    : null;
+  if (explicitSkillId) {
+    return explicitSkillId;
+  }
+
+  const requestedSkillId = typeof payload.adjudicationSkillId === "string" && payload.adjudicationSkillId.trim().length > 0
+    ? payload.adjudicationSkillId.trim()
+    : null;
+  if (!requestedSkillId) {
+    return null;
+  }
+
+  const candidateSkillIds = new Set(
+    normalizeCandidateSkillSummaries(payload.candidateSkills)
+      .filter((candidate) => {
+        if (!payload.workflow) {
+          return true;
+        }
+        return candidate.workflow === payload.workflow;
+      })
+      .map((candidate) => candidate.skillId),
+  );
+  return candidateSkillIds.has(requestedSkillId) ? requestedSkillId : null;
+}
+
+function decideAdjudicatedPromotion({
+  payload,
+  occurrenceCount,
+  operationalNoteExists,
+}) {
+  const decision = normalizeAdjudicationDecision(payload.adjudicationDecision);
+  if (!decision) {
+    return {
+      action: "record_only",
+      reason: "candidate event did not include an explicit adjudication decision.",
+      selectedSkillId: null,
+    };
+  }
+
+  const selectedSkillId = resolveAdjudicatedSkillTarget(payload);
+
+  switch (decision) {
+    case "record_trace":
+    case "needs_more_evidence":
+      return {
+        action: "record_only",
+        reason: "agent requested more evidence before promoting this gap.",
+        selectedSkillId,
+      };
+    case "create_operational_note":
+      return {
+        action: "create_note_from_gap",
+        reason: "agent adjudicated this run as reusable operational knowledge worth recording as a note.",
+        selectedSkillId,
+      };
+    case "patch_existing_skill":
+      if (payload.sourceKind && payload.sourceKind !== "trace") {
+        return {
+          action: "create_note_from_gap",
+          reason: "source-derived inputs can create notes but cannot patch skills directly.",
+          selectedSkillId: null,
+        };
+      }
+      if (!selectedSkillId) {
+        return {
+          action: "record_only",
+          reason: "agent requested a skill patch without a valid explicit or candidate skill target.",
+          selectedSkillId: null,
+        };
+      }
+      if (occurrenceCount < 2 && !operationalNoteExists) {
+        return {
+          action: "create_note_from_gap",
+          reason: "single-run skill patches are not allowed; create the operational note first.",
+          selectedSkillId,
+        };
+      }
+      return {
+        action: "patch_skill_with_note",
+        reason: "agent selected an existing skill target and the note stage has already been satisfied.",
+        selectedSkillId,
+      };
+    case "create_new_skill":
+      if (payload.sourceKind && payload.sourceKind !== "trace") {
+        return {
+          action: "create_note_from_gap",
+          reason: "source-derived inputs can create notes but cannot create skills directly.",
+          selectedSkillId: null,
+        };
+      }
+      if (!operationalNoteExists) {
+        return {
+          action: "create_note_from_gap",
+          reason: "new skill creation requires the note stage first.",
+          selectedSkillId: null,
+        };
+      }
+      return {
+        action: "create_skill_from_gap",
+        reason: "agent selected new skill creation after the note stage.",
+        selectedSkillId: null,
+      };
+    default:
+      return {
+        action: "record_only",
+        reason: "unknown adjudication decision.",
+        selectedSkillId: null,
+      };
+  }
+}
+
 async function writeTurnEventFile(payload, cwd = process.cwd(), sourcePathOverride) {
   const loaded = await loadAgentConfig(cwd);
   const config = loaded.config;
@@ -3009,10 +3262,14 @@ async function writeTurnEventFile(payload, cwd = process.cwd(), sourcePathOverri
 
 export async function recordTurnResult(
   {
+    sourceKind = "trace",
     task,
     workflow,
     step,
     skillId,
+    adjudicationDecision,
+    adjudicationSkillId,
+    candidateSkills = [],
     summary,
     observations = [],
     changedFiles = [],
@@ -3076,7 +3333,7 @@ export async function recordTurnResult(
   const fingerprint = effectiveEventClass === "candidate"
     ? buildEventFingerprint({
         workflow: effectiveWorkflow,
-        skillId: skillId ?? topMatch?.skill.id,
+        skillId: skillId ?? adjudicationSkillId ?? null,
         title: derived.title,
         signal: derived.signal,
         summary,
@@ -3094,6 +3351,7 @@ export async function recordTurnResult(
     {
       eventKind,
       eventClass: effectiveEventClass,
+      sourceKind,
       workflow: effectiveWorkflow,
       task: task ?? null,
       step: step ?? null,
@@ -3108,6 +3366,11 @@ export async function recordTurnResult(
       outcome: outcome ?? null,
       tags: unique([...tags, effectiveWorkflow]),
       fingerprint,
+      adjudicationDecision: normalizeAdjudicationDecision(adjudicationDecision),
+      adjudicationSkillId: adjudicationSkillId ?? null,
+      candidateSkills: normalizeCandidateSkillSummaries(candidateSkills).length > 0
+        ? normalizeCandidateSkillSummaries(candidateSkills)
+        : buildCandidateSkillSummariesFromResolution(resolution),
       explicitSkillId: skillId ?? null,
       matchedSkillId: reusableMatch?.skill.id ?? null,
       matchedSkillScore: reusableMatch?.score ?? null,
@@ -3195,6 +3458,7 @@ export async function compileRecordedEvent(
       },
       occurrenceCount: 1,
       fingerprint: payload.fingerprint ?? null,
+      adjudicationPacket: buildAdjudicationPacket(payload, 1),
       decision: {
         action: "record_only",
         reason: "trace events are grounded history only; they do not enter the promotion ladder.",
@@ -3204,12 +3468,13 @@ export async function compileRecordedEvent(
     };
   }
   const occurrenceCount = recordedEvents.filter((entry) => entry.value?.eventClass === "candidate" && entry.value?.fingerprint === payload.fingerprint).length;
+  const operationalNote = await findOperationalNoteForPayload(config, cwd, sourcePath, payload);
+  const adjudicationPacket = buildAdjudicationPacket(payload, occurrenceCount);
   const decision = {
-    ...decidePromotionAction({
+    ...decideAdjudicatedPromotion({
+      payload,
       occurrenceCount,
-      matchedSkillId: payload.explicitSkillId ?? payload.matchedSkillId ?? null,
-      minWikiOccurrences,
-      minSkillOccurrences,
+      operationalNoteExists: Boolean(operationalNote),
     }),
     occurrenceCount,
   };
@@ -3221,6 +3486,7 @@ export async function compileRecordedEvent(
     },
     occurrenceCount,
     fingerprint: payload.fingerprint ?? null,
+    adjudicationPacket,
   };
 
   if (decision.action === "record_only") {
@@ -3239,7 +3505,7 @@ export async function compileRecordedEvent(
         id: buildNoteIdentity({
           fingerprint: payload.fingerprint,
           workflow: effectiveWorkflow,
-          skillId: payload.explicitSkillId ?? payload.matchedSkillId ?? null,
+          skillId: decision.selectedSkillId ?? null,
           title: payload.title,
           signal: payload.signal,
           summary: payload.summary,
@@ -3255,7 +3521,7 @@ export async function compileRecordedEvent(
         summary: payload.summary,
         task: payload.task,
         step: payload.step,
-        skillId: null,
+        skillId: decision.selectedSkillId ?? null,
         related: unique(payload.matchedNotePaths ?? []),
         sources: [recordedEntry.relativePath],
         examples: unique([payload.summary, ...(payload.observations ?? [])].filter(Boolean)),
@@ -3281,8 +3547,9 @@ export async function compileRecordedEvent(
       workflow: effectiveWorkflow,
       step: payload.step ?? undefined,
       skillId: decision.action === "patch_skill_with_note"
-        ? (payload.explicitSkillId ?? payload.matchedSkillId ?? undefined)
+        ? (decision.selectedSkillId ?? undefined)
         : undefined,
+      allowAutoSkillMatch: decision.action !== "create_skill_from_gap",
       summary: payload.summary ?? undefined,
       observations: payload.observations ?? [],
       transcript: payload.transcript ?? undefined,
@@ -3294,7 +3561,9 @@ export async function compileRecordedEvent(
       noteId: buildNoteIdentity({
         fingerprint: payload.fingerprint,
         workflow: effectiveWorkflow,
-        skillId: payload.explicitSkillId ?? payload.matchedSkillId ?? null,
+        skillId: decision.action === "patch_skill_with_note"
+          ? (decision.selectedSkillId ?? null)
+          : null,
         title: payload.title,
         signal: payload.signal,
         summary: payload.summary,
@@ -3317,10 +3586,13 @@ export async function compileRecordedEvent(
 
 export async function promoteGap(
   {
+    sourceKind = "trace",
     task,
     workflow,
     step,
     skillId,
+    adjudicationDecision,
+    adjudicationSkillId,
     summary,
     observations = [],
     changedFiles = [],
@@ -3339,10 +3611,13 @@ export async function promoteGap(
 ) {
   const recorded = await recordTurnResult(
     {
+      sourceKind,
       task,
       workflow,
       step,
       skillId,
+      adjudicationDecision,
+      adjudicationSkillId,
       summary,
       observations,
       changedFiles,
@@ -3380,6 +3655,7 @@ export async function learnFromInteraction(
     workflow,
     step,
     skillId,
+    allowAutoSkillMatch = true,
     summary,
     observations = [],
     transcript,
@@ -3400,7 +3676,7 @@ export async function learnFromInteraction(
   let sourceSkill = null;
   if (skillId) {
     sourceSkill = await getLocalSkillById(config, skillId, cwd, sourcePath);
-  } else {
+  } else if (allowAutoSkillMatch) {
     const resolution = await resolveLocalKnowledge(
       {
         task: task ?? "",

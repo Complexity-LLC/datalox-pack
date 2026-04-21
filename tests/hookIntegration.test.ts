@@ -57,7 +57,15 @@ describe("automatic host hooks", () => {
             content: [
               {
                 type: "text",
-                text: "The wrapper contract should stay visible and committed for future agent runs.",
+                text: [
+                  "The wrapper contract should stay visible and committed for future agent runs.",
+                  "DATALOX_TITLE: Wrapper contract should stay visible",
+                  "DATALOX_SIGNAL: the same repo wrapper guidance kept disappearing from the committed path",
+                  "DATALOX_INTERPRETATION: this is a reusable wrapper workflow gap rather than a one-off hook transcript",
+                  "DATALOX_ACTION: patch the existing portable-pack skill so the committed wrapper path stays visible",
+                  "DATALOX_DECISION: patch_existing_skill",
+                  "DATALOX_SKILL: repo-engineering.evolve-portable-pack",
+                ].join("\n"),
               },
             ],
           },
@@ -86,7 +94,7 @@ describe("automatic host hooks", () => {
 
     const first = runHook();
     expect(first.status).toBe(0);
-    expect(first.stderr).toContain("record_only");
+    expect(first.stderr).toContain("create_note_from_gap");
 
     const second = runHook();
     expect(second.status).toBe(0);

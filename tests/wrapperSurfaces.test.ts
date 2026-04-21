@@ -634,6 +634,7 @@ EOF
       "\"DATALOX_SIGNAL: the same unsupported host cli path kept failing under the wrapper\",",
       "\"DATALOX_INTERPRETATION: this is a reusable wrapper gap rather than a one-off child failure\",",
       "\"DATALOX_ACTION: patch the wrapper skill so future agents use the supported host path\",",
+      "\"DATALOX_DECISION: patch_existing_skill\",",
       "\"fatal onboarding gap\"",
       "];",
       "process.stderr.write(lines.join('\\n'));",
@@ -671,7 +672,7 @@ EOF
 
     const first = runFailure();
     expect(first.status).toBe(1);
-    expect(first.stderr).toContain("record_only");
+    expect(first.stderr).toContain("create_note_from_gap");
 
     const second = runFailure();
     expect(second.status).toBe(1);

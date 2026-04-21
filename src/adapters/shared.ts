@@ -31,6 +31,16 @@ export interface LoopEnvelope {
     workflow: string;
     selectionBasis: string;
     matchedSkillId: string | null;
+    candidateSkills: Array<{
+      skillId: string;
+      displayName: string;
+      workflow: string | null;
+      score: number;
+      supportingNotes: Array<{
+        path: string;
+        title: string;
+      }>;
+    }>;
     whyMatched: string[];
     whatToDoNow: string[];
     watchFor: string[];
@@ -105,11 +115,14 @@ export interface WrappedLoopResult {
 
 export interface ObservedTurnInput {
   hostKind: string;
+  sourceKind?: "trace" | "web" | "pdf";
   eventClass?: "trace" | "candidate";
   task?: string;
   workflow?: string;
   step?: string;
   skillId?: string | null;
+  adjudicationDecision?: string;
+  adjudicationSkillId?: string | null;
   summary?: string;
   observations?: string[];
   transcript?: string;
@@ -125,6 +138,8 @@ export interface ObservedTurnInput {
 
 interface ParsedMarkers {
   cleanedText: string;
+  adjudicationDecision?: string;
+  adjudicationSkillId?: string;
   summary?: string;
   title?: string;
   signal?: string;
@@ -182,6 +197,7 @@ function summarizeResolution(
       workflow: workflowHint ?? "unknown",
       selectionBasis: "bootstrap_unavailable",
       matchedSkillId: null,
+      candidateSkills: [],
       whyMatched: [],
       whatToDoNow: [],
       watchFor: [],
@@ -219,6 +235,28 @@ function summarizeResolution(
     action: noteDoc.action ?? null,
     examples: Array.isArray(noteDoc.examples) ? noteDoc.examples.filter(Boolean) : [],
   }));
+  const candidateSkills = resolution.matches.slice(0, 3).map((match: {
+    skill: {
+      id: string;
+      displayName?: string | null;
+      name?: string | null;
+      workflow?: string | null;
+    };
+    score: number;
+    linkedNotes?: Array<{
+      path: string;
+      title: string;
+    }>;
+  }) => ({
+    skillId: match.skill.id,
+    displayName: match.skill.displayName ?? match.skill.name ?? match.skill.id,
+    workflow: match.skill.workflow ?? null,
+    score: match.score,
+    supportingNotes: (match.linkedNotes ?? []).slice(0, 2).map((noteDoc) => ({
+      path: noteDoc.path,
+      title: noteDoc.title,
+    })),
+  }));
   const loopGuidance = topMatch?.loopGuidance ?? (resolution as { loopGuidance?: {
     whyMatched?: string[];
     whatToDoNow?: string[];
@@ -229,6 +267,7 @@ function summarizeResolution(
     workflow: resolution.workflow,
     selectionBasis: resolution.selectionBasis,
     matchedSkillId: topMatch?.skill.id ?? null,
+    candidateSkills,
     whyMatched: loopGuidance?.whyMatched ?? [],
     whatToDoNow: (loopGuidance?.whatToDoNow?.length ?? 0) > 0
       ? (loopGuidance?.whatToDoNow ?? [])
@@ -284,6 +323,25 @@ function renderSupportingNotes(notes: LoopEnvelope["guidance"]["supportingNotes"
   return rendered;
 }
 
+function renderCandidateSkills(candidateSkills: LoopEnvelope["guidance"]["candidateSkills"]): string[] {
+  if (candidateSkills.length === 0) {
+    return [];
+  }
+
+  const rendered: string[] = ["Candidate skills:"];
+  for (const candidate of candidateSkills) {
+    rendered.push(`- ${candidate.displayName} | ${candidate.skillId}`);
+    if (candidate.workflow) {
+      rendered.push(`  Workflow: ${candidate.workflow}`);
+    }
+    if (candidate.supportingNotes.length > 0) {
+      rendered.push(`  Notes: ${candidate.supportingNotes.map((note) => note.title).join(" | ")}`);
+    }
+  }
+  rendered.push("");
+  return rendered;
+}
+
 export function renderWrappedPrompt(envelope: LoopEnvelope): string {
   if (!envelope.active) {
     return envelope.originalPrompt;
@@ -297,6 +355,7 @@ export function renderWrappedPrompt(envelope: LoopEnvelope): string {
     ...renderBulletSection("Why matched", envelope.guidance.whyMatched),
     ...renderBulletSection("What to do now", envelope.guidance.whatToDoNow),
     ...renderBulletSection("Watch for", envelope.guidance.watchFor),
+    ...renderCandidateSkills(envelope.guidance.candidateSkills),
     ...renderSupportingNotes(envelope.guidance.supportingNotes),
     ...renderBulletSection("Next reads", envelope.guidance.nextReads),
     "# Datalox Reusable-Gap Protocol",
@@ -308,6 +367,8 @@ export function renderWrappedPrompt(envelope: LoopEnvelope): string {
     "- DATALOX_ACTION: what the next agent should do",
     "- DATALOX_OBSERVATION: optional repeated observations (repeatable)",
     "- DATALOX_TAG: optional tags (repeatable)",
+    "- DATALOX_DECISION: one of record_trace | create_operational_note | patch_existing_skill | create_new_skill | needs_more_evidence",
+    "- DATALOX_SKILL: required skill id to patch when DATALOX_DECISION is patch_existing_skill unless the wrapper invocation already pins an explicit skill",
     "If there is no reusable gap, do not emit any DATALOX_* lines.",
     "",
     "# Original Prompt",
@@ -463,6 +524,12 @@ function parseMarkerLine(line: string, parsed: ParsedMarkers): boolean {
     case "TAG":
       parsed.tags.push(value);
       return true;
+    case "DECISION":
+      parsed.adjudicationDecision = value;
+      return true;
+    case "SKILL":
+      parsed.adjudicationSkillId = value;
+      return true;
     default:
       return false;
   }
@@ -487,6 +554,8 @@ function extractMarkers(text: string): ParsedMarkers {
 function mergeMarkers(left: ParsedMarkers, right: ParsedMarkers): ParsedMarkers {
   return {
     cleanedText: "",
+    adjudicationDecision: left.adjudicationDecision ?? right.adjudicationDecision,
+    adjudicationSkillId: left.adjudicationSkillId ?? right.adjudicationSkillId,
     summary: left.summary ?? right.summary,
     title: left.title ?? right.title,
     signal: left.signal ?? right.signal,
@@ -616,11 +685,15 @@ export function buildObservedTurnPayload(
 
   return {
     repoPath: envelope.repoPath,
+    sourceKind: input.sourceKind ?? "trace",
     eventClass: input.eventClass,
     task: input.task ?? (envelope.originalPrompt || undefined),
     workflow: input.workflow ?? envelope.guidance.workflow,
     step: input.step,
-    skillId: input.skillId ?? envelope.guidance.matchedSkillId ?? undefined,
+    skillId: input.skillId ?? undefined,
+    adjudicationDecision: input.adjudicationDecision,
+    adjudicationSkillId: input.adjudicationSkillId ?? undefined,
+    candidateSkills: envelope.guidance.candidateSkills,
     summary: input.summary ?? firstNonEmptyLine(transcript ?? ""),
     observations: Array.isArray(input.observations) ? [...input.observations] : [],
     transcript,
@@ -922,11 +995,14 @@ export async function finalizeWrappedRun(
 
   const payloadBase = buildObservedTurnPayload(envelope, {
     hostKind: input.hostKind,
+    sourceKind: "trace",
     eventClass,
     task: input.task ?? (envelope.originalPrompt || undefined),
     workflow: input.workflow ?? envelope.guidance.workflow,
     step: input.step,
     skillId: input.skillId,
+    adjudicationDecision: markers.adjudicationDecision,
+    adjudicationSkillId: markers.adjudicationSkillId,
     summary: input.summary
       ?? markers.summary
       ?? firstNonEmpty([

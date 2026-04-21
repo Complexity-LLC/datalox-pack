@@ -56,7 +56,7 @@ export async function runGenericWrapper(input: GenericWrapInput): Promise<Generi
       task: input.task,
       workflow: input.workflow,
       step: input.step,
-      skillId: undefined,
+      skillId: input.skillId ?? input.skill,
       summary: input.summary,
       tags: input.tags,
       eventKind: input.eventKind,

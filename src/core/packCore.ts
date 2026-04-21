@@ -47,10 +47,23 @@ export interface PatchKnowledgeInput {
 
 export interface RecordTurnResultInput {
   repoPath?: string;
+  sourceKind?: "trace" | "web" | "pdf";
   task?: string;
   workflow?: string;
   step?: string;
   skillId?: string;
+  adjudicationDecision?: string;
+  adjudicationSkillId?: string;
+  candidateSkills?: Array<{
+    skillId: string;
+    displayName?: string;
+    workflow?: string | null;
+    score?: number | null;
+    supportingNotes?: Array<{
+      path: string;
+      title: string;
+    }>;
+  }>;
   summary?: string;
   observations?: string[];
   changedFiles?: string[];
@@ -1046,10 +1059,14 @@ export async function recordTurnResult(input: RecordTurnResultInput) {
   const legacy = await loadLegacyPackModule();
   const result = await legacy.recordTurnResult(
     {
+      sourceKind: input.sourceKind,
       task: input.task,
       workflow: input.workflow,
       step: input.step,
       skillId: input.skillId,
+      adjudicationDecision: input.adjudicationDecision,
+      adjudicationSkillId: input.adjudicationSkillId,
+      candidateSkills: input.candidateSkills ?? [],
       summary: input.summary,
       observations: input.observations ?? [],
       changedFiles: input.changedFiles ?? [],
@@ -1107,10 +1124,14 @@ export async function promoteGap(input: PromoteGapInput) {
   const legacy = await loadLegacyPackModule();
   const result = await legacy.promoteGap(
     {
+      sourceKind: input.sourceKind,
       task: input.task,
       workflow: input.workflow,
       step: input.step,
       skillId: input.skillId,
+      adjudicationDecision: input.adjudicationDecision,
+      adjudicationSkillId: input.adjudicationSkillId,
+      candidateSkills: input.candidateSkills ?? [],
       summary: input.summary,
       observations: input.observations ?? [],
       changedFiles: input.changedFiles ?? [],
