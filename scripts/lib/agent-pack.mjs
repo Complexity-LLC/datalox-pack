@@ -515,22 +515,23 @@ function parseFrontmatter(rawFrontmatter) {
 }
 
 function splitFrontmatter(content) {
-  if (!content.startsWith("---\n")) {
+  const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (!normalized.startsWith("---\n")) {
     return {
       frontmatter: {},
-      body: content.trim(),
+      body: normalized.trim(),
     };
   }
 
   const endMarker = "\n---\n";
-  const endIndex = content.indexOf(endMarker, 4);
+  const endIndex = normalized.indexOf(endMarker, 4);
   if (endIndex === -1) {
     throw new Error("Skill markdown is missing closing frontmatter fence");
   }
 
   return {
-    frontmatter: parseFrontmatter(content.slice(4, endIndex)),
-    body: content.slice(endIndex + endMarker.length).trim(),
+    frontmatter: parseFrontmatter(normalized.slice(4, endIndex)),
+    body: normalized.slice(endIndex + endMarker.length).trim(),
   };
 }
 
@@ -2581,11 +2582,17 @@ export async function resolveLocalKnowledge(
 
   const matches = await Promise.all(
     ranked.map(async (item) => {
-      const noteDocs = await Promise.all(
-        toArray(item.skill.notePaths).map((notePath) =>
-          loadNoteDoc(cwd, sourcePath, notePath, includeContent)
-        ),
+      const noteResults = await Promise.all(
+        toArray(item.skill.notePaths).map(async (notePath) => {
+          try {
+            return { ok: true, notePath, doc: await loadNoteDoc(cwd, sourcePath, notePath, includeContent) };
+          } catch {
+            return { ok: false, notePath, doc: null };
+          }
+        }),
       );
+      const noteDocs = noteResults.filter((r) => r.ok).map((r) => r.doc);
+      const missingNotePaths = noteResults.filter((r) => !r.ok).map((r) => r.notePath);
       const whyMatched = explainSkillMatch(
         item.skill,
         {
@@ -2603,6 +2610,7 @@ export async function resolveLocalKnowledge(
         skillOrigin: item.origin,
         skill: item.skill,
         noteDocs,
+        missingNotePaths,
         patternDocs: noteDocs,
         loopGuidance: buildLoopGuidance(noteDocs, whyMatched),
       };
@@ -3697,6 +3705,18 @@ export async function lintPack(cwd = process.cwd()) {
         path: normalizePath(path.relative(cwd, filePath)),
         message: "Skill must declare at least one note path.",
       });
+    }
+
+    for (const notePath of toArray(skill.notePaths)) {
+      if (!wikiPaths.has(normalizePath(notePath))) {
+        issues.push({
+          level: "error",
+          code: "skill_broken_note_link",
+          skillId: skill.id,
+          path: normalizePath(path.relative(cwd, filePath)),
+          message: `Skill references note that does not exist: ${notePath}`,
+        });
+      }
     }
 
     if (!hasMarkdownSection(skill.body, "When to Use")) {
