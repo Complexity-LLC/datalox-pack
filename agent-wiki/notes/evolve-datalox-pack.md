@@ -1,8 +1,8 @@
 ---
 type: note
-title: Evolve portable pack
+title: Evolve Datalox pack
 workflow: repo_engineering
-skill: repo-engineering.evolve-portable-pack
+skill: repo-engineering.evolve-datalox-pack
 tags:
   - repo_engineering
   - portable_pack
@@ -17,20 +17,19 @@ sources:
   - agent-wiki/sources/portable-pack-design-notes.md
 author: yifanjin
 usage:
-  read_count: 3
-  last_read_at: 2026-04-17T07:33:42.514Z
-  apply_count: 0
-  last_applied_at: 
+  read_count: 31
+  last_read_at: 2026-04-21T12:49:22.424Z
+  apply_count: 3
+  last_applied_at: 2026-04-17T05:03:26.855Z
   evidence_count: 0
 updated: 2026-04-12T15:10:00.000Z
 review_after: 2026-07-12
 ---
-
-# Evolve portable pack
+# Evolve Datalox pack
 
 ## When to Use
 
-Use this pattern when the pack design starts adding layers faster than it adds visible user benefit.
+Use this pattern when the Datalox pack design starts adding layers faster than it adds visible user benefit.
 
 ## Signal
 
@@ -42,7 +41,7 @@ The right fix is usually to simplify the protocol, not add another layer.
 
 ## Recommended Action
 
-Keep the loop as: detect skill each turn, read linked pattern docs, and write generated skills back into `skills/`.
+Keep the loop as: detect skill each turn, read linked notes, and write generated skills back into `skills/`.
 
 ## Do Not
 

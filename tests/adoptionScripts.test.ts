@@ -55,7 +55,7 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(hostDir, "bin/install-default-host-integrations.sh"), "utf8")).toContain("Compatibility shim for the CLI-first install flow.");
     expect(await readFile(path.join(hostDir, "bin/setup-multi-agent.sh"), "utf8")).toContain("Datalox Pack multi-agent setup");
     expect(await readFile(path.join(hostDir, ".github/copilot-instructions.md"), "utf8")).toContain("portable Datalox pack");
-    expect(await readFile(path.join(hostDir, "skills/evolve-portable-pack/SKILL.md"), "utf8")).toContain("Evolve Portable Pack");
+    expect(await readFile(path.join(hostDir, "skills/evolve-datalox-pack/SKILL.md"), "utf8")).toContain("Evolve Datalox Pack");
     expect(await readFile(path.join(hostDir, "skills/host-cli-wrapper/SKILL.md"), "utf8")).toContain("Host CLI Wrapper");
     expect(await readFile(path.join(hostDir, "agent-wiki/note.schema.md"), "utf8")).toContain("Action");
     expect(await readFile(path.join(hostDir, "agent-wiki/notes/host-cli-wrapper-fallback.md"), "utf8")).toContain("thin wrapper");

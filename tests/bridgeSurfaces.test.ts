@@ -67,7 +67,7 @@ const baseConfig = {
 async function createPack(tempDir: string) {
   await mkdir(path.join(tempDir, ".datalox"), { recursive: true });
   await mkdir(path.join(tempDir, "skills/review-ambiguous-viability-gate"), { recursive: true });
-  await mkdir(path.join(tempDir, "skills/evolve-portable-pack"), { recursive: true });
+  await mkdir(path.join(tempDir, "skills/evolve-datalox-pack"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/notes"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/patterns"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/meta"), { recursive: true });
@@ -124,23 +124,23 @@ Use when live/dead separation is ambiguous during viability gate review.
 `,
   );
   await writeFile(
-    path.join(tempDir, "skills/evolve-portable-pack/SKILL.md"),
+    path.join(tempDir, "skills/evolve-datalox-pack/SKILL.md"),
     `---
-name: evolve-portable-pack
+name: evolve-datalox-pack
 description: Keep the pack simple.
 metadata:
   datalox:
-    id: repo-engineering.evolve-portable-pack
+    id: repo-engineering.evolve-datalox-pack
     workflow: repo_engineering
     trigger: Use when changing the portable pack or agent guidance.
     note_paths:
-      - agent-wiki/notes/evolve-portable-pack.md
+      - agent-wiki/notes/evolve-datalox-pack.md
     tags:
       - repo_engineering
       - portable_pack
 ---
 
-# Evolve Portable Pack
+# Evolve Datalox Pack
 
 ## When to Use
 
@@ -158,7 +158,7 @@ Use when changing the portable pack or agent guidance.
 
 ## Notes
 
-- agent-wiki/notes/evolve-portable-pack.md
+- agent-wiki/notes/evolve-datalox-pack.md
 `,
   );
   await writeFile(
@@ -210,10 +210,10 @@ Review the linked exception pattern before changing the gate.
 `,
   );
   await writeFile(
-    path.join(tempDir, "agent-wiki/notes/evolve-portable-pack.md"),
+    path.join(tempDir, "agent-wiki/notes/evolve-datalox-pack.md"),
     `---
 type: pattern
-title: Evolve portable pack
+title: Evolve Datalox pack
 workflow: repo_engineering
 status: active
 related:
@@ -224,7 +224,7 @@ updated: 2026-04-12T16:00:00.000Z
 review_after: 2026-07-12
 ---
 
-# Evolve portable pack
+# Evolve Datalox pack
 
 ## When to Use
 
@@ -380,7 +380,7 @@ title: Loop bridge
 workflow: repo_engineering
 status: active
 related:
-  - agent-wiki/notes/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-datalox-pack.md
 sources:
   - agent-wiki/sources/portable-pack-design-notes.md
 updated: 2026-04-12T16:00:00.000Z
@@ -518,7 +518,7 @@ title: Portable pack design notes
 workflow: repo_engineering
 status: active
 related:
-  - agent-wiki/notes/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-datalox-pack.md
 sources: []
 updated: 2026-04-12T16:00:00.000Z
 review_after: 2026-07-12
@@ -610,6 +610,82 @@ Use the \`gh\` CLI to interact with GitHub repositories, issues, PRs, and CI.
 - State the GitHub action being performed.
 - Return the relevant PR or CI status clearly.
 `,
+  );
+}
+
+async function addCrlfSkill(tempDir: string) {
+  await mkdir(path.join(tempDir, "skills/crlf-demo"), { recursive: true });
+  await writeFile(
+    path.join(tempDir, "skills/crlf-demo/SKILL.md"),
+    [
+      "---",
+      "name: crlf-demo",
+      "description: Use when validating CRLF frontmatter parsing.",
+      "metadata:",
+      "  datalox:",
+      "    id: repo-engineering.crlf-demo",
+      "    workflow: repo_engineering",
+      "    trigger: Use when validating CRLF frontmatter parsing.",
+      "    note_paths:",
+      "      - agent-wiki/notes/crlf-demo.md",
+      "---",
+      "",
+      "# CRLF Demo",
+      "",
+      "## When to Use",
+      "",
+      "Use when validating CRLF frontmatter parsing.",
+      "",
+      "## Workflow",
+      "",
+      "1. Resolve the explicit skill id.",
+      "2. Load the linked note.",
+      "",
+      "## Notes",
+      "",
+      "- agent-wiki/notes/crlf-demo.md",
+      "",
+    ].join("\r\n"),
+  );
+  await writeFile(
+    path.join(tempDir, "agent-wiki/notes/crlf-demo.md"),
+    [
+      "---",
+      "type: note",
+      "title: CRLF demo note",
+      "workflow: repo_engineering",
+      "status: active",
+      "sources:",
+      "  - agent-wiki/sources/portable-pack-design-notes.md",
+      "---",
+      "",
+      "# CRLF demo note",
+      "",
+      "## When to Use",
+      "",
+      "Use this note when validating CRLF frontmatter parsing.",
+      "",
+      "## Signal",
+      "",
+      "A Windows-edited file uses CRLF line endings.",
+      "",
+      "## Interpretation",
+      "",
+      "Frontmatter parsing should still work.",
+      "",
+      "## Recommended Action",
+      "",
+      "Treat CRLF and LF files the same.",
+      "",
+      "## Evidence",
+      "",
+      "- agent-wiki/sources/portable-pack-design-notes.md",
+      "",
+      "## Related",
+      "",
+      "- agent-wiki/notes/evolve-datalox-pack.md",
+      "",
+    ].join("\r\n"),
   );
 }
 
@@ -780,6 +856,76 @@ describe("bridge surfaces", () => {
     expect(resolved.matches.some((match: any) => match.skill.name === "github")).toBe(true);
   }, 20000);
 
+  it("parses CRLF frontmatter in skills and linked notes", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-crlf-skill-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+    await addCrlfSkill(tempDir);
+
+    const resolveResult = runBuiltCli(tempDir, [
+      "resolve",
+      "--skill",
+      "repo-engineering.crlf-demo",
+      "--workflow",
+      "repo_engineering",
+      "--json",
+    ]);
+    expect(resolveResult.status).toBe(0);
+    const resolved = JSON.parse(resolveResult.stdout);
+    const match = resolved.matches.find((item: any) => item.skill.id === "repo-engineering.crlf-demo");
+    expect(match).toBeTruthy();
+    expect(match.linkedNotes).toHaveLength(1);
+    expect(match.linkedNotes[0].title).toBe("CRLF demo note");
+  }, 20000);
+
+  it("resolves a skill even when one linked note is missing", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-missing-linked-note-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+    await writeFile(
+      path.join(tempDir, "skills/evolve-datalox-pack/SKILL.md"),
+      `---
+name: evolve-datalox-pack
+description: Keep the pack simple.
+metadata:
+  datalox:
+    id: repo-engineering.evolve-datalox-pack
+    workflow: repo_engineering
+    trigger: Use when changing the portable pack or agent guidance.
+    note_paths:
+      - agent-wiki/notes/evolve-datalox-pack.md
+      - agent-wiki/notes/missing-note.md
+---
+
+# Evolve Datalox Pack
+
+## When to Use
+
+Use when changing the portable pack or agent guidance.
+
+## Notes
+
+- agent-wiki/notes/evolve-datalox-pack.md
+- agent-wiki/notes/missing-note.md
+`,
+    );
+
+    const resolveResult = runBuiltCli(tempDir, [
+      "resolve",
+      "--skill",
+      "repo-engineering.evolve-datalox-pack",
+      "--workflow",
+      "repo_engineering",
+      "--json",
+    ]);
+    expect(resolveResult.status).toBe(0);
+    const resolved = JSON.parse(resolveResult.stdout);
+    expect(resolved.matches[0].skill.id).toBe("repo-engineering.evolve-datalox-pack");
+    expect(resolved.matches[0].linkedNotes).toHaveLength(1);
+    expect(resolved.matches[0].linkedNotes[0].path).toBe("agent-wiki/notes/evolve-datalox-pack.md");
+    expect(resolved.matches[0].missingNotePaths).toEqual(["agent-wiki/notes/missing-note.md"]);
+  }, 20000);
+
   it("adopts the pack into a host repo through the built CLI", async () => {
     const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-host-"));
     tempDirs.push(hostDir);
@@ -796,7 +942,7 @@ describe("bridge surfaces", () => {
     const adopted = JSON.parse(adoptResult.stdout);
     expect(adopted.copied.some((item: string) => item === "DATALOX.md")).toBe(true);
     expect(await readFile(path.join(hostDir, "DATALOX.md"), "utf8")).toContain("durable outputs: `note`, `skill`");
-    expect(await readFile(path.join(hostDir, "skills/evolve-portable-pack/SKILL.md"), "utf8")).toContain("## Workflow");
+    expect(await readFile(path.join(hostDir, "skills/evolve-datalox-pack/SKILL.md"), "utf8")).toContain("## Workflow");
   }, 20000);
 
   it("injects Datalox adapters into existing instruction files during adopt", async () => {
@@ -1246,7 +1392,7 @@ describe("bridge surfaces", () => {
       eventKind: "capture:pdf",
       eventClass: "candidate",
       adjudicationDecision: "patch_existing_skill",
-      adjudicationSkillId: "repo-engineering.evolve-portable-pack",
+      adjudicationSkillId: "repo-engineering.evolve-datalox-pack",
     });
     const compiled = await compileRecordedEvent({
       repoPath: tempDir,

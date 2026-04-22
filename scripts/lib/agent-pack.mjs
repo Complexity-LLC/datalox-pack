@@ -516,22 +516,23 @@ function parseFrontmatter(rawFrontmatter) {
 }
 
 function splitFrontmatter(content) {
-  if (!content.startsWith("---\n")) {
+  const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (!normalized.startsWith("---\n")) {
     return {
       frontmatter: {},
-      body: content.trim(),
+      body: normalized.trim(),
     };
   }
 
   const endMarker = "\n---\n";
-  const endIndex = content.indexOf(endMarker, 4);
+  const endIndex = normalized.indexOf(endMarker, 4);
   if (endIndex === -1) {
     throw new Error("Skill markdown is missing closing frontmatter fence");
   }
 
   return {
-    frontmatter: parseFrontmatter(content.slice(4, endIndex)),
-    body: content.slice(endIndex + endMarker.length).trim(),
+    frontmatter: parseFrontmatter(normalized.slice(4, endIndex)),
+    body: normalized.slice(endIndex + endMarker.length).trim(),
   };
 }
 
@@ -2481,11 +2482,25 @@ export async function resolveLocalKnowledge(
 
   const matches = await Promise.all(
     ranked.map(async (item) => {
-      const linkedNotes = await Promise.all(
-        toArray(item.skill.notePaths).map((notePath) =>
-          loadNoteDoc(cwd, sourcePath, notePath, includeContent)
-        ),
+      const noteResults = await Promise.all(
+        toArray(item.skill.notePaths).map(async (notePath) => {
+          try {
+            return {
+              ok: true,
+              notePath,
+              doc: await loadNoteDoc(cwd, sourcePath, notePath, includeContent),
+            };
+          } catch {
+            return {
+              ok: false,
+              notePath,
+              doc: null,
+            };
+          }
+        }),
       );
+      const linkedNotes = noteResults.filter((result) => result.ok).map((result) => result.doc);
+      const missingNotePaths = noteResults.filter((result) => !result.ok).map((result) => result.notePath);
       const whyMatched = explainSkillMatch(
         item.skill,
         {
@@ -2503,6 +2518,7 @@ export async function resolveLocalKnowledge(
         skillOrigin: item.origin,
         skill: item.skill,
         linkedNotes,
+        missingNotePaths,
         readPath: KNOWLEDGE_MODEL.normalReadPath,
         loopGuidance: buildLoopGuidance(linkedNotes, whyMatched),
       };
@@ -3929,7 +3945,7 @@ export async function lintPack(cwd = process.cwd()) {
       if (!resolvedNote) {
         issues.push({
           level: "error",
-          code: "missing_note",
+          code: "skill_broken_note_link",
           skillId: skill.id,
           path: normalizePath(path.relative(cwd, filePath)),
           message: `Note not found: ${notePath}`,

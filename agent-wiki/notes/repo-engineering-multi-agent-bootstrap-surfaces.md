@@ -2,7 +2,7 @@
 type: note
 title: Multi-agent bootstrap surfaces
 workflow: repo_engineering
-skill: repo-engineering.evolve-portable-pack
+skill: repo-engineering.evolve-datalox-pack
 tags:
   - repo_engineering
   - onboarding
@@ -10,22 +10,21 @@ tags:
 confidence: high
 status: active
 related:
-  - agent-wiki/notes/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-datalox-pack.md
   - agent-wiki/concepts/loop-bridge.md
   - agent-wiki/comparisons/repo-protocol-vs-loop-bridge.md
 sources:
   - agent-wiki/sources/portable-pack-design-notes.md
 author: yifanjin
 usage:
-  read_count: 3
-  last_read_at: 2026-04-17T07:33:42.514Z
-  apply_count: 0
-  last_applied_at: 
+  read_count: 31
+  last_read_at: 2026-04-21T12:49:22.424Z
+  apply_count: 3
+  last_applied_at: 2026-04-17T05:03:26.855Z
   evidence_count: 0
 updated: 2026-04-12T10:31:16.852Z
 review_after: 2026-07-12
 ---
-
 # Multi-agent bootstrap surfaces
 
 ## When to Use
@@ -63,6 +62,6 @@ If a host has a stronger native setup mechanism, use it, but keep the repo-level
 
 ## Related
 
-- agent-wiki/notes/evolve-portable-pack.md
+- agent-wiki/notes/evolve-datalox-pack.md
 - agent-wiki/concepts/loop-bridge.md
 - agent-wiki/comparisons/repo-protocol-vs-loop-bridge.md

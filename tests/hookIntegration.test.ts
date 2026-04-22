@@ -64,7 +64,7 @@ describe("automatic host hooks", () => {
                   "DATALOX_INTERPRETATION: this is a reusable wrapper workflow gap rather than a one-off hook transcript",
                   "DATALOX_ACTION: patch the existing portable-pack skill so the committed wrapper path stays visible",
                   "DATALOX_DECISION: patch_existing_skill",
-                  "DATALOX_SKILL: repo-engineering.evolve-portable-pack",
+                  "DATALOX_SKILL: repo-engineering.evolve-datalox-pack",
                 ].join("\n"),
               },
             ],
@@ -106,7 +106,7 @@ describe("automatic host hooks", () => {
 
     const logFile = await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8");
     const patchedSkill = await readFile(
-      path.join(hostDir, "skills", "evolve-portable-pack", "SKILL.md"),
+      path.join(hostDir, "skills", "evolve-datalox-pack", "SKILL.md"),
       "utf8",
     );
 
@@ -229,7 +229,7 @@ describe("automatic host hooks", () => {
     expect(eventPayload.eventClass).toBe("trace");
     expect(eventPayload.hostKind).toBe("hook");
     expect(eventPayload.workflow).toBe("repo_engineering");
-    expect(eventPayload.matchedSkillId).toBe("repo-engineering.evolve-portable-pack");
-    expect(eventPayload.matchedNotePaths).toContain("agent-wiki/notes/evolve-portable-pack.md");
+    expect(eventPayload.matchedSkillId).toBe("repo-engineering.evolve-datalox-pack");
+    expect(eventPayload.matchedNotePaths).toContain("agent-wiki/notes/evolve-datalox-pack.md");
   }, 60000);
 });

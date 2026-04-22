@@ -4,13 +4,18 @@ title: Host CLI wrapper fallback
 workflow: repo_engineering
 status: active
 related:
-  - agent-wiki/notes/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-datalox-pack.md
 sources:
   - agent-wiki/sources/portable-pack-design-notes.md
+usage:
+  read_count: 2
+  last_read_at: 2026-04-21T12:49:22.420Z
+  apply_count: 0
+  last_applied_at: 
+  evidence_count: 0
 updated: 2026-04-13T09:00:00.000Z
 review_after: 2026-07-13
 ---
-
 # Host CLI wrapper fallback
 
 ## When to Use
@@ -40,4 +45,4 @@ Prefer `datalox codex` for Codex `exec` flows. Otherwise use `datalox wrap comma
 
 ## Related
 
-- agent-wiki/notes/evolve-portable-pack.md
+- agent-wiki/notes/evolve-datalox-pack.md

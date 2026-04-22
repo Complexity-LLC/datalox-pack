@@ -69,7 +69,7 @@ async function createPack(tempDir: string) {
   await mkdir(path.join(tempDir, "agent-wiki/comparisons"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/questions"), { recursive: true });
   await mkdir(path.join(tempDir, "skills/review-ambiguous-viability-gate"), { recursive: true });
-  await mkdir(path.join(tempDir, "skills/evolve-portable-pack"), { recursive: true });
+  await mkdir(path.join(tempDir, "skills/evolve-datalox-pack"), { recursive: true });
 
   await writeFile(
     path.join(tempDir, ".datalox/config.json"),
@@ -131,17 +131,17 @@ Use when live/dead separation is ambiguous during viability gate review.
 `,
   );
   await writeFile(
-    path.join(tempDir, "skills/evolve-portable-pack/SKILL.md"),
+    path.join(tempDir, "skills/evolve-datalox-pack/SKILL.md"),
     `---
-name: evolve-portable-pack
+name: evolve-datalox-pack
 description: Keep the pack simple.
 metadata:
   datalox:
-    id: repo-engineering.evolve-portable-pack
+    id: repo-engineering.evolve-datalox-pack
     workflow: repo_engineering
     trigger: Use when changing the portable pack or agent guidance.
     note_paths:
-      - agent-wiki/notes/evolve-portable-pack.md
+      - agent-wiki/notes/evolve-datalox-pack.md
     tags:
       - repo_engineering
       - portable_pack
@@ -158,7 +158,7 @@ metadata:
         - demo-pack
 ---
 
-# Evolve Portable Pack
+# Evolve Datalox Pack
 
 ## When to Use
 
@@ -176,7 +176,7 @@ Use when changing the portable pack or agent guidance.
 
 ## Notes
 
-- agent-wiki/notes/evolve-portable-pack.md
+- agent-wiki/notes/evolve-datalox-pack.md
 `,
   );
   await writeFile(
@@ -229,10 +229,10 @@ Review the linked exception pattern before changing the gate.
 `,
   );
   await writeFile(
-    path.join(tempDir, "agent-wiki/notes/evolve-portable-pack.md"),
+    path.join(tempDir, "agent-wiki/notes/evolve-datalox-pack.md"),
     `---
 type: pattern
-title: Evolve portable pack
+title: Evolve Datalox pack
 workflow: repo_engineering
 status: active
 related:
@@ -243,7 +243,7 @@ updated: 2026-04-12T16:00:00.000Z
 review_after: 2026-07-12
 ---
 
-# Evolve portable pack
+# Evolve Datalox pack
 
 ## When to Use
 
@@ -361,7 +361,7 @@ title: Loop bridge
 workflow: repo_engineering
 status: active
 related:
-  - agent-wiki/notes/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-datalox-pack.md
 sources:
   - agent-wiki/sources/portable-pack-design-notes.md
 updated: 2026-04-12T16:00:00.000Z
@@ -499,7 +499,7 @@ title: Portable pack design notes
 workflow: repo_engineering
 status: active
 related:
-  - agent-wiki/notes/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-datalox-pack.md
 sources: []
 updated: 2026-04-12T16:00:00.000Z
 review_after: 2026-07-12
@@ -630,7 +630,7 @@ tags:
   - agent_adoption
 status: active
 related:
-  - agent-wiki/notes/evolve-portable-pack.md
+  - agent-wiki/notes/evolve-datalox-pack.md
 sources:
   - agent-wiki/events/example.json
 updated: 2026-04-14T00:00:00.000Z
@@ -664,7 +664,7 @@ Make the onboarding path visible and reversible before asking the next agent to 
 
 ## Related
 
-- agent-wiki/notes/evolve-portable-pack.md
+- agent-wiki/notes/evolve-datalox-pack.md
 `,
     );
 
@@ -695,7 +695,7 @@ Make the onboarding path visible and reversible before asking the next agent to 
 
     const body = JSON.parse(result.stdout);
     expect(body.selectionBasis).toBe("repo_context");
-    expect(body.matches[0].skill.id).toBe("repo-engineering.evolve-portable-pack");
+    expect(body.matches[0].skill.id).toBe("repo-engineering.evolve-datalox-pack");
     expect(body.workflow).toBe("repo_engineering");
   });
 
@@ -925,12 +925,12 @@ Use when the pack is broken.
 
     const body = JSON.parse(lintResult.stdout);
     expect(body.ok).toBe(false);
-    expect(body.issues.some((issue: { code: string }) => issue.code === "missing_note")).toBe(true);
+    expect(body.issues.some((issue: { code: string }) => issue.code === "skill_broken_note_link")).toBe(true);
     expect(body.issues.some((issue: { code: string }) => issue.code === "note_missing_interpretation")).toBe(true);
     expect(body.issues.some((issue: { code: string }) => issue.code === "note_missing_action")).toBe(true);
     expect(body.issues.some((issue: { code: string }) => issue.code === "orphan_note")).toBe(true);
     expect(body.issues.some((issue: { code: string }) => issue.code === "skill_missing_workflow_section")).toBe(true);
-    expect(await readFile(path.join(tempDir, "agent-wiki/lint.md"), "utf8")).toContain("missing_note");
+    expect(await readFile(path.join(tempDir, "agent-wiki/lint.md"), "utf8")).toContain("skill_broken_note_link");
   }, 20000);
 
   it("reads seed knowledge from an external pack and writes generated knowledge into the host repo", async () => {

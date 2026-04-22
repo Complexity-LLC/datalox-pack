@@ -1,13 +1,13 @@
 ---
-name: evolve-portable-pack
-description: Use when changing the portable pack or agent guidance in this repo. Keep Datalox additive to the agent's native skills and keep the pack loop minimal.
+name: evolve-datalox-pack
+description: Use when changing the Datalox pack or agent guidance in this repo. Keep Datalox additive to the agent's native skills and keep the pack loop minimal.
 metadata:
   datalox:
-    id: repo-engineering.evolve-portable-pack
+    id: repo-engineering.evolve-datalox-pack
     workflow: repo_engineering
-    trigger: Use when changing the portable pack or agent guidance in this repo.
+    trigger: Use when changing the Datalox pack or agent guidance in this repo.
     note_paths:
-      - agent-wiki/notes/evolve-portable-pack.md
+      - agent-wiki/notes/evolve-datalox-pack.md
       - agent-wiki/notes/repo-engineering-multi-agent-bootstrap-surfaces.md
     tags:
       - repo_engineering
@@ -33,9 +33,9 @@ metadata:
         - datalox-pack
 ---
 
-# Evolve Portable Pack
+# Evolve Datalox Pack
 
-Use this skill when changing the portable pack itself, its instruction surfaces, or its adoption flow.
+Use this skill when changing the Datalox pack itself, its instruction surfaces, or its adoption flow.
 
 ## When to Use
 
@@ -52,7 +52,7 @@ Use this skill when changing the portable pack itself, its instruction surfaces,
 
 ## Workflow
 
-1. Confirm the change is really about the portable pack and not the backend service.
+1. Confirm the change is really about the Datalox pack and not the backend service.
 2. Read the linked notes before editing behavior or instructions.
 3. Preserve the minimal loop: detect -> use -> patch -> lint.
 4. Keep Datalox additive to the agent's native skills. Do not replace or shadow built-in skill behavior.
@@ -75,5 +75,5 @@ Use this skill when changing the portable pack itself, its instruction surfaces,
 
 ## Notes
 
-- agent-wiki/notes/evolve-portable-pack.md
+- agent-wiki/notes/evolve-datalox-pack.md
 - agent-wiki/notes/repo-engineering-multi-agent-bootstrap-surfaces.md

@@ -303,7 +303,7 @@ describe("wrapper surfaces", () => {
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed.skill).toBe("repo-engineering.evolve-portable-pack");
+    expect(parsed.skill).toBe("repo-engineering.evolve-datalox-pack");
     expect(parsed.workflow).toBe("repo_engineering");
     expect(parsed.args[0]).toContain("# Datalox Loop Guidance");
     expect(parsed.args[0]).toContain("Update the pack docs to mention wrappers.");
@@ -346,7 +346,7 @@ describe("wrapper surfaces", () => {
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed.skill).toBe("repo-engineering.evolve-portable-pack");
+    expect(parsed.skill).toBe("repo-engineering.evolve-datalox-pack");
     expect(parsed.workflow).toBe("repo_engineering");
     expect(parsed.args[0]).toBe("--print");
     expect(parsed.args[1]).toContain("# Datalox Loop Guidance");
@@ -392,7 +392,7 @@ describe("wrapper surfaces", () => {
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed.skill).toBe("repo-engineering.evolve-portable-pack");
+    expect(parsed.skill).toBe("repo-engineering.evolve-datalox-pack");
     expect(parsed.args[0]).toBe("--model");
     expect(parsed.args[2]).toContain("# Datalox Loop Guidance");
     expect(parsed.args[2]).toContain("Explain the wrapper contract.");
@@ -429,7 +429,7 @@ describe("wrapper surfaces", () => {
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed.skill).toBe("repo-engineering.evolve-portable-pack");
+    expect(parsed.skill).toBe("repo-engineering.evolve-datalox-pack");
     expect(parsed.args[0]).toBe("exec");
     expect(parsed.args[2]).toContain("# Datalox Loop Guidance");
     expect(parsed.args[2]).toContain("Update the pack docs to mention wrappers.");
