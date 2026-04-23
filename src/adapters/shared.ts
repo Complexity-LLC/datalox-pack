@@ -35,11 +35,11 @@ export interface LoopEnvelope {
       skillId: string;
       displayName: string;
       workflow: string | null;
-      score: number;
       supportingNotes: Array<{
         path: string;
         title: string;
       }>;
+      whyMatched: string[];
     }>;
     whyMatched: string[];
     whatToDoNow: string[];
@@ -169,9 +169,111 @@ const REVIEW_TRANSCRIPT_LIMITS = {
   stdout: 6000,
   stderr: 6000,
 } as const;
+const UNKNOWN_WORKFLOW = "unknown";
+const TRANSPORT_NOISE_LINE_PATTERNS = [
+  /^Reading additional input from stdin\.\.\.$/i,
+  /^OpenAI Codex v.*$/i,
+  /^--------$/i,
+  /^reasoning summaries:\s*/i,
+  /^user$/i,
+  /^codex$/i,
+  /^exec$/i,
+  /^tokens used$/i,
+  /^succeeded in \d+ms:?\s*$/i,
+  /^exited \d+ in \d+ms:?\s*$/i,
+  /^workdir:\s*/i,
+  /^model:\s*/i,
+  /^provider:\s*/i,
+  /^approval:\s*/i,
+  /^sandbox:\s*/i,
+  /^reasoning effort:\s*/i,
+  /^session id:\s*/i,
+  /^cwd:\s*/i,
+] as const;
+const TRANSPORT_NOISE_BLOCK_PATTERNS = [
+  /codex_core::plugins::manager: failed to warm featured plugin ids cache/i,
+  /remote plugin sync request to https:\/\/chatgpt\.com\/backend-api\/plugins\/featured failed/i,
+  /codex_analytics::client: events failed with status 403 Forbidden/i,
+  /window\._cf_chl_opt/i,
+  /Enable JavaScript and cookies to continue/i,
+] as const;
+const TRANSPORT_NOISE_WARNING_PATTERNS = [
+  /codex_core_plugins::manifest: ignoring interface\.defaultPrompt/i,
+  /codex_rmcp_client::stdio_server_launcher: Failed to terminate MCP process group/i,
+  /codex_core::shell_snapshot: Failed to delete shell snapshot/i,
+] as const;
+const TRANSPORT_HTML_LINE_PATTERNS = [
+  /^\s*<(?:!doctype|html|head|body|meta|style|div|script|noscript|svg|path)\b/i,
+  /^\s*<\/(?:html|head|body|div|script|noscript|svg)\b/i,
+] as const;
+const TRANSPORT_NOISE_BLOCK_END_PATTERNS = [
+  /^\d{4}-\d{2}-\d{2}T/,
+  /^(?:codex|exec|tokens used|user)$/i,
+  /^succeeded in \d+ms:?\s*$/i,
+  /^exited \d+ in \d+ms:?\s*$/i,
+] as const;
+const EXPLICIT_PLACEHOLDER_VALUES = {
+  __DATALOX_PROMPT__: (envelope: LoopEnvelope) => envelope.wrappedPrompt,
+  __DATALOX_ORIGINAL_PROMPT__: (envelope: LoopEnvelope) => envelope.originalPrompt,
+  __DATALOX_GUIDANCE_JSON__: (envelope: LoopEnvelope) => JSON.stringify(envelope.guidance),
+  __DATALOX_REPO_PATH__: (envelope: LoopEnvelope) => envelope.repoPath,
+  __DATALOX_MATCHED_SKILL__: (envelope: LoopEnvelope) => envelope.guidance.matchedSkillId ?? "",
+  __DATALOX_WORKFLOW__: (envelope: LoopEnvelope) => envelope.guidance.workflow === UNKNOWN_WORKFLOW ? "" : envelope.guidance.workflow,
+} as const;
+const EXPLICIT_PLACEHOLDER_KEYS = Object.keys(EXPLICIT_PLACEHOLDER_VALUES) as Array<keyof typeof EXPLICIT_PLACEHOLDER_VALUES>;
 
 function sanitizeWrappedText(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(CONTROL_TEXT_PATTERN, "");
+}
+
+function stripTransportNoise(text: string): string {
+  const keptLines: string[] = [];
+  let droppingHtmlNoise = false;
+
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    const isTransportLine = TRANSPORT_NOISE_LINE_PATTERNS.some((pattern) => pattern.test(line));
+    const isTransportBlock = TRANSPORT_NOISE_BLOCK_PATTERNS.some((pattern) => pattern.test(line));
+    const isTransportWarning = TRANSPORT_NOISE_WARNING_PATTERNS.some((pattern) => pattern.test(line));
+    const isHtmlNoiseLine = TRANSPORT_HTML_LINE_PATTERNS.some((pattern) => pattern.test(line));
+    const isNoiseBlockEnd = TRANSPORT_NOISE_BLOCK_END_PATTERNS.some((pattern) => pattern.test(line));
+
+    if (isTransportLine || isTransportWarning || isTransportBlock || isHtmlNoiseLine) {
+      if (isTransportBlock || /<html\b/i.test(line)) {
+        droppingHtmlNoise = true;
+      }
+      if (/<\/html>/i.test(line) || /<\/body>/i.test(line)) {
+        droppingHtmlNoise = false;
+      }
+      continue;
+    }
+
+    if (droppingHtmlNoise) {
+      if (isNoiseBlockEnd) {
+        droppingHtmlNoise = false;
+      } else if (/<\/html>/i.test(line) || /<\/body>/i.test(line)) {
+        droppingHtmlNoise = false;
+        continue;
+      } else {
+        continue;
+      }
+    }
+
+    if (isTransportLine || isTransportWarning) {
+      continue;
+    }
+
+    if (isTransportBlock || isHtmlNoiseLine) {
+      if (/<\/html>/i.test(line) || /<\/body>/i.test(line)) {
+        droppingHtmlNoise = false;
+      }
+      continue;
+    }
+
+    keptLines.push(rawLine);
+  }
+
+  return keptLines.join("\n").trim();
 }
 
 export function stripDataloxMarkers(text: string): string {
@@ -242,20 +344,22 @@ function summarizeResolution(
       name?: string | null;
       workflow?: string | null;
     };
-    score: number;
     linkedNotes?: Array<{
       path: string;
       title: string;
     }>;
+    loopGuidance?: {
+      whyMatched?: string[];
+    } | null;
   }) => ({
     skillId: match.skill.id,
     displayName: match.skill.displayName ?? match.skill.name ?? match.skill.id,
     workflow: match.skill.workflow ?? null,
-    score: match.score,
     supportingNotes: (match.linkedNotes ?? []).slice(0, 2).map((noteDoc) => ({
       path: noteDoc.path,
       title: noteDoc.title,
     })),
+    whyMatched: match.loopGuidance?.whyMatched ?? [],
   }));
   const loopGuidance = topMatch?.loopGuidance ?? (resolution as { loopGuidance?: {
     whyMatched?: string[];
@@ -337,6 +441,9 @@ function renderCandidateSkills(candidateSkills: LoopEnvelope["guidance"]["candid
     if (candidate.supportingNotes.length > 0) {
       rendered.push(`  Notes: ${candidate.supportingNotes.map((note) => note.title).join(" | ")}`);
     }
+    if (candidate.whyMatched.length > 0) {
+      rendered.push(`  Why matched: ${candidate.whyMatched[0]}`);
+    }
   }
   rendered.push("");
   return rendered;
@@ -346,6 +453,9 @@ export function renderWrappedPrompt(envelope: LoopEnvelope): string {
   if (!envelope.active) {
     return envelope.originalPrompt;
   }
+  const shouldPreferNewSkill = envelope.guidance.supportingNotes.length > 0
+    && !envelope.guidance.matchedSkillId
+    && envelope.guidance.workflow !== UNKNOWN_WORKFLOW;
   const guidanceLines = [
     "# Datalox Loop Guidance",
     `Selection basis: ${envelope.guidance.selectionBasis}`,
@@ -358,6 +468,14 @@ export function renderWrappedPrompt(envelope: LoopEnvelope): string {
     ...renderCandidateSkills(envelope.guidance.candidateSkills),
     ...renderSupportingNotes(envelope.guidance.supportingNotes),
     ...renderBulletSection("Next reads", envelope.guidance.nextReads),
+    ...(shouldPreferNewSkill
+      ? [
+        "Promotion state:",
+        "- Supporting notes already cover this gap, but there is still no matched skill.",
+        "- If this run confirms the same recurring workflow, prefer DATALOX_DECISION: create_new_skill over create_operational_note.",
+        "",
+      ]
+      : []),
     "# Datalox Reusable-Gap Protocol",
     "Only if you discover a reusable gap, recurring workflow, or repeated failure worth remembering, append plain text marker lines at the very end of your response:",
     "- DATALOX_SUMMARY: one-line summary of the reusable gap",
@@ -369,6 +487,12 @@ export function renderWrappedPrompt(envelope: LoopEnvelope): string {
     "- DATALOX_TAG: optional tags (repeatable)",
     "- DATALOX_DECISION: one of record_trace | create_operational_note | patch_existing_skill | create_new_skill | needs_more_evidence",
     "- DATALOX_SKILL: required skill id to patch when DATALOX_DECISION is patch_existing_skill unless the wrapper invocation already pins an explicit skill",
+    "Decision rules:",
+    "- use record_trace when the run is one-off or not yet reusable enough",
+    "- use create_operational_note when you found the first durable reusable local pattern for this gap",
+    "- use create_new_skill when supporting notes already cover the same gap and the correction now reads like a reusable workflow with no matched skill yet",
+    "- use patch_existing_skill when a matched skill already exists and this gap belongs inside that workflow",
+    "- use needs_more_evidence when you cannot justify a durable write yet",
     "If there is no reusable gap, do not emit any DATALOX_* lines.",
     "",
     "# Original Prompt",
@@ -428,19 +552,41 @@ export function buildWrapperEnv(envelope: LoopEnvelope): NodeJS.ProcessEnv {
     DATALOX_PROMPT: envelope.wrappedPrompt,
     DATALOX_GUIDANCE_JSON: JSON.stringify(envelope.guidance),
     DATALOX_SELECTION_BASIS: envelope.guidance.selectionBasis,
-    DATALOX_WORKFLOW: envelope.guidance.workflow,
+    DATALOX_WORKFLOW: envelope.guidance.workflow === UNKNOWN_WORKFLOW ? "" : envelope.guidance.workflow,
     DATALOX_MATCHED_SKILL: envelope.guidance.matchedSkillId ?? "",
   };
 }
 
+function replaceExplicitPlaceholder(
+  input: string,
+  key: keyof typeof EXPLICIT_PLACEHOLDER_VALUES,
+  value: string,
+): string {
+  if (input === key) {
+    return value;
+  }
+
+  const assignmentSuffix = `=${key}`;
+  if (input.endsWith(assignmentSuffix)) {
+    return `${input.slice(0, -assignmentSuffix.length)}=${value}`;
+  }
+
+  return input;
+}
+
+export function hasExplicitPromptPlaceholder(input: string): boolean {
+  return input === "__DATALOX_PROMPT__" || input.endsWith("=__DATALOX_PROMPT__");
+}
+
 export function replacePromptPlaceholders(input: string, envelope: LoopEnvelope): string {
-  return input
-    .replaceAll("__DATALOX_PROMPT__", envelope.wrappedPrompt)
-    .replaceAll("__DATALOX_ORIGINAL_PROMPT__", envelope.originalPrompt)
-    .replaceAll("__DATALOX_GUIDANCE_JSON__", JSON.stringify(envelope.guidance))
-    .replaceAll("__DATALOX_REPO_PATH__", envelope.repoPath)
-    .replaceAll("__DATALOX_MATCHED_SKILL__", envelope.guidance.matchedSkillId ?? "")
-    .replaceAll("__DATALOX_WORKFLOW__", envelope.guidance.workflow);
+  if (input === envelope.wrappedPrompt || input === envelope.originalPrompt) {
+    return input;
+  }
+
+  return EXPLICIT_PLACEHOLDER_KEYS.reduce(
+    (current, key) => replaceExplicitPlaceholder(current, key, EXPLICIT_PLACEHOLDER_VALUES[key](envelope)),
+    input,
+  );
 }
 
 export function runWrappedCommand(
@@ -489,6 +635,19 @@ function firstNonEmpty(lines: Array<string | undefined | null>): string | undefi
 
 function firstNonEmptyLine(text: string): string | undefined {
   return firstNonEmpty(text.split(/\r?\n/));
+}
+
+function extractChildSummary(child: WrappedCommandResult): string | undefined {
+  const streams = child.exitCode === 0
+    ? [child.stdout, child.stderr]
+    : [child.stderr, child.stdout];
+  for (const stream of streams) {
+    const firstLine = firstNonEmptyLine(stripTransportNoise(stream));
+    if (firstLine) {
+      return firstLine;
+    }
+  }
+  return undefined;
 }
 
 function parseMarkerLine(line: string, parsed: ParsedMarkers): boolean {
@@ -576,8 +735,8 @@ export function sanitizeWrappedCommandResult(result: WrappedCommandResult): {
   return {
     child: {
       ...result,
-      stdout: stdoutMarkers.cleanedText,
-      stderr: stderrMarkers.cleanedText,
+      stdout: stripTransportNoise(stdoutMarkers.cleanedText),
+      stderr: stripTransportNoise(stderrMarkers.cleanedText),
     },
     markers: mergeMarkers(stdoutMarkers, stderrMarkers),
   };
@@ -630,10 +789,7 @@ function buildTranscript(
 }
 
 function buildFailureObservation(child: WrappedCommandResult): string | undefined {
-  const firstLine = firstNonEmpty([
-    firstNonEmptyLine(child.stderr),
-    firstNonEmptyLine(child.stdout),
-  ]);
+  const firstLine = extractChildSummary(child);
   if (!firstLine) {
     return `Wrapped host command exited with code ${child.exitCode}.`;
   }
@@ -688,7 +844,7 @@ export function buildObservedTurnPayload(
     sourceKind: input.sourceKind ?? "trace",
     eventClass: input.eventClass,
     task: input.task ?? (envelope.originalPrompt || undefined),
-    workflow: input.workflow ?? envelope.guidance.workflow,
+    workflow: input.workflow ?? (envelope.guidance.workflow === UNKNOWN_WORKFLOW ? undefined : envelope.guidance.workflow),
     step: input.step,
     skillId: input.skillId ?? undefined,
     adjudicationDecision: input.adjudicationDecision,
@@ -998,17 +1154,14 @@ export async function finalizeWrappedRun(
     sourceKind: "trace",
     eventClass,
     task: input.task ?? (envelope.originalPrompt || undefined),
-    workflow: input.workflow ?? envelope.guidance.workflow,
+    workflow: input.workflow ?? (envelope.guidance.workflow === UNKNOWN_WORKFLOW ? undefined : envelope.guidance.workflow),
     step: input.step,
     skillId: input.skillId,
     adjudicationDecision: markers.adjudicationDecision,
     adjudicationSkillId: markers.adjudicationSkillId,
     summary: input.summary
       ?? markers.summary
-      ?? firstNonEmpty([
-        firstNonEmptyLine(sanitized.child.stderr),
-        firstNonEmptyLine(sanitized.child.stdout),
-      ]),
+      ?? extractChildSummary(sanitized.child),
     observations,
     transcript: buildTranscript(envelope, sanitized.child, STORED_TRANSCRIPT_LIMITS),
     changedFiles,

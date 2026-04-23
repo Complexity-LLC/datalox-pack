@@ -60,7 +60,7 @@ node dist/src/cli/main.js codex \
   --repo /tmp/datalox-enforce-host-nXoE5q \
   --task "debug repeated wrapper failure in unsupported host cli path" \
   --workflow repo_engineering \
-  --skill repo-engineering.host-cli-wrapper \
+  --skill repo-engineering.use-datalox-through-host-cli \
   --post-run-mode promote \
   --codex-bin /Users/yifanjin/.cursor/extensions/openai.chatgpt-26.417.40842-darwin-arm64/bin/macos-aarch64/codex \
   --json -- \
@@ -147,7 +147,7 @@ Expected:
 
 ### 3. Linked note text can recursively expand `__DATALOX_PROMPT__`
 
-The explicit `repo-engineering.host-cli-wrapper` run surfaced a real wrapper bug:
+The explicit `repo-engineering.use-datalox-through-host-cli` run surfaced a real wrapper bug:
 
 - the linked note action contains `__DATALOX_PROMPT__`
 - the wrapper replaces placeholders across the final child args
@@ -267,7 +267,7 @@ Weak retrieval candidates still appear, but they no longer assign authoritative 
   - `workflow: "unknown"`
   - `matchedSkillId: null`
 - weak candidate still surfaced:
-  - `repo-engineering.host-cli-wrapper`
+  - `repo-engineering.use-datalox-through-host-cli`
   - `whyMatched: ["primary_term_overlap"]`
 
 ### Interpretation
@@ -484,3 +484,67 @@ Phase 4 fixes note rendering, but Phase 5 remains:
 
 - stored event `stderr` / transcript payloads can still carry large Codex warning or HTML dumps
 - that is now a transcript hygiene issue, not a promoted-note rendering issue
+
+## Phase 5 Validation - 2026-04-23
+
+Phase 5 from [enforcement-fix-plan.md](./enforcement-fix-plan.md) was implemented and re-tested through both focused wrapper tests and a fresh real `datalox codex` run with `gpt-5.4-mini`.
+
+### Result
+
+Stored event transcripts no longer carry the large Codex analytics/plugin warning dumps or embedded HTML bodies that previously dominated evidence.
+
+The Phase 5 guarantees now hold:
+
+- stored transcript/evidence sections do not contain the large warning / HTML dump
+- real child error text still survives when it is the actual failure evidence
+
+### Focused proof
+
+The wrapper suite now includes explicit regression coverage for:
+
+- dropping Codex plugin warning / HTML dumps from stored transcripts
+- preserving a real failure line while stripping transport noise around it
+
+### Fresh live proof
+
+#### Fresh repo
+
+- repo: `/tmp/datalox-phase5-live3-DRGTpu`
+
+#### Command
+
+```bash
+node dist/src/cli/main.js codex \
+  --repo /tmp/datalox-phase5-live3-DRGTpu \
+  --post-run-mode auto \
+  --codex-bin /Users/yifanjin/.cursor/extensions/openai.chatgpt-26.417.40842-darwin-arm64/bin/macos-aarch64/codex \
+  --json -- \
+  exec --skip-git-repo-check -m gpt-5.4-mini \
+  "Read README.md and say one sentence about this repo."
+```
+
+#### Recorded event
+
+- event:
+  - [there-s-no-readme-md-in-this-checkout-but-the-repo-is-a-datalox-portable-agent-p.json](/tmp/datalox-phase5-live3-DRGTpu/agent-wiki/events/2026-04-23T04-27-01-105Z--there-s-no-readme-md-in-this-checkout-but-the-repo-is-a-datalox-portable-agent-p.json)
+
+Transcript checks on the stored event:
+
+- `contains_html: false`
+- `contains_plugin_manager: false`
+- `contains_analytics_403: false`
+- `contains_manifest_warning: false`
+- `contains_cloudflare: false`
+- `contains_shell_snapshot: false`
+- `contains_rmcp: false`
+
+### Interpretation
+
+This satisfies the Phase 5 pass criteria:
+
+- the stored event transcript no longer contains the large Codex warning / HTML dump
+- focused failure-path tests prove that a real child error line still survives after transport-noise stripping
+
+### Residual Note
+
+The returned wrapper JSON still has verbose `child.stderr` because Codex echoes session progress on stderr. That is no longer the stored-evidence problem Phase 5 was targeting.

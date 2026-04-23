@@ -1,8 +1,8 @@
 ---
 type: note
-title: Evolve Datalox pack
+title: Maintain Datalox Pack
 workflow: repo_engineering
-skill: repo-engineering.evolve-datalox-pack
+skill: repo-engineering.maintain-datalox-pack
 tags:
   - repo_engineering
   - portable_pack
@@ -17,15 +17,15 @@ sources:
   - agent-wiki/sources/portable-pack-design-notes.md
 author: yifanjin
 usage:
-  read_count: 31
-  last_read_at: 2026-04-21T12:49:22.424Z
+  read_count: 49
+  last_read_at: 2026-04-22T14:17:30.077Z
   apply_count: 3
   last_applied_at: 2026-04-17T05:03:26.855Z
   evidence_count: 0
 updated: 2026-04-12T15:10:00.000Z
 review_after: 2026-07-12
 ---
-# Evolve Datalox pack
+# Maintain Datalox Pack
 
 ## When to Use
 

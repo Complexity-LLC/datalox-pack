@@ -70,6 +70,17 @@
     "oneClickBootstrap": "bash bin/adopt-from-github.sh <host-repo>",
     "multiAgentSetup": "bash bin/setup-multi-agent.sh",
     "friendlyEntryPoint": "START_HERE.md",
+    "defaultBootstrapBundle": {
+      "skills": [
+        "skills/maintain-datalox-pack",
+        "skills/use-datalox-through-host-cli"
+      ],
+      "notes": [
+        "agent-wiki/notes/maintain-datalox-pack.md",
+        "agent-wiki/notes/use-datalox-through-host-cli.md",
+        "agent-wiki/notes/repo-engineering-multi-agent-bootstrap-surfaces.md"
+      ]
+    },
     "wrapperFallback": {
       "claude": "node bin/datalox-claude.js --repo <repo> -- --print \"<prompt>\"",
       "codex": "node bin/datalox-codex.js --repo <repo> --task \"<task>\" --prompt \"<prompt>\"",

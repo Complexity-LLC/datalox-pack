@@ -144,3 +144,197 @@
 - [x] Pass 10: the runtime contract stays skill-first:
   detect skill -> read linked notes -> act
   and the bootstrap path does not deadlock when there are no notes yet.
+
+
+## Refactor `agent-pack.mjs`
+
+- [ ] Goal: split `scripts/lib/agent-pack.mjs` into smaller modules without behavior drift.
+  This is a seam-extraction refactor, not a redesign.
+  Do not change the runtime contract, promotion rules, retrieval policy, or live loop semantics as part of the split.
+
+- [ ] Step 1: inventory the current responsibilities inside `scripts/lib/agent-pack.mjs`.
+  Identify and pin the main seams:
+  - frontmatter / markdown parsing
+  - skill/note read models
+  - retrieval and candidate shaping
+  - adjudication packet shaping
+  - promotion decision compiler
+  - event/note/skill write paths
+  - lint / pack maintenance helpers
+
+- [ ] Step 2: extract parsing helpers into a read-only module first.
+  Target examples:
+  - `splitFrontmatter`
+  - `parseFrontmatter`
+  - `parseSkillDoc`
+  - `parseNoteDoc`
+  Requirements:
+  - no output-shape changes
+  - no frontmatter compatibility changes
+  - CRLF handling must stay intact
+
+- [ ] Step 3: extract retrieval into its own module.
+  Target examples:
+  - candidate normalization helpers
+  - note/skill lookup helpers
+  - `resolveLocalKnowledge`
+  Requirements:
+  - no score/contract regressions
+  - no retrieval-policy drift
+  - `resolve` output must stay byte-for-byte compatible where possible
+
+- [ ] Step 4: extract promotion/adjudication into its own module.
+  Target examples:
+  - `buildAdjudicationPacket`
+  - stable promotion memory helpers
+  - `decideAdjudicatedPromotion`
+  - `recordTurnResult`
+  - `compileRecordedEvent`
+  Requirements:
+  - keep the current skill-generation proof loop intact
+  - do not reintroduce heuristic patch-vs-create logic
+  - keep the note-stage and matched-note rules exactly as they work now
+
+- [ ] Step 5: extract write surfaces into a persistence module.
+  Target examples:
+  - event file writes
+  - note writes
+  - skill writes
+  Requirements:
+  - preserve file locations
+  - preserve generated frontmatter/content format
+  - preserve provenance and log/index updates
+
+- [ ] Step 6: extract lint/maintenance helpers last.
+  Only move these after retrieval and promotion are already stable.
+  Requirements:
+  - no behavior cleanup mixed into the move
+  - keep broken-link and missing-note checks intact
+
+- [ ] Step 7: leave a thin compatibility surface in `scripts/lib/agent-pack.mjs`.
+  It can become a barrel/orchestration file, but it should not keep growing as the default place for new logic.
+
+- [ ] Constraint: no behavior rewrites inside the refactor.
+  Specifically do not mix in:
+  - retrieval redesign
+  - new heuristics
+  - prompt/protocol changes
+  - note/skill schema changes
+  - CLI/MCP contract renames
+
+- [ ] Required proof after each extraction phase:
+  - `npm run build`
+  - `npx vitest run tests/bridgeSurfaces.test.ts tests/wrapperSurfaces.test.ts`
+  - no regression in:
+    - retrieval contract
+    - enforcement loop
+    - note promotion
+    - skill creation
+
+- [ ] Final pass criteria:
+  1. `scripts/lib/agent-pack.mjs` is reduced to orchestration or thin exports, not a 4k+ line sink.
+  2. The live skill-generation proof in `docs/skill-generation-proof-live-2026-04-23.md` still passes on a fresh repo.
+  3. Focused bridge/wrapper suites still pass.
+  4. No runtime contract drift in:
+     - `resolve`
+     - `promote`
+     - wrapper post-run payloads
+     - MCP/CLI promotion surfaces
+
+
+## Bootstrap Payload Shape
+
+- [x] Confirm the current problem precisely.
+  Grounded claim:
+  fresh repos currently receive unrelated seed knowledge through `adoptPack()` / `autoBootstrapIfSafe()`, not through MCP itself.
+  Proven examples already observed in fresh repos:
+  - `skills/github/SKILL.md`
+  - `skills/ordercli/SKILL.md`
+  - `skills/review-ambiguous-viability-gate/SKILL.md`
+  - `agent-wiki/notes/pdf/*`
+  - `agent-wiki/notes/web/*`
+
+- [x] Define the target bootstrap contract.
+  Fresh generic repos should receive only:
+  - core runtime/instruction surfaces
+  - the minimum seed knowledge required for the loop to function
+  They should not automatically receive unrelated domain/example skills and notes.
+
+- [x] Split bootstrap payload into two classes.
+  1. core runtime surfaces
+  2. optional seed knowledge
+  Core runtime surfaces should stay automatic.
+  Optional seed knowledge should be minimal by default or explicitly opted into.
+
+- [x] Inventory what is actually required for a fresh repo to function.
+  Main files:
+  - `src/core/packCore.ts`
+  - `.datalox/manifest.json`
+  Determine which adopted paths are truly necessary for:
+  - wrapper enforcement
+  - bootstrap
+  - event recording
+  - note creation
+  - skill creation
+
+- [x] Remove whole-tree adoption of unrelated seed knowledge.
+  Main file:
+  - `src/core/packCore.ts`
+  Current issue:
+  - `TREE_ADOPTION_PATHS = ["skills", "agent-wiki/notes"]`
+  Target:
+  - stop copying entire `skills/`
+  - stop copying entire `agent-wiki/notes/`
+  - replace that with a smaller explicit allowlist or a minimal bootstrap bundle
+
+- [x] Decide the minimal default seed set.
+  Candidate default keepers:
+  - only repo-evolution/bootstrap knowledge needed for the pack to explain itself
+  - only the smallest number of skills needed for host wrapper operation
+  Candidate removals from default bootstrap:
+  - `github`
+  - `ordercli`
+  - `review-ambiguous-viability-gate`
+  - unrelated `pdf/` and `web/` note corpora
+
+- [ ] Make optional seed knowledge explicit.
+  If the pack still ships extra example/domain skills, they should live behind a separate install path, not fresh-repo bootstrap.
+  Examples:
+  - example skills bundle
+  - domain bundle
+  - demo corpus
+  But do not add a large new product surface unless needed; start with a small explicit split.
+
+- [x] Keep the live proof loop working with the smaller bootstrap set.
+  Required behaviors that must still work in a fresh repo:
+  - enforced wrapper path
+  - first operational note creation
+  - second-run skill creation
+  - repo-local retrieval of newly created note and skill
+
+- [x] Add focused adoption/bootstrapping proofs.
+  Main files:
+  - `tests/adoptionScripts.test.ts`
+  - `tests/wrapperSurfaces.test.ts`
+  - `tests/bridgeSurfaces.test.ts`
+  Required proofs:
+  1. fresh adopted repo does not contain unrelated seeded skills
+  2. fresh auto-bootstrapped repo does not contain unrelated seeded notes
+  3. enforcement still works on a minimal adopted repo
+  4. note creation still works on a minimal adopted repo
+  5. skill creation proof loop still works on a minimal adopted repo
+
+- [x] Update docs to match the smaller bootstrap contract.
+  Main docs:
+  - `README.md`
+  - `START_HERE.md`
+  - `docs/product-definition.md`
+  - `docs/skill-generation-proof-live-2026-04-23.md` if the proof setup changes
+  The docs should stop implying that every adopted repo receives the whole seed corpus.
+
+- [x] Final pass criteria:
+  1. fresh `adopt` and `auto-bootstrap` repos no longer get unrelated skills like `github`, `ordercli`, or `review-ambiguous-viability-gate`
+  2. fresh generic repos no longer get unrelated `pdf/` and `web/` note corpora by default
+  3. enforced wrapper behavior still works
+  4. first-note bootstrap still works
+  5. the live skill-generation proof still passes on a fresh repo

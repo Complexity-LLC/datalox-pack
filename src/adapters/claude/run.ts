@@ -1,6 +1,7 @@
 import {
   buildLoopEnvelope,
   finalizeWrappedRun,
+  hasExplicitPromptPlaceholder,
   runWrappedCommand,
   sanitizeWrappedCommandResult,
   type LoopEnvelopeInput,
@@ -125,7 +126,7 @@ export async function runClaudeWrapper(input: ClaudeWrapperInput) {
   const promptIndex = findClaudePromptIndex(claudeArgs);
   const isPassThroughCommand = claudeArgs.length > 0 && CLAUDE_PASSTHROUGH_COMMANDS.has(claudeArgs[0]);
   let finalArgs: string[];
-  if (claudeArgs.some((arg) => arg.includes("__DATALOX_PROMPT__"))) {
+  if (claudeArgs.some((arg) => hasExplicitPromptPlaceholder(arg))) {
     finalArgs = claudeArgs;
   } else if (promptIndex !== -1) {
     finalArgs = [...claudeArgs];

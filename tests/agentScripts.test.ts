@@ -69,7 +69,7 @@ async function createPack(tempDir: string) {
   await mkdir(path.join(tempDir, "agent-wiki/comparisons"), { recursive: true });
   await mkdir(path.join(tempDir, "agent-wiki/questions"), { recursive: true });
   await mkdir(path.join(tempDir, "skills/review-ambiguous-viability-gate"), { recursive: true });
-  await mkdir(path.join(tempDir, "skills/evolve-datalox-pack"), { recursive: true });
+  await mkdir(path.join(tempDir, "skills/maintain-datalox-pack"), { recursive: true });
 
   await writeFile(
     path.join(tempDir, ".datalox/config.json"),
@@ -131,17 +131,17 @@ Use when live/dead separation is ambiguous during viability gate review.
 `,
   );
   await writeFile(
-    path.join(tempDir, "skills/evolve-datalox-pack/SKILL.md"),
+    path.join(tempDir, "skills/maintain-datalox-pack/SKILL.md"),
     `---
-name: evolve-datalox-pack
+name: maintain-datalox-pack
 description: Keep the pack simple.
 metadata:
   datalox:
-    id: repo-engineering.evolve-datalox-pack
+    id: repo-engineering.maintain-datalox-pack
     workflow: repo_engineering
     trigger: Use when changing the portable pack or agent guidance.
     note_paths:
-      - agent-wiki/notes/evolve-datalox-pack.md
+      - agent-wiki/notes/maintain-datalox-pack.md
     tags:
       - repo_engineering
       - portable_pack
@@ -158,7 +158,7 @@ metadata:
         - demo-pack
 ---
 
-# Evolve Datalox Pack
+# Maintain Datalox Pack
 
 ## When to Use
 
@@ -176,7 +176,7 @@ Use when changing the portable pack or agent guidance.
 
 ## Notes
 
-- agent-wiki/notes/evolve-datalox-pack.md
+- agent-wiki/notes/maintain-datalox-pack.md
 `,
   );
   await writeFile(
@@ -229,10 +229,10 @@ Review the linked exception pattern before changing the gate.
 `,
   );
   await writeFile(
-    path.join(tempDir, "agent-wiki/notes/evolve-datalox-pack.md"),
+    path.join(tempDir, "agent-wiki/notes/maintain-datalox-pack.md"),
     `---
 type: pattern
-title: Evolve Datalox pack
+title: Maintain Datalox Pack
 workflow: repo_engineering
 status: active
 related:
@@ -243,7 +243,7 @@ updated: 2026-04-12T16:00:00.000Z
 review_after: 2026-07-12
 ---
 
-# Evolve Datalox pack
+# Maintain Datalox Pack
 
 ## When to Use
 
@@ -361,7 +361,7 @@ title: Loop bridge
 workflow: repo_engineering
 status: active
 related:
-  - agent-wiki/notes/evolve-datalox-pack.md
+  - agent-wiki/notes/maintain-datalox-pack.md
 sources:
   - agent-wiki/sources/portable-pack-design-notes.md
 updated: 2026-04-12T16:00:00.000Z
@@ -499,7 +499,7 @@ title: Portable pack design notes
 workflow: repo_engineering
 status: active
 related:
-  - agent-wiki/notes/evolve-datalox-pack.md
+  - agent-wiki/notes/maintain-datalox-pack.md
 sources: []
 updated: 2026-04-12T16:00:00.000Z
 review_after: 2026-07-12
@@ -631,7 +631,7 @@ tags:
   - agent_adoption
 status: active
 related:
-  - agent-wiki/notes/evolve-datalox-pack.md
+  - agent-wiki/notes/maintain-datalox-pack.md
 sources:
   - agent-wiki/events/example.json
 updated: 2026-04-14T00:00:00.000Z
@@ -665,7 +665,7 @@ Make the onboarding path visible and reversible before asking the next agent to 
 
 ## Related
 
-- agent-wiki/notes/evolve-datalox-pack.md
+- agent-wiki/notes/maintain-datalox-pack.md
 `,
     );
 

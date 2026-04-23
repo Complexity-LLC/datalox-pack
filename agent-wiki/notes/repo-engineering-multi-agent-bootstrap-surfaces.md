@@ -2,7 +2,7 @@
 type: note
 title: Multi-agent bootstrap surfaces
 workflow: repo_engineering
-skill: repo-engineering.evolve-datalox-pack
+skill: repo-engineering.maintain-datalox-pack
 tags:
   - repo_engineering
   - onboarding
@@ -10,7 +10,7 @@ tags:
 confidence: high
 status: active
 related:
-  - agent-wiki/notes/evolve-datalox-pack.md
+  - agent-wiki/notes/maintain-datalox-pack.md
   - agent-wiki/concepts/loop-bridge.md
   - agent-wiki/comparisons/repo-protocol-vs-loop-bridge.md
 sources:
@@ -62,6 +62,6 @@ If a host has a stronger native setup mechanism, use it, but keep the repo-level
 
 ## Related
 
-- agent-wiki/notes/evolve-datalox-pack.md
+- agent-wiki/notes/maintain-datalox-pack.md
 - agent-wiki/concepts/loop-bridge.md
 - agent-wiki/comparisons/repo-protocol-vs-loop-bridge.md

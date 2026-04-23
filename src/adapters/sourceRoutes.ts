@@ -13,11 +13,11 @@ export interface SourceRouteResolution {
       skillId: string;
       displayName: string;
       workflow: string | null;
-      score: number;
       supportingNotes: Array<{
         path: string;
         title: string;
       }>;
+      whyMatched: string[];
     }>;
     whyMatched: string[];
     whatToDoNow: string[];
@@ -112,10 +112,8 @@ export async function resolveSourceRoute(input: {
       matchedSkillId: null,
       candidateSkills: [],
       whyMatched: [
-        pdfPaths.length === 1
-          ? `Prompt referenced a concrete PDF path: ${pdfPaths[0]}`
-          : `Prompt referenced ${pdfPaths.length} concrete PDF paths.`,
-        "PDF inputs should be captured into repo-local notes before generic repo-context skill matching.",
+        "concrete_pdf_path",
+        "source_kind_pdf",
       ],
       whatToDoNow: [
         `Read ${primaryNote.notePath} before answering from the document.`,

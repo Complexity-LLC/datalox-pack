@@ -58,11 +58,11 @@ export interface RecordTurnResultInput {
     skillId: string;
     displayName?: string;
     workflow?: string | null;
-    score?: number | null;
     supportingNotes?: Array<{
       path: string;
       title: string;
     }>;
+    whyMatched?: string[];
   }>;
   summary?: string;
   observations?: string[];
@@ -217,9 +217,14 @@ const SINGLE_FILE_ADOPTION_PATHS = [
   "bin/setup-multi-agent.sh",
   "agent-wiki/note.schema.md",
 ];
-const TREE_ADOPTION_PATHS = [
-  "skills",
-  "agent-wiki/notes",
+const CORE_BUNDLE_TREE_PATHS = [
+  "skills/maintain-datalox-pack",
+  "skills/use-datalox-through-host-cli",
+];
+const CORE_BUNDLE_FILE_PATHS = [
+  "agent-wiki/notes/maintain-datalox-pack.md",
+  "agent-wiki/notes/use-datalox-through-host-cli.md",
+  "agent-wiki/notes/repo-engineering-multi-agent-bootstrap-surfaces.md",
 ];
 const ADOPTION_INJECTION_BEGIN = "<!-- DATALOX_PACK:BEGIN -->";
 const ADOPTION_INJECTION_END = "<!-- DATALOX_PACK:END -->";
@@ -1306,7 +1311,18 @@ export async function adoptPack(input: AdoptPackInput): Promise<AdoptPackResult>
     );
   }
 
-  for (const relativePath of TREE_ADOPTION_PATHS) {
+  for (const relativePath of CORE_BUNDLE_FILE_PATHS) {
+    await copyOrInjectInstructionFile(
+      path.join(packRootPath, relativePath),
+      path.join(hostRepoPath, relativePath),
+      relativePath,
+      copied,
+      injected,
+      skipped,
+    );
+  }
+
+  for (const relativePath of CORE_BUNDLE_TREE_PATHS) {
     await copyTreeEntriesIfMissing(
       path.join(packRootPath, relativePath),
       path.join(hostRepoPath, relativePath),

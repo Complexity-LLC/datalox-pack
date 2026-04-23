@@ -3287,6 +3287,25 @@ async function findOperationalNoteForPayload(config, cwd, sourcePath, payload) {
   return null;
 }
 
+async function findOperationalNoteFromMatchedPaths(cwd, sourcePath, payload) {
+  const matchedNotePaths = Array.isArray(payload?.matchedNotePaths)
+    ? payload.matchedNotePaths.filter((value) => typeof value === "string" && value.trim().length > 0)
+    : [];
+  for (const notePath of matchedNotePaths) {
+    const resolved = await resolvePatternFile(notePath, cwd, sourcePath);
+    if (!resolved) {
+      continue;
+    }
+    const content = await readFile(resolved.filePath, "utf8");
+    return {
+      filePath: resolved.filePath,
+      relativePath: resolved.relativePath,
+      note: parseNoteDoc(resolved.relativePath, content, false),
+    };
+  }
+  return null;
+}
+
 async function findStablePromotionMemory(config, cwd, sourcePath, payload, recordedEvents = null) {
   const stabilityKey = extractStabilityKeyFromPayload(payload);
   if (!stabilityKey) {
@@ -3377,6 +3396,7 @@ function decideAdjudicatedPromotion({
   payload,
   occurrenceCount,
   operationalNoteExists,
+  linkedOperationalNoteExists,
   stickyPromotion,
 }) {
   const decision = normalizeAdjudicationDecision(payload.adjudicationDecision);
@@ -3453,7 +3473,7 @@ function decideAdjudicatedPromotion({
           selectedSkillId: null,
         };
       }
-      if (!operationalNoteExists) {
+      if (!operationalNoteExists && !linkedOperationalNoteExists) {
         return {
           action: "create_note_from_gap",
           reason: "new skill creation requires the note stage first.",
@@ -3763,13 +3783,16 @@ export async function compileRecordedEvent(
     };
   }
   const occurrenceCount = recordedEvents.filter((entry) => entry.value?.eventClass === "candidate" && entry.value?.fingerprint === payload.fingerprint).length;
+  const linkedOperationalNote = await findOperationalNoteFromMatchedPaths(cwd, sourcePath, payload);
   const operationalNote = await findOperationalNoteForPayload(config, cwd, sourcePath, payload);
+  const noteStageNote = operationalNote ?? linkedOperationalNote ?? stabilityMemory.operationalNote ?? null;
   const adjudicationPacket = buildAdjudicationPacket(payload, occurrenceCount);
   const decision = {
     ...decideAdjudicatedPromotion({
       payload,
       occurrenceCount,
       operationalNoteExists: Boolean(operationalNote),
+      linkedOperationalNoteExists: Boolean(linkedOperationalNote),
       stickyPromotion: Boolean(stabilityMemory.priorPromotablePayload || stabilityMemory.operationalNote),
     }),
     occurrenceCount,
@@ -3794,7 +3817,7 @@ export async function compileRecordedEvent(
   }
 
   const effectiveWorkflow = payload.workflow
-    ?? stabilityMemory.operationalNote?.note.workflow
+    ?? noteStageNote?.note.workflow
     ?? stabilityMemory.priorPromotablePayload?.workflow
     ?? UNKNOWN_WORKFLOW;
 
@@ -3870,7 +3893,7 @@ export async function compileRecordedEvent(
       signal: payload.signal ?? undefined,
       interpretation: payload.interpretation ?? undefined,
       recommendedAction: payload.recommendedAction ?? undefined,
-      noteId: buildNoteIdentity({
+      noteId: noteStageNote?.note.id ?? buildNoteIdentity({
         fingerprint: payload.fingerprint,
         workflow: effectiveWorkflow,
         skillId: decision.action === "patch_skill_with_note"

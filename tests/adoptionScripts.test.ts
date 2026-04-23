@@ -55,11 +55,17 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(hostDir, "bin/install-default-host-integrations.sh"), "utf8")).toContain("Compatibility shim for the CLI-first install flow.");
     expect(await readFile(path.join(hostDir, "bin/setup-multi-agent.sh"), "utf8")).toContain("Datalox Pack multi-agent setup");
     expect(await readFile(path.join(hostDir, ".github/copilot-instructions.md"), "utf8")).toContain("portable Datalox pack");
-    expect(await readFile(path.join(hostDir, "skills/evolve-datalox-pack/SKILL.md"), "utf8")).toContain("Evolve Datalox Pack");
-    expect(await readFile(path.join(hostDir, "skills/host-cli-wrapper/SKILL.md"), "utf8")).toContain("Host CLI Wrapper");
+    expect(await readFile(path.join(hostDir, "skills/maintain-datalox-pack/SKILL.md"), "utf8")).toContain("Maintain Datalox Pack");
+    expect(await readFile(path.join(hostDir, "skills/use-datalox-through-host-cli/SKILL.md"), "utf8")).toContain("Use Datalox Through Host CLI");
     expect(await readFile(path.join(hostDir, "agent-wiki/note.schema.md"), "utf8")).toContain("Action");
-    expect(await readFile(path.join(hostDir, "agent-wiki/notes/host-cli-wrapper-fallback.md"), "utf8")).toContain("thin wrapper");
+    expect(await readFile(path.join(hostDir, "agent-wiki/notes/use-datalox-through-host-cli.md"), "utf8")).toContain("thin wrapper");
     expect(await readFile(path.join(hostDir, ".datalox/install.json"), "utf8")).toContain("\"installMode\": \"manual\"");
+    expect(spawnSync("test", ["-e", path.join(hostDir, "skills/github")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(hostDir, "skills/ordercli")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(hostDir, "skills/review-ambiguous-viability-gate")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(hostDir, "skills/capture-web-knowledge")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(hostDir, "agent-wiki/notes/pdf")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(hostDir, "agent-wiki/notes/web")]).status).not.toBe(0);
   }, 30000);
 
   it("lets an agent run host-local install-default-host-integrations.sh from an adopted repo", async () => {
@@ -215,6 +221,11 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(homeDir, ".local/bin/codex"), "utf8")).toContain(`PACK_ROOT="${resolvedPackDir}"`);
     expect(await readFile(path.join(hostDir, "DATALOX.md"), "utf8")).toContain("source kinds: `trace`, `web`, `pdf`");
     expect(await readFile(path.join(hostDir, ".datalox/install.json"), "utf8")).toContain("\"installMode\": \"auto\"");
+    expect(spawnSync("test", ["-e", path.join(hostDir, "skills/github")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(hostDir, "skills/ordercli")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(hostDir, "skills/review-ambiguous-viability-gate")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(hostDir, "agent-wiki/notes/pdf")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(hostDir, "agent-wiki/notes/web")]).status).not.toBe(0);
   }, 60000);
 
   it("reports enforced host adapters as automatic in status output", async () => {

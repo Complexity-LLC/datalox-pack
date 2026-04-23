@@ -56,6 +56,20 @@ bash bin/adopt-host-repo.sh /path/to/your-project
 
 If the host repo already has `AGENTS.md`, `CLAUDE.md`, or `.github/copilot-instructions.md`, adoption preserves that file and injects a small Datalox adapter instead of skipping the Datalox entrypoint entirely.
 
+Fresh adopted repos now receive only the core bootstrap bundle by default:
+
+- core runtime/instruction surfaces
+- the `maintain-datalox-pack` skill and its linked notes
+- the `use-datalox-through-host-cli` skill and its linked note
+
+They do not receive unrelated example or domain seed knowledge such as:
+
+- `github`
+- `ordercli`
+- flow-cytometry review skills
+- `agent-wiki/notes/pdf/*`
+- `agent-wiki/notes/web/*`
+
 Or from GitHub:
 
 ```bash
@@ -216,6 +230,7 @@ Keep the pack minimal:
 
 - `trace`, `web`, and `pdf` are the only concrete source kinds
 - `note` and `skill` are the only durable generated outputs
+- fresh adopted repos should start from the core bootstrap bundle, not the full seed corpus
 - read legacy supporting folders when they already exist, but do not generate new knowledge into them
 
 ## Docs

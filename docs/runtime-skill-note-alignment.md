@@ -218,6 +218,8 @@ Most likely to drift:
 - tests or scripts scraping old field names
 - prompt-sensitive agents relying on exact old prompt wording
 
+For the remaining heuristic boundary in retrieval and source routing, see [retrieval-heuristics.md](./retrieval-heuristics.md).
+
 Least likely to drift:
 
 - skill selection

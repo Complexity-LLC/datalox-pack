@@ -488,7 +488,9 @@ describe("retrieval backends", () => {
     expect(result.selectionBasis).toBe("direct_note_query");
     expect(result.matches).toHaveLength(0);
     expect(result.directNoteMatches[0].note.path).toBe("agent-wiki/notes/reversible-onboarding.md");
-    expect(result.directNoteMatches[0].whyMatched).toContain("qmd candidate score: 0.91");
+    expect(result.directNoteMatches[0].whyMatched).toContain("title_match");
+    expect(result.directNoteMatches[0]).not.toHaveProperty("score");
+    expect(result.directNoteMatches[0]).not.toHaveProperty("backendScore");
     expect(result.loopGuidance.whatToDoNow[0]).toContain("visible and reversible");
     expect(result.loopGuidance.watchFor[0]).toContain("install surface is hidden or irreversible");
   });
@@ -541,7 +543,76 @@ describe("retrieval backends", () => {
 
     expect(result.directNoteBackend).toBe("qmd");
     expect(result.directNoteMatches[0].note.path).toBe("agent-wiki/notes/reversible-onboarding.md");
-    expect(result.directNoteMatches[0].whyMatched).toContain("qmd candidate score: 0.41");
+    expect(result.directNoteMatches[0].whyMatched).toContain("title_match");
+    expect(result.directNoteMatches[0]).not.toHaveProperty("score");
+    expect(result.directNoteMatches[0]).not.toHaveProperty("backendScore");
+  });
+
+  it("does not let usage counters outrank a better-fitting note", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-native-usage-rank-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir, "native");
+    await writeFile(
+      path.join(tempDir, "agent-wiki", "notes", "generic-onboarding.md"),
+      `---
+title: Generic onboarding fallback
+workflow: agent_adoption
+status: active
+usage:
+  read_count: 999
+  apply_count: 999
+  evidence_count: 999
+---
+
+# Generic onboarding fallback
+
+## When to Use
+
+Use this note when onboarding needs a generic follow-up.
+
+## Signal
+
+Setup is incomplete.
+
+## Interpretation
+
+The repo may need more setup work.
+
+## Action
+
+Inspect the current setup and continue with the next safe step.
+
+## Examples
+
+- A repo where setup is only partially complete.
+`,
+      "utf8",
+    );
+
+    const result = await resolveLoop({
+      repoPath: tempDir,
+      task: "make onboarding visible and reversible for a new repo",
+      workflow: "agent_adoption",
+    });
+
+    expect(result.directNoteBackend).toBe("native");
+    expect(result.directNoteMatches[0].note.path).toBe("agent-wiki/notes/reversible-onboarding.md");
+    expect(result.directNoteMatches[0].whyMatched).toContain("title_match");
+  });
+
+  it("uses an unknown workflow for unscoped repo-context resolution without a match", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-native-repo-context-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir, "native");
+
+    const result = await resolveLoop({
+      repoPath: tempDir,
+    });
+
+    expect(result.selectionBasis).toBe("repo_context");
+    expect(result.matches).toHaveLength(0);
+    expect(result.directNoteMatches).toHaveLength(0);
+    expect(result.workflow).toBe("unknown");
   });
 
   it("tracks read and apply usage for qmd direct notes through the wrapped loop", async () => {

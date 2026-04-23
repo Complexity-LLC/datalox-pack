@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   buildLoopEnvelope,
   finalizeWrappedRun,
+  hasExplicitPromptPlaceholder,
   runWrappedCommand,
   stripDataloxMarkers,
   sanitizeWrappedCommandResult,
@@ -157,7 +158,7 @@ export async function runCodexWrapper(input: CodexWrapperInput) {
     prompt: inferredPrompt,
   });
 
-  const hasPromptPlaceholder = codexArgs.some((arg) => arg.includes("__DATALOX_PROMPT__"));
+  const hasPromptPlaceholder = codexArgs.some((arg) => hasExplicitPromptPlaceholder(arg));
   let finalArgs: string[];
   if (hasPromptPlaceholder) {
     finalArgs = codexArgs;

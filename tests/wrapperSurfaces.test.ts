@@ -30,6 +30,7 @@ describe("wrapper surfaces", () => {
 
   async function seedWrapperFixtureNotes(hostDir: string): Promise<void> {
     const viabilityNotePath = path.join(hostDir, "agent-wiki", "notes", "viability-gate-review.md");
+    const viabilitySkillDir = path.join(hostDir, "skills", "review-ambiguous-viability-gate");
     try {
       await readFile(viabilityNotePath, "utf8");
     } catch {
@@ -66,6 +67,34 @@ Check the exception and escalation pattern docs before widening the gate.
         "utf8",
       );
     }
+    await mkdir(viabilitySkillDir, { recursive: true });
+    await writeFile(
+      path.join(viabilitySkillDir, "SKILL.md"),
+      `---
+name: review-ambiguous-viability-gate
+description: Use when live and dead populations are not cleanly separated during viability gate review.
+metadata:
+  datalox:
+    id: flow-cytometry.review-ambiguous-viability-gate
+    workflow: flow_cytometry
+    trigger: Use when live/dead separation is ambiguous during viability gate review.
+    note_paths:
+      - agent-wiki/notes/viability-gate-review.md
+---
+
+# Review Ambiguous Viability Gate
+
+Use when live and dead populations are not cleanly separated during viability gate review.
+
+## Workflow
+
+1. Confirm the current task really matches this skill.
+2. Read the linked notes before acting.
+3. Apply the note signal and action to the current loop.
+4. If the case exposes a reusable gap, add or update a note and patch this skill.
+`,
+      "utf8",
+    );
   }
 
   async function initGitRepo(repoPath: string): Promise<void> {
@@ -344,7 +373,7 @@ Check the exception and escalation pattern docs before widening the gate.
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed.skill).toBe("repo-engineering.evolve-datalox-pack");
+    expect(parsed.skill).toBe("repo-engineering.maintain-datalox-pack");
     expect(parsed.workflow).toBe("repo_engineering");
     expect(parsed.args[0]).toContain("# Datalox Loop Guidance");
     expect(parsed.args[0]).toContain("Update the pack docs to mention wrappers.");
@@ -438,6 +467,125 @@ EOF
     expect(eventPayload.title).toBe("Visible wrapped answer");
   }, 20000);
 
+  it("drops Codex plugin warning HTML dumps from stored transcripts", async () => {
+    const hostDir = await adoptHostRepo();
+    const fakeCodexPath = path.join(hostDir, "fake-codex-plugin-html-noise.sh");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env bash
+node - <<'EOF' "$@"
+process.stdout.write("Visible wrapped answer");
+process.stderr.write([
+  "2026-04-23T03:36:35.306762Z  WARN codex_core::plugins::manager: failed to warm featured plugin ids cache error=remote plugin sync request to https://chatgpt.com/backend-api/plugins/featured failed with status 403 Forbidden: <html>",
+  "<head>",
+  "window._cf_chl_opt = { token: 'noise' };",
+  "<body>",
+  "Enable JavaScript and cookies to continue",
+  "</body>",
+  "</html>"
+].join("\\n"));
+EOF
+`,
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--codex-bin",
+        fakeCodexPath,
+        "--json",
+        "--",
+        "exec",
+        "Describe this repo in one sentence.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.child.stdout).toBe("Visible wrapped answer");
+    expect(parsed.child.stderr).toBe("");
+
+    const eventFiles = await readdir(path.join(hostDir, "agent-wiki", "events"));
+    expect(eventFiles).toHaveLength(1);
+    const eventPayload = JSON.parse(
+      await readFile(path.join(hostDir, "agent-wiki", "events", eventFiles[0]), "utf8"),
+    );
+    expect(eventPayload.summary).toBe("Visible wrapped answer");
+    expect(eventPayload.transcript).not.toContain("codex_core::plugins::manager");
+    expect(eventPayload.transcript).not.toContain("<html>");
+    expect(eventPayload.transcript).not.toContain("window._cf_chl_opt");
+    expect(eventPayload.transcript).not.toContain("Enable JavaScript and cookies to continue");
+  }, 20000);
+
+  it("preserves real child error text while dropping Codex transport noise", async () => {
+    const hostDir = await adoptHostRepo();
+    const fakeCodexPath = path.join(hostDir, "fake-codex-noisy-error.sh");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env bash
+node - <<'EOF' "$@"
+process.stderr.write([
+  "2026-04-23T03:36:35.306762Z  WARN codex_core::plugins::manager: failed to warm featured plugin ids cache error=remote plugin sync request to https://chatgpt.com/backend-api/plugins/featured failed with status 403 Forbidden: <html>",
+  "<body>",
+  "Enable JavaScript and cookies to continue",
+  "</body>",
+  "</html>",
+  "fatal: repo bootstrap script missing"
+].join("\\n"));
+process.exit(1);
+EOF
+`,
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--codex-bin",
+        fakeCodexPath,
+        "--json",
+        "--",
+        "exec",
+        "Try the documented bootstrap path and report the exact failure.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(1);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.child.exitCode).toBe(1);
+    expect(parsed.child.stderr).toBe("fatal: repo bootstrap script missing");
+
+    const eventFiles = await readdir(path.join(hostDir, "agent-wiki", "events"));
+    expect(eventFiles).toHaveLength(1);
+    const eventPayload = JSON.parse(
+      await readFile(path.join(hostDir, "agent-wiki", "events", eventFiles[0]), "utf8"),
+    );
+    expect(eventPayload.summary).toBe("fatal: repo bootstrap script missing");
+    expect(eventPayload.transcript).toContain("fatal: repo bootstrap script missing");
+    expect(eventPayload.transcript).not.toContain("codex_core::plugins::manager");
+    expect(eventPayload.transcript).not.toContain("<html>");
+    expect(eventPayload.transcript).not.toContain("Enable JavaScript and cookies to continue");
+  }, 20000);
+
   it("runs the Claude wrapper with a fake claude binary and preserves the resolved prompt envelope", async () => {
     const hostDir = await adoptHostRepo();
     const fakeClaudePath = path.join(hostDir, "fake-claude.sh");
@@ -473,7 +621,7 @@ EOF
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed.skill).toBe("repo-engineering.evolve-datalox-pack");
+    expect(parsed.skill).toBe("repo-engineering.maintain-datalox-pack");
     expect(parsed.workflow).toBe("repo_engineering");
     expect(parsed.args[0]).toBe("--print");
     expect(parsed.args[1]).toContain("# Datalox Loop Guidance");
@@ -519,7 +667,7 @@ EOF
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed.skill).toBe("repo-engineering.evolve-datalox-pack");
+    expect(parsed.skill).toBe("repo-engineering.maintain-datalox-pack");
     expect(parsed.args[0]).toBe("--model");
     expect(parsed.args[2]).toContain("# Datalox Loop Guidance");
     expect(parsed.args[2]).toContain("Explain the wrapper contract.");
@@ -565,7 +713,7 @@ EOF
     expect(parsed.args[2]).not.toContain("score:");
   }, 20000);
 
-  it("does not surface host-cli-wrapper for a generic repo-engineering retrieval query", async () => {
+  it("does not surface use-datalox-through-host-cli for a generic repo-engineering retrieval query", async () => {
     const hostDir = await adoptHostRepo();
     const result = spawnSync(
       "node",
@@ -589,8 +737,8 @@ EOF
     );
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("Evolve Datalox Pack");
-    expect(result.stdout).not.toContain("Host CLI Wrapper");
+    expect(result.stdout).toContain("Maintain Datalox Pack");
+    expect(result.stdout).not.toContain("Use Datalox Through Host CLI");
     expect(result.stdout).toContain("workflow_match");
   }, 20000);
 
@@ -815,7 +963,7 @@ EOF
           "--workflow",
           "repo_engineering",
           "--skill",
-          "repo-engineering.host-cli-wrapper",
+          "repo-engineering.use-datalox-through-host-cli",
           "--prompt",
           "Debug repeated wrapper failure in unsupported host cli path",
         "--",
@@ -844,7 +992,7 @@ EOF
 
     const logFile = await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8");
     const patchedSkill = await readFile(
-      path.join(hostDir, "skills", "host-cli-wrapper", "SKILL.md"),
+      path.join(hostDir, "skills", "use-datalox-through-host-cli", "SKILL.md"),
       "utf8",
     );
 
@@ -1246,6 +1394,6 @@ EOF
     expect(await readFile(path.join(hostDir, "bin", "datalox-claude.js"), "utf8")).toContain("\"claude\"");
     expect(await readFile(path.join(hostDir, "bin", "datalox-codex.js"), "utf8")).toContain("\"codex\"");
     expect(await readFile(path.join(hostDir, "bin", "datalox-wrap.js"), "utf8")).toContain("\"wrap\"");
-    expect(await readFile(path.join(hostDir, "skills", "host-cli-wrapper", "SKILL.md"), "utf8")).toContain("Host CLI Wrapper");
+    expect(await readFile(path.join(hostDir, "skills", "use-datalox-through-host-cli", "SKILL.md"), "utf8")).toContain("Use Datalox Through Host CLI");
   }, 10000);
 });

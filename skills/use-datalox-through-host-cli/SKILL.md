@@ -1,13 +1,13 @@
 ---
-name: host-cli-wrapper
+name: use-datalox-through-host-cli
 description: Use when an agent host has no MCP integration or post-turn hook API, but you still need Datalox loop guidance injected into CLI-driven runs. Prefer `datalox codex` for Codex exec flows and `datalox wrap` for other CLI hosts.
 metadata:
   datalox:
-    id: repo-engineering.host-cli-wrapper
+    id: repo-engineering.use-datalox-through-host-cli
     workflow: repo_engineering
     trigger: Use when the host agent cannot auto-call Datalox through MCP or hooks and needs a CLI wrapper path.
     note_paths:
-      - agent-wiki/notes/host-cli-wrapper-fallback.md
+      - agent-wiki/notes/use-datalox-through-host-cli.md
     tags:
       - repo_engineering
       - host_adapter
@@ -17,7 +17,7 @@ metadata:
     author: yifanjin
 ---
 
-# Host CLI Wrapper
+# Use Datalox Through Host CLI
 
 Use this skill when the host agent cannot call Datalox automatically through MCP or a post-turn hook, but still needs loop guidance on every run.
 
@@ -58,4 +58,4 @@ Use this skill when the host agent cannot call Datalox automatically through MCP
 
 ## Notes
 
-- agent-wiki/notes/host-cli-wrapper-fallback.md
+- agent-wiki/notes/use-datalox-through-host-cli.md

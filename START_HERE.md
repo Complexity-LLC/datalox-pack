@@ -59,6 +59,15 @@ The main structure is:
 
 If the host repo already has `AGENTS.md`, `CLAUDE.md`, or `.github/copilot-instructions.md`, adoption preserves that file and injects a small Datalox adapter instead of skipping the Datalox entrypoint.
 
+Fresh adopted repos get only the core bootstrap bundle by default:
+
+- runtime/instruction surfaces
+- `skills/maintain-datalox-pack/`
+- `skills/use-datalox-through-host-cli/`
+- the linked repo-engineering notes those two skills need
+
+They do not get unrelated example or domain bundles by default.
+
 ## Normal Usage After Setup
 
 The user's agent can run `bash bin/setup-multi-agent.sh` once. After that, the user should keep using the host normally.

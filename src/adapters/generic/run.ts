@@ -1,6 +1,7 @@
 import {
   buildLoopEnvelope,
   finalizeWrappedRun,
+  hasExplicitPromptPlaceholder,
   runWrappedCommand,
   sanitizeWrappedCommandResult,
   type LoopEnvelope,
@@ -38,7 +39,7 @@ export async function runGenericWrapper(input: GenericWrapInput): Promise<Generi
   }
 
   const args = input.args ?? [];
-  if (envelope.active && !args.some((arg) => arg.includes("__DATALOX_PROMPT__"))) {
+  if (envelope.active && !args.some((arg) => hasExplicitPromptPlaceholder(arg))) {
     throw new Error("Generic wrapped commands require a __DATALOX_PROMPT__ placeholder when Datalox guidance is active.");
   }
 
