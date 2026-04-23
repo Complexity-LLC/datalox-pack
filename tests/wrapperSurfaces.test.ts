@@ -24,7 +24,48 @@ describe("wrapper surfaces", () => {
       encoding: "utf8",
     });
     expect(adopt.status).toBe(0);
+    await seedWrapperFixtureNotes(hostDir);
     return hostDir;
+  }
+
+  async function seedWrapperFixtureNotes(hostDir: string): Promise<void> {
+    const viabilityNotePath = path.join(hostDir, "agent-wiki", "notes", "viability-gate-review.md");
+    try {
+      await readFile(viabilityNotePath, "utf8");
+    } catch {
+      await writeFile(
+        viabilityNotePath,
+        `---
+title: Review ambiguous viability gate
+workflow: flow_cytometry
+status: active
+---
+
+# Review ambiguous viability gate
+
+## When to Use
+
+Use this note when viability review is ambiguous and the live/dead split is not clearly separable.
+
+## Signal
+
+Live and dead populations are not cleanly separated during viability gate review.
+
+## Interpretation
+
+This is a judgment step, not a mechanical threshold change.
+
+## Action
+
+Check the exception and escalation pattern docs before widening the gate.
+
+## Examples
+
+- A boundary that looks unstable and needs exception review before widening the gate.
+`,
+        "utf8",
+      );
+    }
   }
 
   async function initGitRepo(repoPath: string): Promise<void> {
@@ -311,6 +352,92 @@ describe("wrapper surfaces", () => {
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
   }, 20000);
 
+  it("does not recursively expand prompt placeholders that appear inside wrapped prompt prose", async () => {
+    const hostDir = await adoptHostRepo();
+    const fakeCodexPath = path.join(hostDir, "fake-codex-literal-placeholder.sh");
+    await writeFile(
+      fakeCodexPath,
+      "#!/usr/bin/env bash\nnode -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1)}))' \"$@\"\n",
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--codex-bin",
+        fakeCodexPath,
+        "--json",
+        "--",
+        "exec",
+        "Mention __DATALOX_PROMPT__ literally in the answer contract.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    const wrappedPrompt = parsed.child.args[1];
+    expect(wrappedPrompt).toContain("Mention __DATALOX_PROMPT__ literally in the answer contract.");
+    expect((wrappedPrompt.match(/# Datalox Loop Guidance/g) ?? [])).toHaveLength(1);
+  }, 20000);
+
+  it("sanitizes Codex transport boilerplate before summary extraction", async () => {
+    const hostDir = await adoptHostRepo();
+    const fakeCodexPath = path.join(hostDir, "fake-codex-transport-noise.sh");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env bash
+node - <<'EOF' "$@"
+process.stdout.write("Visible wrapped answer");
+process.stderr.write("Reading additional input from stdin...\\nOpenAI Codex v0.0.0\\n");
+EOF
+`,
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--codex-bin",
+        fakeCodexPath,
+        "--json",
+        "--",
+        "exec",
+        "Describe this repo in one sentence.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.child.stdout).toBe("Visible wrapped answer");
+    expect(parsed.child.stderr).toBe("");
+
+    const eventFiles = await readdir(path.join(hostDir, "agent-wiki", "events"));
+    expect(eventFiles).toHaveLength(1);
+    const eventPayload = JSON.parse(
+      await readFile(path.join(hostDir, "agent-wiki", "events", eventFiles[0]), "utf8"),
+    );
+    expect(eventPayload.summary).toBe("Visible wrapped answer");
+    expect(eventPayload.title).toBe("Visible wrapped answer");
+  }, 20000);
+
   it("runs the Claude wrapper with a fake claude binary and preserves the resolved prompt envelope", async () => {
     const hostDir = await adoptHostRepo();
     const fakeClaudePath = path.join(hostDir, "fake-claude.sh");
@@ -396,6 +523,7 @@ describe("wrapper surfaces", () => {
     expect(parsed.args[0]).toBe("--model");
     expect(parsed.args[2]).toContain("# Datalox Loop Guidance");
     expect(parsed.args[2]).toContain("Explain the wrapper contract.");
+    expect(parsed.args[2]).not.toContain("score:");
   }, 20000);
 
   it("infers the prompt from raw codex exec args when no explicit Datalox prompt is given", async () => {
@@ -419,7 +547,7 @@ describe("wrapper surfaces", () => {
         "--",
         "exec",
         "--skip-git-repo-check",
-        "Update the pack docs to mention wrappers.",
+        "Change Datalox pack agent guidance in this repo.",
       ],
       {
         cwd: repoRoot,
@@ -429,10 +557,41 @@ describe("wrapper surfaces", () => {
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed.skill).toBe("repo-engineering.evolve-datalox-pack");
+    expect(parsed.skill).toBe("");
     expect(parsed.args[0]).toBe("exec");
     expect(parsed.args[2]).toContain("# Datalox Loop Guidance");
-    expect(parsed.args[2]).toContain("Update the pack docs to mention wrappers.");
+    expect(parsed.args[2]).toContain("Matched skill: none");
+    expect(parsed.args[2]).toContain("Change Datalox pack agent guidance in this repo.");
+    expect(parsed.args[2]).not.toContain("score:");
+  }, 20000);
+
+  it("does not surface host-cli-wrapper for a generic repo-engineering retrieval query", async () => {
+    const hostDir = await adoptHostRepo();
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "wrap",
+        "prompt",
+        "--repo",
+        hostDir,
+        "--task",
+        "evaluate issues in retrieval heuristics for datalox-pack",
+        "--workflow",
+        "repo_engineering",
+        "--prompt",
+        "Check retrieval fix drift.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Evolve Datalox Pack");
+    expect(result.stdout).not.toContain("Host CLI Wrapper");
+    expect(result.stdout).toContain("workflow_match");
   }, 20000);
 
   it("routes concrete PDF paths through repo-local PDF capture before generic skill resolution", async () => {
@@ -475,6 +634,7 @@ describe("wrapper surfaces", () => {
     expect(parsed.selectionBasis).toBe("source_kind_pdf");
     expect(wrappedPrompt).toContain("Workflow: pdf_capture");
     expect(wrappedPrompt).toContain("agent-wiki/notes/pdf/wrapped-source-pdf.md");
+    expect(wrappedPrompt).not.toContain("score:");
 
     const capturedNotePath = path.join(hostDir, "agent-wiki", "notes", "pdf", "wrapped-source-pdf.md");
     const capturedNote = await readFile(capturedNotePath, "utf8");
@@ -692,6 +852,71 @@ EOF
     expect(logFile).toContain("create_note");
     expect(logFile).toContain("update_skill");
     expect(patchedSkill).toContain("agent-wiki/notes/");
+  }, 60000);
+
+  it("does not let a repeated identical wrapped run regress from create_note_from_gap back to record_only", async () => {
+    const hostDir = await adoptHostRepo();
+    const statePath = path.join(hostDir, "repeat-state.txt");
+    const fakeCodexPath = path.join(hostDir, "fake-codex-sticky-note.sh");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env bash
+count=0
+if [ -f "${statePath}" ]; then
+  count=$(cat "${statePath}")
+fi
+count=$((count + 1))
+printf "%s" "$count" > "${statePath}"
+if [ "$count" -eq 1 ]; then
+  cat <<'EOF'
+Future agents should use the committed onboarding bootstrap step.
+DATALOX_SUMMARY: repos need a committed onboarding bootstrap step before autonomous edits
+DATALOX_TITLE: committed onboarding bootstrap step
+DATALOX_SIGNAL: onboarding keeps depending on hidden setup steps
+DATALOX_INTERPRETATION: this is a reusable operational onboarding gap
+DATALOX_ACTION: add the committed bootstrap step to repo guidance before autonomous edits
+DATALOX_DECISION: create_operational_note
+EOF
+else
+  printf "%s" "Future agents should use the committed onboarding bootstrap step."
+fi
+`,
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const runWrapped = () => spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--post-run-mode",
+        "promote",
+        "--codex-bin",
+        fakeCodexPath,
+        "--json",
+        "--",
+        "exec",
+        "--skip-git-repo-check",
+        "Inspect the repo setup instructions. If there is a reusable setup gap, explain the correction for future agents in one short paragraph.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    const first = runWrapped();
+    expect(first.status).toBe(0);
+    const firstParsed = JSON.parse(first.stdout);
+    expect(firstParsed.postRun.result.decision.action).toBe("create_note_from_gap");
+
+    const second = runWrapped();
+    expect(second.status).toBe(0);
+    const secondParsed = JSON.parse(second.stdout);
+    expect(secondParsed.postRun.result.decision.action).toBe("create_note_from_gap");
   }, 60000);
 
   it("runs a second-pass Codex reviewer and persists reusable knowledge when review mode is enabled", async () => {

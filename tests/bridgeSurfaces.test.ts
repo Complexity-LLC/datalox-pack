@@ -256,10 +256,10 @@ Keep the loop as skill detection plus pattern docs.
 `,
   );
   await writeFile(
-    path.join(tempDir, "agent-wiki/meta/evolve-portable-pack.md"),
+    path.join(tempDir, "agent-wiki/meta/evolve-datalox-pack.md"),
     `---
 type: pattern
-title: Evolve portable pack meta
+title: Evolve Datalox pack meta
 workflow: repo_engineering
 status: active
 related:
@@ -270,7 +270,7 @@ updated: 2026-04-12T16:00:00.000Z
 review_after: 2026-07-12
 ---
 
-# Evolve portable pack meta
+# Evolve Datalox pack meta
 
 ## Signal
 
@@ -834,6 +834,7 @@ describe("bridge surfaces", () => {
     expect(resolveResult.status).toBe(0);
     const resolved = JSON.parse(resolveResult.stdout);
     expect(resolved.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
+    expect(resolved.matches[0]).not.toHaveProperty("score");
     const noteFile = await readFile(path.join(tempDir, "agent-wiki", "notes", "viability-gate-review.md"), "utf8");
     expect(noteFile).toContain("read_count: 1");
     expect(noteFile).toContain("apply_count: 0");
@@ -854,6 +855,26 @@ describe("bridge surfaces", () => {
     expect(resolveResult.status).toBe(0);
     const resolved = JSON.parse(resolveResult.stdout);
     expect(resolved.matches.some((match: any) => match.skill.name === "github")).toBe(true);
+  }, 20000);
+
+  it("does not admit null-workflow github for a workflow-bound repo-engineering query", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-flow-skill-reject-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+    await addFlowStyleSkill(tempDir);
+
+    const resolveResult = runBuiltCli(tempDir, [
+      "resolve",
+      "--task",
+      "evaluate issues in pack guidance",
+      "--workflow",
+      "repo_engineering",
+      "--json",
+    ]);
+    expect(resolveResult.status).toBe(0);
+    const resolved = JSON.parse(resolveResult.stdout);
+    expect(resolved.matches.some((match: any) => match.skill.name === "github")).toBe(false);
+    expect(resolved.matches[0].skill.id).toBe("repo-engineering.evolve-datalox-pack");
   }, 20000);
 
   it("parses CRLF frontmatter in skills and linked notes", async () => {
@@ -1037,6 +1058,7 @@ Use when changing the portable pack or agent guidance.
       const resolveEnvelope = extractStructuredEnvelope(resolveResult) as any;
       const resolved = extractStructuredResult(resolveResult) as any;
       expect(resolved.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
+      expect(resolved.matches[0]).not.toHaveProperty("score");
       expect(resolveEnvelope.loop_pulse.command).toBe("resolve_loop");
       expect(resolveEnvelope.loop_pulse.repo_path).toBe(tempDir);
       expect(resolveEnvelope.loop_pulse.recommended_next_tool).toBe("record_turn_result");
@@ -1057,6 +1079,7 @@ Use when changing the portable pack or agent guidance.
       expect(recorded.occurrenceCount).toBe(1);
       expect(recorded.event.relativePath).toContain("agent-wiki/events/");
       expect(recorded.event.payload.eventClass).toBe("trace");
+      expect(recorded.event.payload).not.toHaveProperty("matchedSkillScore");
 
       const promoteResult = await client.callTool({
         name: "promote_gap",
@@ -1433,7 +1456,6 @@ Use when changing the portable pack or agent guidance.
     expect(JSON.stringify(compiled.adjudicationPacket).length).toBeLessThan(2500);
   });
 
-
   it("keeps weak retrieval candidates from assigning workflow during post-run recording", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-weak-workflow-"));
     tempDirs.push(tempDir);
@@ -1479,6 +1501,51 @@ Use when handling repo readme helper tasks.
     expect(recorded.event.payload.candidateSkills.map((candidate: { skillId: string }) => candidate.skillId)).toContain(
       "repo-engineering.repo-readme-helper",
     );
+  });
+
+  it("does not let an identical repeated run regress from note promotion back to trace-only", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-sticky-adjudication-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    const firstRecorded = await recordTurnResult({
+      repoPath: tempDir,
+      task: "stabilize first-run onboarding in agent-managed repos",
+      workflow: "agent_adoption",
+      summary: "new repos need a committed onboarding step before autonomous edits",
+      observations: ["fresh repos cannot recover when onboarding is hidden"],
+      interpretation: "this is a reusable operational gap",
+      recommendedAction: "write the onboarding step into a durable note before changing the workflow",
+      eventKind: "wrapper:generic:failure",
+      eventClass: "candidate",
+      adjudicationDecision: "create_operational_note",
+    });
+    const firstCompiled = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: firstRecorded.event.relativePath,
+    });
+
+    expect(firstCompiled.decision.action).toBe("create_note_from_gap");
+    expect(firstCompiled.promotion?.note?.relativePath).toContain("agent-wiki/notes/");
+
+    const secondRecorded = await recordTurnResult({
+      repoPath: tempDir,
+      task: "stabilize first-run onboarding in agent-managed repos",
+      workflow: "agent_adoption",
+      summary: "new repos need a committed onboarding step before autonomous edits",
+      observations: ["fresh repos cannot recover when onboarding is hidden"],
+      eventKind: "wrapper:generic:failure",
+      eventClass: "trace",
+    });
+    const secondCompiled = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: secondRecorded.event.relativePath,
+    });
+
+    expect(secondCompiled.recorded?.event?.payload?.eventClass ?? secondCompiled.event.payload.eventClass).toBe("trace");
+    expect(secondCompiled.decision.action).toBe("create_note_from_gap");
+    expect(secondCompiled.decision.reason).toContain("do not regress to trace only");
+    expect(secondCompiled.promotion?.note?.relativePath).toBe(firstCompiled.promotion?.note?.relativePath);
   });
 
   it("requires provenance for durable writes unless an explicit override is provided", async () => {

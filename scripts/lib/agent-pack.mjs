@@ -1459,23 +1459,101 @@ function tokenize(value) {
   return value
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter(Boolean);
+    .filter((token) => token.length > 1)
+    .filter((token) => !SEARCH_STOP_WORDS.has(token));
 }
 
-function buildSkillText(skill) {
-  return [
-    skill.id,
-    skill.name,
-    skill.displayName,
-    skill.workflow,
-    skill.trigger,
-    skill.description,
-    skill.body,
-    ...(skill.tags ?? []),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+const SEARCH_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "but",
+  "by",
+  "for",
+  "from",
+  "how",
+  "i",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "of",
+  "on",
+  "or",
+  "s",
+  "so",
+  "than",
+  "that",
+  "the",
+  "their",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "to",
+  "use",
+  "using",
+  "we",
+  "what",
+  "when",
+  "where",
+  "which",
+  "with",
+]);
+const UNKNOWN_WORKFLOW = "unknown";
+
+function buildSkillQuerySections(skill) {
+  return {
+    primary: [
+      skill.id,
+      skill.name,
+      skill.displayName,
+      skill.trigger,
+      skill.description,
+      ...(skill.tags ?? []),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase(),
+    secondary: [
+      skill.workflow,
+      skill.body,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase(),
+  };
+}
+
+function collectFieldPhraseMatches(taskText, fields) {
+  if (!taskText) {
+    return [];
+  }
+
+  return fields
+    .flatMap(([label, value]) => {
+      if (typeof value !== "string") {
+        return [];
+      }
+      const normalized = value.trim().toLowerCase();
+      if (!normalized || normalized.length < 4) {
+        return [];
+      }
+      return (taskText === normalized || taskText.includes(normalized) || normalized.includes(taskText))
+        ? [label]
+        : [];
+    });
+}
+
+function countRepoHintMatches(matches) {
+  return matches.files.length + matches.prefixes.length + matches.packageSignals.length;
 }
 
 function parseGitChangedPaths(stdout) {
@@ -1576,50 +1654,108 @@ function collectRepoHintMatches(skill, repoContext) {
   return matches;
 }
 
-function scoreRepoHints(skill, repoContext) {
-  const matches = collectRepoHintMatches(skill, repoContext);
-  return (matches.files.length * 70) + (matches.prefixes.length * 60) + (matches.packageSignals.length * 25);
+function evaluateSkillCandidate(skill, query, repoContext) {
+  const explicitSkillMatch = Boolean(
+    query.skill && (skill.id === query.skill || skill.name === query.skill),
+  );
+  if (query.skill && !explicitSkillMatch) {
+    return null;
+  }
+
+  const workflowMatch = Boolean(query.workflow && skill.workflow === query.workflow);
+  if (query.workflow && !explicitSkillMatch && !workflowMatch) {
+    return null;
+  }
+
+  const taskText = [query.task, query.step].filter(Boolean).join(" ").trim().toLowerCase();
+  const queryTokens = [...new Set(tokenize(taskText))];
+  const sections = buildSkillQuerySections(skill);
+  const primaryMatches = unique(queryTokens.filter((token) => sections.primary.includes(token))).slice(0, 5);
+  const secondaryMatches = unique(queryTokens.filter((token) => sections.secondary.includes(token))).slice(0, 5);
+  const fieldPhraseMatches = collectFieldPhraseMatches(taskText, [
+    ["skill id", skill.id],
+    ["skill name", skill.name],
+    ["display name", skill.displayName],
+    ["trigger", skill.trigger],
+    ["description", skill.description],
+  ]);
+  const repoHintMatches = collectRepoHintMatches(skill, repoContext);
+  const repoHintCount = countRepoHintMatches(repoHintMatches);
+  const hasTaskContext = taskText.length > 0;
+
+  let admitted = explicitSkillMatch;
+  if (!admitted) {
+    if (!hasTaskContext) {
+      admitted = false;
+    } else if (fieldPhraseMatches.length > 0) {
+      admitted = true;
+    } else if (workflowMatch) {
+      admitted = primaryMatches.length >= 2;
+    } else {
+      admitted = primaryMatches.length >= 2 || (primaryMatches.length >= 1 && secondaryMatches.length >= 1);
+    }
+  }
+
+  if (!admitted) {
+    return null;
+  }
+
+  const whyMatched = [];
+  if (explicitSkillMatch) {
+    whyMatched.push("explicit_skill_match");
+  }
+  if (workflowMatch) {
+    whyMatched.push("workflow_match");
+  }
+  if (fieldPhraseMatches.length > 0) {
+    whyMatched.push("field_phrase_match");
+  }
+  if (primaryMatches.length > 0) {
+    whyMatched.push("primary_term_overlap");
+  } else if (secondaryMatches.length > 0) {
+    whyMatched.push("secondary_term_overlap");
+  }
+  if (repoHintMatches.files.length > 0) {
+    whyMatched.push("repo_hint_file_match");
+  }
+  if (repoHintMatches.prefixes.length > 0) {
+    whyMatched.push("repo_hint_path_prefix_match");
+  }
+  if (repoHintMatches.packageSignals.length > 0) {
+    whyMatched.push("repo_hint_package_signal_match");
+  }
+
+  return {
+    explicitSkillMatch,
+    workflowMatch,
+    fieldPhraseCount: unique(fieldPhraseMatches).length,
+    primaryMatchCount: primaryMatches.length,
+    secondaryMatchCount: secondaryMatches.length,
+    repoHintCount,
+    whyMatched,
+  };
 }
 
-function scoreSkill(skill, query, repoContext) {
-  if (query.workflow && skill.workflow && skill.workflow !== query.workflow) {
-    return -1;
+function compareSkillCandidates(left, right) {
+  if (right.match.explicitSkillMatch !== left.match.explicitSkillMatch) {
+    return Number(right.match.explicitSkillMatch) - Number(left.match.explicitSkillMatch);
   }
-
-  const text = buildSkillText(skill);
-  let score = 0;
-
-  if (query.workflow && skill.workflow === query.workflow) {
-    score += 40;
+  if (right.match.workflowMatch !== left.match.workflowMatch) {
+    return Number(right.match.workflowMatch) - Number(left.match.workflowMatch);
   }
-
-  if (query.skill) {
-    if (skill.id === query.skill || skill.name === query.skill) {
-      score += 1000;
-    } else {
-      return -1;
-    }
+  if (right.match.fieldPhraseCount !== left.match.fieldPhraseCount) {
+    return right.match.fieldPhraseCount - left.match.fieldPhraseCount;
   }
-
-  const tokens = tokenize([query.task, query.step].filter(Boolean).join(" "));
-  for (const token of new Set(tokens)) {
-    if (text.includes(token)) {
-      score += 8;
-    }
+  if (right.match.primaryMatchCount !== left.match.primaryMatchCount) {
+    return right.match.primaryMatchCount - left.match.primaryMatchCount;
   }
-
-  if (query.task && text.includes(query.task.toLowerCase())) {
-    score += 20;
+  if (right.match.secondaryMatchCount !== left.match.secondaryMatchCount) {
+    return right.match.secondaryMatchCount - left.match.secondaryMatchCount;
   }
-
-  const repoHintWeight = query.skill || query.workflow
-    ? 0.05
-    : query.task || query.step
-      ? 0.2
-      : 1;
-  score += Math.round(scoreRepoHints(skill, repoContext) * repoHintWeight);
-
-  return score;
+  if (right.match.repoHintCount !== left.match.repoHintCount) {
+    return right.match.repoHintCount - left.match.repoHintCount;
+  }
+  return left.skill.id.localeCompare(right.skill.id);
 }
 
 function isAuthoritativeSkillMatch(match) {
@@ -1837,38 +1973,6 @@ async function loadNoteDoc(cwd, sourcePath, notePath, includeContent) {
   };
 }
 
-function explainSkillMatch(skill, query, repoContext) {
-  const reasons = [];
-
-  if (query.skill && (skill.id === query.skill || skill.name === query.skill)) {
-    reasons.push(`explicit skill match: ${query.skill}`);
-  }
-
-  if (query.workflow && skill.workflow === query.workflow) {
-    reasons.push(`workflow match: ${query.workflow}`);
-  }
-
-  const queryTokens = tokenize([query.task, query.step].filter(Boolean).join(" "));
-  const skillText = buildSkillText(skill);
-  const matchedTokens = unique(queryTokens.filter((token) => skillText.includes(token))).slice(0, 5);
-  if (matchedTokens.length > 0) {
-    reasons.push(`task overlap: ${matchedTokens.join(", ")}`);
-  }
-
-  const repoHintMatches = collectRepoHintMatches(skill, repoContext);
-  if (repoHintMatches.files.length > 0) {
-    reasons.push(`repo file hints: ${repoHintMatches.files.join(", ")}`);
-  }
-  if (repoHintMatches.prefixes.length > 0) {
-    reasons.push(`repo path hints: ${repoHintMatches.prefixes.join(", ")}`);
-  }
-  if (repoHintMatches.packageSignals.length > 0) {
-    reasons.push(`package hints: ${repoHintMatches.packageSignals.join(", ")}`);
-  }
-
-  return reasons;
-}
-
 function buildLoopGuidance(noteDocs, whyMatched) {
   const supportingNotes = noteDocs.map((doc) => ({
     path: doc.path,
@@ -1888,27 +1992,6 @@ function buildLoopGuidance(noteDocs, whyMatched) {
     ),
     supportingNotes,
   };
-}
-
-function buildNoteText(note) {
-  return [
-    note.id,
-    note.title,
-    note.workflow,
-    note.skillId,
-    note.whenToUse,
-    note.signal,
-    note.interpretation,
-    note.action,
-    note.summary,
-    ...(note.tags ?? []),
-    ...(note.examples ?? []),
-    ...(note.related ?? []),
-    ...(note.sources ?? []),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
 }
 
 function buildNoteQuerySections(note) {
@@ -1953,83 +2036,64 @@ function isDirectNoteEligible(note) {
   return !["archived", "inactive", "disabled", "deprecated"].includes(normalizeNoteStatus(note.status));
 }
 
-function parseUsageCount(value) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.max(0, Math.floor(value));
-  }
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-  }
-  return 0;
-}
-
-function getNoteUsageStats(note) {
-  const usage = isRecord(note.usage) ? note.usage : {};
-  return {
-    readCount: parseUsageCount(usage.read_count ?? usage.readCount),
-    applyCount: parseUsageCount(usage.apply_count ?? usage.applyCount),
-    evidenceCount: Math.max(
-      Array.isArray(note.evidenceLines) ? note.evidenceLines.length : 0,
-      parseUsageCount(usage.evidence_count ?? usage.evidenceCount),
-    ),
-  };
-}
-
 function compareRetrievedNotes(left, right) {
-  if (right.score !== left.score) {
-    return right.score - left.score;
+  if (left.match.explicitSkillLink !== right.match.explicitSkillLink) {
+    return Number(right.match.explicitSkillLink) - Number(left.match.explicitSkillLink);
   }
-  const rightBackendScore = typeof right.backendScore === "number" ? right.backendScore : 0;
-  const leftBackendScore = typeof left.backendScore === "number" ? left.backendScore : 0;
-  if (rightBackendScore !== leftBackendScore) {
-    return rightBackendScore - leftBackendScore;
+  if (left.match.titleMatch !== right.match.titleMatch) {
+    return Number(right.match.titleMatch) - Number(left.match.titleMatch);
   }
-  const rightUsage = getNoteUsageStats(right.noteDoc ?? right.note ?? {});
-  const leftUsage = getNoteUsageStats(left.noteDoc ?? left.note ?? {});
-  if (rightUsage.applyCount !== leftUsage.applyCount) {
-    return rightUsage.applyCount - leftUsage.applyCount;
+  if (left.match.sectionPhraseCount !== right.match.sectionPhraseCount) {
+    return right.match.sectionPhraseCount - left.match.sectionPhraseCount;
   }
-  if (rightUsage.readCount !== leftUsage.readCount) {
-    return rightUsage.readCount - leftUsage.readCount;
+  if (left.match.workflowMatch !== right.match.workflowMatch) {
+    return Number(right.match.workflowMatch) - Number(left.match.workflowMatch);
   }
-  if (rightUsage.evidenceCount !== leftUsage.evidenceCount) {
-    return rightUsage.evidenceCount - leftUsage.evidenceCount;
+  if (left.match.primaryMatchCount !== right.match.primaryMatchCount) {
+    return right.match.primaryMatchCount - left.match.primaryMatchCount;
   }
-  return parseTimestamp((right.noteDoc ?? right.note ?? {}).updatedAt)
+  if (left.match.secondaryMatchCount !== right.match.secondaryMatchCount) {
+    return right.match.secondaryMatchCount - left.match.secondaryMatchCount;
+  }
+  const updatedAtDelta = parseTimestamp((right.noteDoc ?? right.note ?? {}).updatedAt)
     - parseTimestamp((left.noteDoc ?? left.note ?? {}).updatedAt);
+  if (updatedAtDelta !== 0) {
+    return updatedAtDelta;
+  }
+  return String((left.noteDoc ?? left.note ?? {}).path ?? "")
+    .localeCompare(String((right.noteDoc ?? right.note ?? {}).path ?? ""));
 }
 
 function explainNoteMatch(note, query) {
   const reasons = [];
 
   if (!isDirectNoteEligible(note)) {
-    reasons.push(`note status filtered: ${normalizeNoteStatus(note.status)}`);
+    reasons.push("note_status_filtered");
     return reasons;
   }
 
   if (query.workflow && note.workflow === query.workflow) {
-    reasons.push(`workflow match: ${query.workflow}`);
+    reasons.push("workflow_match");
   }
 
   if (query.skill && note.skillId === query.skill) {
-    reasons.push(`skill-linked note: ${query.skill}`);
+    reasons.push("skill_linked_note");
   }
 
   const taskText = typeof query.task === "string" ? query.task.trim().toLowerCase() : "";
   const sections = buildNoteQuerySections(note);
   if (taskText) {
     if (note.title && (taskText.includes(note.title.toLowerCase()) || note.title.toLowerCase().includes(taskText))) {
-      reasons.push("title match");
+      reasons.push("title_match");
     }
     if (note.whenToUse && note.whenToUse.toLowerCase().includes(taskText)) {
-      reasons.push("when-to-use match");
+      reasons.push("when_to_use_match");
     }
     if (note.signal && note.signal.toLowerCase().includes(taskText)) {
-      reasons.push("signal match");
+      reasons.push("signal_match");
     }
     if (note.action && note.action.toLowerCase().includes(taskText)) {
-      reasons.push("action match");
+      reasons.push("action_match");
     }
   }
 
@@ -2040,77 +2104,64 @@ function explainNoteMatch(note, query) {
     || sections.tertiary.includes(token),
   )).slice(0, 5);
   if (matchedTokens.length > 0) {
-    reasons.push(`note overlap: ${matchedTokens.join(", ")}`);
-  }
-
-  const usage = getNoteUsageStats(note);
-  if (usage.applyCount > 0) {
-    reasons.push(`applied before: ${usage.applyCount}`);
+    reasons.push("note_term_overlap");
   }
 
   return reasons;
 }
 
-function scoreNote(note, query) {
+function evaluateNoteCandidate(note, query) {
   if (!isDirectNoteEligible(note)) {
-    return -1;
+    return null;
   }
 
   if (query.workflow && note.workflow && note.workflow !== query.workflow) {
-    return -1;
+    return null;
   }
 
-  const text = buildNoteText(note);
   const sections = buildNoteQuerySections(note);
-  let score = 0;
-
-  if (query.workflow && note.workflow === query.workflow) {
-    score += 40;
-  }
-
-  if (query.skill && note.skillId === query.skill) {
-    score += 80;
-  }
-
   const taskText = typeof query.task === "string" ? query.task.trim().toLowerCase() : "";
-  if (taskText) {
-    if (note.title && note.title.toLowerCase() === taskText) {
-      score += 80;
-    } else if (note.title && (taskText.includes(note.title.toLowerCase()) || note.title.toLowerCase().includes(taskText))) {
-      score += 32;
-    }
-    if (note.whenToUse && note.whenToUse.toLowerCase().includes(taskText)) {
-      score += 24;
-    }
-    if (note.signal && note.signal.toLowerCase().includes(taskText)) {
-      score += 18;
-    }
-    if (note.action && note.action.toLowerCase().includes(taskText)) {
-      score += 16;
-    }
+  const queryTokens = [...new Set(tokenize([query.task, query.step].filter(Boolean).join(" ")))];
+  const workflowMatch = Boolean(query.workflow && note.workflow === query.workflow);
+  const explicitSkillLink = Boolean(query.skill && note.skillId === query.skill);
+  const titleMatch = Boolean(
+    taskText
+    && note.title
+    && (note.title.toLowerCase() === taskText
+      || taskText.includes(note.title.toLowerCase())
+      || note.title.toLowerCase().includes(taskText)),
+  );
+  const sectionPhraseMatches = collectFieldPhraseMatches(taskText, [
+    ["when-to-use", note.whenToUse],
+    ["signal", note.signal],
+    ["action", note.action],
+  ]);
+  const primaryMatches = unique(queryTokens.filter((token) => sections.primary.includes(token))).slice(0, 5);
+  const secondaryMatches = unique(queryTokens.filter((token) => sections.secondary.includes(token))).slice(0, 5);
+  const hasTaskContext = taskText.length > 0;
+  const strongMatch = explicitSkillLink || titleMatch || sectionPhraseMatches.length > 0;
+  const fallbackMatch = !strongMatch && (
+    !hasTaskContext
+      ? workflowMatch
+      : primaryMatches.length >= 2 || (primaryMatches.length >= 1 && secondaryMatches.length >= 1)
+  );
+
+  if (!strongMatch && !fallbackMatch) {
+    return null;
   }
 
-  const tokens = tokenize([query.task, query.step].filter(Boolean).join(" "));
-  for (const token of new Set(tokens)) {
-    if (sections.primary.includes(token)) {
-      score += 12;
-    } else if (sections.secondary.includes(token)) {
-      score += 8;
-    } else if (sections.tertiary.includes(token) || text.includes(token)) {
-      score += 4;
-    }
-  }
-
-  if (taskText && text.includes(taskText)) {
-    score += 20;
-  }
-
-  const usage = getNoteUsageStats(note);
-  score += Math.min(12, usage.applyCount * 3);
-  score += Math.min(6, usage.readCount);
-  score += Math.min(6, usage.evidenceCount * 2);
-
-  return score;
+  return {
+    whyMatched: explainNoteMatch(note, query),
+    match: {
+      explicitSkillLink,
+      titleMatch,
+      workflowMatch,
+      strongMatch,
+      sectionPhraseCount: sectionPhraseMatches.length,
+      primaryMatchCount: primaryMatches.length,
+      secondaryMatchCount: secondaryMatches.length,
+    },
+  };
 }
 
 function getConfiguredNotesBackend(config) {
@@ -2137,21 +2188,31 @@ async function listParsedNoteEntries(config, cwd, sourcePath, includeContent) {
 
 async function searchNotesWithNative(config, cwd, sourcePath, query, limit, includeContent) {
   const parsedNotes = await listParsedNoteEntries(config, cwd, sourcePath, includeContent);
-  return parsedNotes
+  const candidates = parsedNotes
     .map((item) => ({
       ...item,
-      score: scoreNote(item.note, query),
-      backendScore: item.origin === "host" ? 1 : 0,
+      evaluated: evaluateNoteCandidate(item.note, query),
     }))
-    .filter((item) => item.score > 0)
-    .sort(compareRetrievedNotes)
-    .slice(0, limit)
+    .filter((item) => item.evaluated)
     .map((item) => ({
-      score: item.score,
       notePath: item.note.path,
       noteOrigin: item.origin,
       noteDoc: item.note,
-      whyMatched: explainNoteMatch(item.note, query),
+      whyMatched: item.evaluated.whyMatched,
+      match: item.evaluated.match,
+    }));
+  const strongOnly = candidates.some((item) => item.match.strongMatch)
+    ? candidates.filter((item) => item.match.strongMatch)
+    : candidates;
+  return strongOnly
+    .sort(compareRetrievedNotes)
+    .slice(0, limit)
+    .map(({ notePath, noteOrigin, noteDoc, whyMatched, match }) => ({
+      notePath,
+      noteOrigin,
+      noteDoc,
+      whyMatched,
+      match,
     }));
 }
 
@@ -2309,21 +2370,16 @@ async function searchNotesWithQmd(config, cwd, sourcePath, query, limit, include
       continue;
     }
     const noteDoc = await loadNoteDoc(cwd, sourcePath, notePath, includeContent);
-    const backendScore = typeof item.score === "number" ? item.score : 0;
-    const score = scoreNote(noteDoc, query);
-    if (score <= 0) {
+    const evaluated = evaluateNoteCandidate(noteDoc, query);
+    if (!evaluated) {
       continue;
     }
     const candidate = {
-      score,
-      backendScore,
       notePath: noteDoc.path,
       noteOrigin: noteDoc.origin,
       noteDoc,
-      whyMatched: unique([
-        `qmd candidate score: ${backendScore.toFixed(2)}`,
-        ...explainNoteMatch(noteDoc, query),
-      ]),
+      whyMatched: evaluated.whyMatched,
+      match: evaluated.match,
     };
     const existing = candidates.get(noteDoc.path);
     if (!existing || compareRetrievedNotes(candidate, existing) < 0) {
@@ -2331,7 +2387,11 @@ async function searchNotesWithQmd(config, cwd, sourcePath, query, limit, include
     }
   }
 
-  return Array.from(candidates.values())
+  const ranked = Array.from(candidates.values());
+  const strongOnly = ranked.some((item) => item.match.strongMatch)
+    ? ranked.filter((item) => item.match.strongMatch)
+    : ranked;
+  return strongOnly
     .sort(compareRetrievedNotes)
     .slice(0, limit);
 }
@@ -2445,12 +2505,8 @@ export async function resolveLocalKnowledge(
   ]);
 
   const ranked = localSkills
-    .map(({ filePath, value, origin, repoRoot }) => ({
-      filePath,
-      origin,
-      repoRoot,
-      skill: value,
-      score: scoreSkill(
+    .map(({ filePath, value, origin, repoRoot }) => {
+      const match = evaluateSkillCandidate(
         value,
         {
           task,
@@ -2459,10 +2515,19 @@ export async function resolveLocalKnowledge(
           skill,
         },
         repoContext,
-      ),
-    }))
-    .filter((item) => skill ? item.score >= 0 : item.score > 0)
-    .sort((left, right) => right.score - left.score)
+      );
+      return match
+        ? {
+            filePath,
+            origin,
+            repoRoot,
+            skill: value,
+            match,
+          }
+        : null;
+    })
+    .filter(Boolean)
+    .sort(compareSkillCandidates)
     .slice(0, limit);
 
   const directNoteQuery = {
@@ -2479,11 +2544,6 @@ export async function resolveLocalKnowledge(
     };
   const directNotes = directNoteResolution.directNotes;
 
-  const effectiveWorkflow = workflow
-    || ranked[0]?.skill.workflow
-    || directNotes[0]?.noteDoc.workflow
-    || config.runtime.defaultWorkflow;
-
   const selectionBasis = skill
     ? "explicit_skill"
     : directNotes.length > 0 && ranked.length === 0
@@ -2491,6 +2551,11 @@ export async function resolveLocalKnowledge(
     : task || step || workflow
       ? "task_query"
       : "repo_context";
+
+  const effectiveWorkflow = workflow
+    || ranked[0]?.skill.workflow
+    || directNotes[0]?.noteDoc.workflow
+    || (selectionBasis === "repo_context" ? UNKNOWN_WORKFLOW : config.runtime.defaultWorkflow);
 
   const matches = await Promise.all(
     ranked.map(async (item) => {
@@ -2513,19 +2578,7 @@ export async function resolveLocalKnowledge(
       );
       const linkedNotes = noteResults.filter((result) => result.ok).map((result) => result.doc);
       const missingNotePaths = noteResults.filter((result) => !result.ok).map((result) => result.notePath);
-      const whyMatched = explainSkillMatch(
-        item.skill,
-        {
-          task,
-          workflow,
-          step,
-          skill,
-        },
-        repoContext,
-      );
-
       return {
-        score: item.score,
         skillPath: item.filePath,
         skillOrigin: item.origin,
         skill: item.skill,
@@ -2533,14 +2586,12 @@ export async function resolveLocalKnowledge(
         missingNotePaths,
         authoritativeMatch: isAuthoritativeSkillMatch(item.match),
         readPath: KNOWLEDGE_MODEL.normalReadPath,
-        loopGuidance: buildLoopGuidance(linkedNotes, whyMatched),
+        loopGuidance: buildLoopGuidance(linkedNotes, item.match.whyMatched),
       };
     }),
   );
 
   const directNoteMatches = directNotes.map((entry) => ({
-    score: entry.score,
-    backendScore: entry.backendScore,
     notePath: entry.notePath,
     noteOrigin: entry.noteOrigin,
     note: entry.noteDoc ?? entry.note,
@@ -3039,7 +3090,6 @@ function sanitizeCandidateSkillSummary(value) {
     workflow: typeof value.workflow === "string" && value.workflow.trim().length > 0
       ? value.workflow.trim()
       : null,
-    score: Number.isFinite(value.score) ? value.score : null,
     supportingNotes: Array.isArray(value.supportingNotes)
       ? value.supportingNotes
           .filter((note) => note && typeof note === "object")
@@ -3049,6 +3099,11 @@ function sanitizeCandidateSkillSummary(value) {
           }))
           .filter((note) => note.path && note.title)
           .slice(0, 2)
+      : [],
+    whyMatched: Array.isArray(value.whyMatched)
+      ? value.whyMatched
+          .filter((reason) => typeof reason === "string" && reason.trim().length > 0)
+          .slice(0, 3)
       : [],
   };
 }
@@ -3070,11 +3125,11 @@ function buildCandidateSkillSummariesFromResolution(resolution) {
       skillId: match.skill.id,
       displayName: match.skill.displayName ?? match.skill.name ?? match.skill.id,
       workflow: match.skill.workflow ?? null,
-      score: match.score,
       supportingNotes: (match.linkedNotes ?? []).slice(0, 2).map((note) => ({
         path: note.path,
         title: note.title,
       })),
+      whyMatched: match.loopGuidance?.whyMatched ?? [],
     })),
   );
 }
@@ -3091,6 +3146,43 @@ function buildPromotionLookupKey(payload) {
       "event",
     ]) ?? "event"),
   ].join("::");
+}
+
+function buildStabilityKey({
+  workflow,
+  skillId,
+  task,
+  step,
+  title,
+  signal,
+  summary,
+}) {
+  const seed = firstNonEmpty([
+    task,
+    step,
+    skillId,
+    signal,
+    summary,
+    title,
+    "event",
+  ]) ?? "event";
+  return `${workflow ?? "unknown"}::${slugify(seed)}`;
+}
+
+function extractStabilityKeyFromPayload(payload) {
+  if (typeof payload?.stabilityKey === "string" && payload.stabilityKey.trim().length > 0) {
+    return payload.stabilityKey.trim();
+  }
+
+  return buildStabilityKey({
+    workflow: payload?.workflow ?? undefined,
+    skillId: payload?.explicitSkillId ?? payload?.matchedSkillId ?? null,
+    task: payload?.task ?? undefined,
+    step: payload?.step ?? undefined,
+    title: payload?.title ?? undefined,
+    signal: payload?.signal ?? undefined,
+    summary: payload?.summary ?? undefined,
+  });
 }
 
 async function findOperationalNoteForPayload(config, cwd, sourcePath, payload) {
@@ -3119,6 +3211,45 @@ async function findOperationalNoteForPayload(config, cwd, sourcePath, payload) {
     }
   }
   return null;
+}
+
+async function findStablePromotionMemory(config, cwd, sourcePath, payload, recordedEvents = null) {
+  const stabilityKey = extractStabilityKeyFromPayload(payload);
+  if (!stabilityKey) {
+    return {
+      stabilityKey: null,
+      priorPromotablePayload: null,
+      operationalNote: null,
+      occurrenceCount: 1,
+    };
+  }
+
+  const entries = recordedEvents ?? await listRecordedEvents(config, cwd, sourcePath);
+  const relatedCandidates = entries.filter((entry) => (
+    entry.value?.eventClass === "candidate"
+      && extractStabilityKeyFromPayload(entry.value) === stabilityKey
+  ));
+  const priorPromotablePayload = relatedCandidates
+    .filter((entry) => {
+      const decision = normalizeAdjudicationDecision(entry.value?.adjudicationDecision);
+      return Boolean(
+        decision
+          && decision !== "record_trace"
+          && decision !== "needs_more_evidence",
+      );
+    })
+    .sort((left, right) => parseTimestamp(right.value?.timestamp) - parseTimestamp(left.value?.timestamp))[0]?.value ?? null;
+
+  const operationalNote = priorPromotablePayload
+    ? await findOperationalNoteForPayload(config, cwd, sourcePath, priorPromotablePayload)
+    : null;
+
+  return {
+    stabilityKey,
+    priorPromotablePayload,
+    operationalNote,
+    occurrenceCount: relatedCandidates.length + 1,
+  };
 }
 
 function buildAdjudicationPacket(payload, occurrenceCount) {
@@ -3172,9 +3303,17 @@ function decideAdjudicatedPromotion({
   payload,
   occurrenceCount,
   operationalNoteExists,
+  stickyPromotion,
 }) {
   const decision = normalizeAdjudicationDecision(payload.adjudicationDecision);
   if (!decision) {
+    if (stickyPromotion) {
+      return {
+        action: "create_note_from_gap",
+        reason: "an identical repeated run already established this reusable gap; do not regress to trace only.",
+        selectedSkillId: null,
+      };
+    }
     return {
       action: "record_only",
       reason: "candidate event did not include an explicit adjudication decision.",
@@ -3187,6 +3326,13 @@ function decideAdjudicatedPromotion({
   switch (decision) {
     case "record_trace":
     case "needs_more_evidence":
+      if (stickyPromotion) {
+        return {
+          action: "create_note_from_gap",
+          reason: "an identical repeated run already established this reusable gap; do not regress to trace only.",
+          selectedSkillId,
+        };
+      }
       return {
         action: "record_only",
         reason: "agent requested more evidence before promoting this gap.",
@@ -3332,7 +3478,7 @@ export async function recordTurnResult(
     : null;
   const effectiveWorkflow = workflow
     || reusableMatch?.skill.workflow
-    || config.runtime.defaultWorkflow;
+    || ((task || step || summary || title || signal) ? UNKNOWN_WORKFLOW : config.runtime.defaultWorkflow);
   const effectiveEventClass = eventClass === "candidate" ? "candidate" : "trace";
   const derived = effectiveEventClass === "candidate"
     ? derivePatternFields({
@@ -3370,6 +3516,15 @@ export async function recordTurnResult(
         step,
       })
     : null;
+  const stabilityKey = buildStabilityKey({
+    workflow: effectiveWorkflow,
+    skillId: skillId ?? reusableMatch?.skill.id ?? adjudicationSkillId ?? null,
+    task,
+    step,
+    title: derived.title,
+    signal: derived.signal,
+    summary,
+  });
   const existingEvents = effectiveEventClass === "candidate"
     ? await listRecordedEvents(config, cwd, sourcePath)
     : [];
@@ -3395,6 +3550,7 @@ export async function recordTurnResult(
       outcome: outcome ?? null,
       tags: unique([...tags, effectiveWorkflow]),
       fingerprint,
+      stabilityKey,
       adjudicationDecision: normalizeAdjudicationDecision(adjudicationDecision),
       adjudicationSkillId: adjudicationSkillId ?? null,
       candidateSkills: normalizeCandidateSkillSummaries(candidateSkills).length > 0
@@ -3402,7 +3558,6 @@ export async function recordTurnResult(
         : buildCandidateSkillSummariesFromResolution(resolution),
       explicitSkillId: skillId ?? null,
       matchedSkillId: reusableMatch?.skill.id ?? null,
-      matchedSkillScore: reusableMatch?.score ?? null,
       matchedNotePaths: reusableMatch?.linkedNotes?.map((doc) => doc.path) ?? [],
     },
     cwd,
@@ -3414,40 +3569,6 @@ export async function recordTurnResult(
     occurrenceCount,
     fingerprint,
     resolution,
-  };
-}
-
-function decidePromotionAction({ occurrenceCount, matchedSkillId, minWikiOccurrences, minSkillOccurrences }) {
-  if (matchedSkillId) {
-    if (occurrenceCount >= minWikiOccurrences) {
-      return {
-        action: "patch_skill_with_note",
-        reason: "repeated gap matched an existing skill, so patch the skill and its linked note.",
-      };
-    }
-    return {
-      action: "record_only",
-      reason: "single observed gap for an existing skill; keep it in events and hot cache until it repeats.",
-    };
-  }
-
-  if (occurrenceCount >= minSkillOccurrences) {
-    return {
-      action: "create_skill_from_gap",
-      reason: "repeated gap has no matching skill and crossed the new-skill threshold.",
-    };
-  }
-
-  if (occurrenceCount >= minWikiOccurrences) {
-    return {
-      action: "create_note_from_gap",
-      reason: "repeated gap has no matching skill yet, so promote it into a reusable note first.",
-    };
-  }
-
-  return {
-    action: "record_only",
-    reason: "first observation stays as an event only.",
   };
 }
 
@@ -3478,22 +3599,89 @@ export async function compileRecordedEvent(
   }
 
   const payload = recordedEntry.value ?? {};
+  const stabilityMemory = await findStablePromotionMemory(config, cwd, sourcePath, payload, recordedEvents);
   if (payload.eventClass !== "candidate") {
+    if (!stabilityMemory.priorPromotablePayload && !stabilityMemory.operationalNote) {
+      return {
+        event: {
+          filePath: recordedEntry.filePath,
+          relativePath: recordedEntry.relativePath,
+          payload,
+        },
+        occurrenceCount: 1,
+        fingerprint: payload.fingerprint ?? null,
+        adjudicationPacket: buildAdjudicationPacket(payload, 1),
+        decision: {
+          action: "record_only",
+          reason: "trace events are grounded history only; they do not enter the promotion ladder.",
+          occurrenceCount: 1,
+        },
+        promotion: null,
+      };
+    }
+
+    const stableSeed = stabilityMemory.priorPromotablePayload ?? payload;
+    const effectiveWorkflow = payload.workflow
+      ?? stabilityMemory.operationalNote?.note.workflow
+      ?? stableSeed.workflow
+      ?? config.runtime.defaultWorkflow;
+    const note = await writeNoteDoc(
+      {
+        id: stabilityMemory.operationalNote?.note.id ?? buildNoteIdentity({
+          fingerprint: stableSeed.fingerprint ?? payload.fingerprint,
+          workflow: effectiveWorkflow,
+          skillId: stableSeed.matchedSkillId ?? stableSeed.explicitSkillId ?? null,
+          title: stableSeed.title,
+          signal: stableSeed.signal,
+          summary: stableSeed.summary,
+          task: payload.task ?? stableSeed.task,
+          step: payload.step ?? stableSeed.step,
+        }),
+        fingerprint: stableSeed.fingerprint ?? payload.fingerprint,
+        title: stableSeed.title ?? payload.title,
+        workflow: effectiveWorkflow,
+        signal: stableSeed.signal ?? payload.signal,
+        interpretation: stableSeed.interpretation ?? payload.interpretation,
+        recommendedAction: stableSeed.recommendedAction ?? payload.recommendedAction,
+        summary: payload.summary ?? stableSeed.summary,
+        task: payload.task ?? stableSeed.task,
+        step: payload.step ?? stableSeed.step,
+        skillId: stableSeed.matchedSkillId ?? stableSeed.explicitSkillId ?? null,
+        related: unique([
+          ...(payload.matchedNotePaths ?? []),
+          ...(stableSeed.matchedNotePaths ?? []),
+        ]),
+        sources: unique([recordedEntry.relativePath]),
+        examples: unique([
+          payload.summary,
+          stableSeed.summary,
+          ...(payload.observations ?? []),
+          ...(stableSeed.observations ?? []),
+        ].filter(Boolean)),
+        evidence: unique([recordedEntry.relativePath, ...(payload.changedFiles ?? [])].filter(Boolean)),
+        tags: unique([...(payload.tags ?? []), "promoted"]),
+      },
+      cwd,
+    );
+
     return {
       event: {
         filePath: recordedEntry.filePath,
         relativePath: recordedEntry.relativePath,
         payload,
       },
-      occurrenceCount: 1,
+      occurrenceCount: stabilityMemory.occurrenceCount,
       fingerprint: payload.fingerprint ?? null,
-      adjudicationPacket: buildAdjudicationPacket(payload, 1),
+      adjudicationPacket: buildAdjudicationPacket(payload, stabilityMemory.occurrenceCount),
       decision: {
-        action: "record_only",
-        reason: "trace events are grounded history only; they do not enter the promotion ladder.",
-        occurrenceCount: 1,
+        action: "create_note_from_gap",
+        reason: "an identical repeated run already established this reusable gap; do not regress to trace only.",
+        occurrenceCount: stabilityMemory.occurrenceCount,
       },
-      promotion: null,
+      promotion: {
+        note,
+        skill: null,
+      },
     };
   }
   const occurrenceCount = recordedEvents.filter((entry) => entry.value?.eventClass === "candidate" && entry.value?.fingerprint === payload.fingerprint).length;
@@ -3504,6 +3692,7 @@ export async function compileRecordedEvent(
       payload,
       occurrenceCount,
       operationalNoteExists: Boolean(operationalNote),
+      stickyPromotion: Boolean(stabilityMemory.priorPromotablePayload || stabilityMemory.operationalNote),
     }),
     occurrenceCount,
   };

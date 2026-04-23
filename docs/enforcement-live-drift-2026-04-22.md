@@ -280,3 +280,68 @@ The remaining enforcement work is now:
 2. fix promoted note semantics
 3. tighten promoted note rendering
 4. tighten transcript hygiene
+
+## Phase 2 Validation - 2026-04-23
+
+Phase 2 from [enforcement-fix-plan.md](./enforcement-fix-plan.md) was implemented and re-tested through fresh real `datalox codex` runs with `gpt-5.4-mini`.
+
+### Result
+
+Repeated identical runs no longer regress from promoted-note behavior back to trace-only behavior.
+
+### Fresh live proof
+
+#### Fresh repo
+
+- repo: `/tmp/datalox-phase2-live-n1nfJr`
+
+#### Command
+
+```bash
+node dist/src/cli/main.js codex \
+  --repo /tmp/datalox-phase2-live-n1nfJr \
+  --post-run-mode promote \
+  --codex-bin /Users/yifanjin/.cursor/extensions/openai.chatgpt-26.417.40842-darwin-arm64/bin/macos-aarch64/codex \
+  --json -- \
+  exec --skip-git-repo-check -m gpt-5.4-mini \
+  "Inspect the repo setup instructions. If there is a reusable setup gap, explain the correction for future agents in one short paragraph."
+```
+
+This exact command was run twice on the same fresh repo.
+
+#### First run
+
+- recorded:
+  - `workflow: "unknown"`
+  - `eventClass: "candidate"`
+  - `adjudicationDecision: "create_operational_note"`
+  - `decision.action: "create_note_from_gap"`
+- note created:
+  - [unknown-readme-md-agents-md-or-github-copilot-instructions-md-mention-scripts-bo.md](/tmp/datalox-phase2-live-n1nfJr/agent-wiki/notes/unknown-readme-md-agents-md-or-github-copilot-instructions-md-mention-scripts-bo.md)
+
+#### Second identical run
+
+- recorded:
+  - `workflow: "unknown"`
+  - `eventClass: "candidate"`
+  - `adjudicationDecision: "record_trace"`
+- compiled result:
+  - `decision.action: "create_note_from_gap"`
+  - `decision.reason: "an identical repeated run already established this reusable gap; do not regress to trace only."`
+- note created:
+  - [unknown-readme-md-references-scripts-bootstrap-sh-docs-product-definition-md-and.md](/tmp/datalox-phase2-live-n1nfJr/agent-wiki/notes/unknown-readme-md-references-scripts-bootstrap-sh-docs-product-definition-md-and.md)
+
+### Interpretation
+
+This satisfies the Phase 2 pass criterion:
+
+- the same real wrapped run on the same repo no longer bounces backward from promoted-note behavior to `record_only`
+- stable promotion memory now prevents regression even when the second run emits `record_trace`
+
+### Residual Drift
+
+Phase 2 fixed adjudication stability, but not note identity/rendering:
+
+- the second identical run still wrote a different promoted note path because its explicit markers changed
+- that is no longer an adjudication-regression bug
+- it is now a later-phase note semantics/rendering issue
