@@ -1433,6 +1433,54 @@ Use when changing the portable pack or agent guidance.
     expect(JSON.stringify(compiled.adjudicationPacket).length).toBeLessThan(2500);
   });
 
+
+  it("keeps weak retrieval candidates from assigning workflow during post-run recording", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-weak-workflow-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+    await mkdir(path.join(tempDir, "skills/repo-readme-helper"), { recursive: true });
+    await writeFile(
+      path.join(tempDir, "skills/repo-readme-helper/SKILL.md"),
+      `---
+name: repo-readme-helper
+description: Handle repo readme helper tasks.
+metadata:
+  datalox:
+    id: repo-engineering.repo-readme-helper
+    workflow: repo_engineering
+    trigger: Repo readme helper.
+    tags:
+      - repo
+      - readme
+      - helper
+---
+
+# Repo Readme Helper
+
+## When to Use
+
+Use when handling repo readme helper tasks.
+`,
+    );
+
+    const recorded = await recordTurnResult({
+      repoPath: tempDir,
+      task: "Read README.md and say one sentence about this repo.",
+      summary: "generic repo description request",
+      observations: ["fresh repo asked for a one-line description"],
+      interpretation: "this is a generic control run, not a reusable workflow match",
+      recommendedAction: "record the trace without inheriting a workflow from weak candidates",
+      eventKind: "wrapper:codex:success",
+      eventClass: "trace",
+    });
+
+    expect(recorded.event.payload.workflow).toBe("unknown");
+    expect(recorded.event.payload.matchedSkillId).toBeNull();
+    expect(recorded.event.payload.candidateSkills.map((candidate: { skillId: string }) => candidate.skillId)).toContain(
+      "repo-engineering.repo-readme-helper",
+    );
+  });
+
   it("requires provenance for durable writes unless an explicit override is provided", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-provenance-"));
     tempDirs.push(tempDir);

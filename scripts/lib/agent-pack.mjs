@@ -1622,6 +1622,18 @@ function scoreSkill(skill, query, repoContext) {
   return score;
 }
 
+function isAuthoritativeSkillMatch(match) {
+  if (!match || typeof match !== "object") {
+    return false;
+  }
+
+  return Boolean(
+    match.explicitSkillMatch
+      || match.fieldPhraseCount > 0
+      || (match.workflowMatch && match.primaryMatchCount >= 2),
+  );
+}
+
 async function readTextIfPresent(filePath) {
   return (await fileExists(filePath)) ? readFile(filePath, "utf8") : null;
 }
@@ -2519,6 +2531,7 @@ export async function resolveLocalKnowledge(
         skill: item.skill,
         linkedNotes,
         missingNotePaths,
+        authoritativeMatch: isAuthoritativeSkillMatch(item.match),
         readPath: KNOWLEDGE_MODEL.normalReadPath,
         loopGuidance: buildLoopGuidance(linkedNotes, whyMatched),
       };
@@ -3314,7 +3327,7 @@ export async function recordTurnResult(
     cwd,
   );
   const topMatch = resolution.matches[0] ?? null;
-  const reusableMatch = topMatch && (!workflow || topMatch.skill.workflow === workflow)
+  const reusableMatch = topMatch?.authoritativeMatch && (!workflow || topMatch.skill.workflow === workflow)
     ? topMatch
     : null;
   const effectiveWorkflow = workflow
