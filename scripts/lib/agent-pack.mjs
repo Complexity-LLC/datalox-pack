@@ -1072,6 +1072,79 @@ function truncateLine(value, maxLength = 140) {
   return `${normalized.slice(0, maxLength - 1).trim()}…`;
 }
 
+const NOTE_PLACEHOLDER_PATTERNS = [
+  /^add a concrete observed case here/i,
+  /^add a concrete source, reviewer note, or case trace here/i,
+  /^add a wiki page path such as agent-wiki\/notes\/example\.md/i,
+];
+
+function isGeneratedNotePlaceholder(value) {
+  const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return true;
+  }
+  return NOTE_PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function normalizeNoteBullets(values = [], maxItems = 3, maxLength = 160) {
+  const normalized = unique(
+    values
+      .map((value) => truncateLine(value, maxLength))
+      .map((value) => value.replace(/\s+/g, " ").trim())
+      .filter((value) => value.length > 0)
+      .filter((value) => !isGeneratedNotePlaceholder(value)),
+  );
+  return normalized.slice(0, maxItems);
+}
+
+function normalizeNoteSentence(value, maxLength = 180) {
+  const normalized = String(value ?? "")
+    .replace(/^use this note when\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.]+$/, "");
+  if (!normalized) {
+    return null;
+  }
+  return shortenSentence(normalized, maxLength);
+}
+
+function buildWhenToUseText({
+  existingWhenToUse,
+  signal,
+  summary,
+  title,
+  task,
+  step,
+  workflow,
+}) {
+  const basis = firstNonEmpty([
+    normalizeNoteSentence(existingWhenToUse, 180),
+    normalizeNoteSentence(signal, 180),
+    normalizeNoteSentence(summary, 180),
+    normalizeNoteSentence(title, 140),
+    task ? `working on ${normalizeNoteSentence(task, 140)}` : null,
+    step ? `${normalizeNoteSentence(step, 140)}` : null,
+    workflow ? `the same ${workflow} gap reappears` : null,
+  ]) ?? "the same reusable gap reappears";
+  if (/^(when|if|while|after|before)\b/i.test(basis)) {
+    return `${basis.charAt(0).toUpperCase()}${basis.slice(1)}.`;
+  }
+  return `When ${basis}.`;
+}
+
+function renderOptionalListSection(title, items) {
+  if (!items.length) {
+    return [];
+  }
+  return [
+    title,
+    "",
+    ...items.map((item) => `- ${item}`),
+    "",
+  ];
+}
+
 function comparePaths(left, right) {
   return left.localeCompare(right);
 }
@@ -2434,6 +2507,17 @@ function buildNoteIdentity({
   return slugify(`${workflow ?? "unknown"}-${seed}`);
 }
 
+function buildNoteIdentityFromStabilityKey(stabilityKey) {
+  if (typeof stabilityKey !== "string" || stabilityKey.trim().length === 0) {
+    return null;
+  }
+  const [workflow, seed] = stabilityKey.split("::");
+  if (!seed || seed.trim().length === 0) {
+    return null;
+  }
+  return slugify(`${workflow ?? "unknown"}-${seed}`);
+}
+
 function buildNoteIdentityKey({
   id,
   fingerprint,
@@ -2654,7 +2738,7 @@ export async function writeNoteDoc(
     examples = [],
     evidence = [],
     tags = [],
-    kind = "trace",
+    kind = "workflow_note",
   },
   cwd = process.cwd(),
 ) {
@@ -2703,25 +2787,23 @@ export async function writeNoteDoc(
     step ? `Check this note before repeating ${step}.` : null,
     `Check this note before repeating the same ${workflow} loop.`,
   ])?.trim() ?? "";
-  const whenToUseText = firstNonEmpty([
-    existingNote?.whenToUse,
-    task ? `${task.toLowerCase()} and the same signal reappears` : null,
-    step ? `${step.toLowerCase()} and the same signal reappears` : null,
-    `${signalText.replace(/[.]+$/, "").toLowerCase()} reappears`,
-  ]) ?? "this note applies";
-  const normalizedWhenToUseText = whenToUseText.replace(/^use this note when\s+/i, "");
-  const mergedRelated = unique([...(related ?? []), ...(existingNote?.related ?? [])]);
+  const whenToUseText = buildWhenToUseText({
+    existingWhenToUse: existingNote?.whenToUse,
+    signal: signalText,
+    summary,
+    title: titleText,
+    task,
+    step,
+    workflow,
+  });
+  const mergedRelated = normalizeNoteBullets([...(related ?? []), ...(existingNote?.related ?? [])], 4, 160);
   const mergedSources = unique([...(sources ?? []), ...(existingNote?.sources ?? [])]);
   const mergedTags = unique([...(existingNote?.tags ?? []), ...(tags ?? [])]);
-  const mergedExamples = unique(
-    [...(examples ?? []), ...(existingNote?.examples ?? [])]
-      .map((value) => String(value).trim())
-      .filter(Boolean),
-  );
-  const mergedEvidence = unique(
-    [...(evidence ?? []), ...(existingNote?.evidenceLines ?? []), ...(sources ?? [])]
-      .map((value) => String(value).trim())
-      .filter(Boolean),
+  const mergedExamples = normalizeNoteBullets([...(examples ?? []), ...(existingNote?.examples ?? [])], 2, 180);
+  const mergedEvidence = normalizeNoteBullets(
+    [...(evidence ?? []), ...(existingNote?.evidenceLines ?? []), ...(sources ?? [])],
+    3,
+    180,
   );
   const content = [
     "---",
@@ -2745,7 +2827,7 @@ export async function writeNoteDoc(
     "",
     "## When to Use",
     "",
-    `Use this note when ${normalizedWhenToUseText.charAt(0).toLowerCase()}${normalizedWhenToUseText.slice(1)}`,
+    whenToUseText,
     "",
     "## Signal",
     "",
@@ -2759,24 +2841,9 @@ export async function writeNoteDoc(
     "",
     action,
     "",
-    "## Examples",
-    "",
-    ...(mergedExamples.length > 0
-      ? mergedExamples.map((item) => `- ${item}`)
-      : ["- Add a concrete observed case here when this note gets reused."]),
-    "",
-    "## Evidence",
-    "",
-    ...(mergedEvidence.length > 0
-      ? mergedEvidence.map((item) => `- ${item}`)
-      : ["- Add a concrete source, reviewer note, or case trace here."]),
-    "",
-    "## Related",
-    "",
-    ...(mergedRelated.length > 0
-      ? mergedRelated.map((item) => `- ${item}`)
-      : ["- Add a wiki page path such as agent-wiki/notes/example.md."]),
-    "",
+    ...renderOptionalListSection("## Examples", mergedExamples),
+    ...renderOptionalListSection("## Evidence", mergedEvidence),
+    ...renderOptionalListSection("## Related", mergedRelated),
   ]
     .filter(Boolean)
     .join("\n");
@@ -2799,6 +2866,7 @@ export async function writeNoteDoc(
       version: 1,
       id: stableId,
       title: titleText,
+      kind: existingNote?.kind ?? kind,
       workflow,
       signal: signalText,
       interpretation: interpretationText,
@@ -2815,6 +2883,12 @@ export async function writeNoteDoc(
     },
     artifacts,
   };
+}
+
+function derivePromotedNoteKind(sourceKind) {
+  return sourceKind && sourceKind !== "trace"
+    ? sourceKind
+    : "workflow_note";
 }
 
 export const writePatternDoc = writeNoteDoc;
@@ -3621,13 +3695,14 @@ export async function compileRecordedEvent(
     }
 
     const stableSeed = stabilityMemory.priorPromotablePayload ?? payload;
+    const noteSeed = stabilityMemory.operationalNote?.note ?? null;
     const effectiveWorkflow = payload.workflow
-      ?? stabilityMemory.operationalNote?.note.workflow
+      ?? noteSeed?.workflow
       ?? stableSeed.workflow
-      ?? config.runtime.defaultWorkflow;
+      ?? UNKNOWN_WORKFLOW;
     const note = await writeNoteDoc(
       {
-        id: stabilityMemory.operationalNote?.note.id ?? buildNoteIdentity({
+        id: noteSeed?.id ?? buildNoteIdentityFromStabilityKey(stabilityMemory.stabilityKey) ?? buildNoteIdentity({
           fingerprint: stableSeed.fingerprint ?? payload.fingerprint,
           workflow: effectiveWorkflow,
           skillId: stableSeed.matchedSkillId ?? stableSeed.explicitSkillId ?? null,
@@ -3638,15 +3713,15 @@ export async function compileRecordedEvent(
           step: payload.step ?? stableSeed.step,
         }),
         fingerprint: stableSeed.fingerprint ?? payload.fingerprint,
-        title: stableSeed.title ?? payload.title,
+        title: noteSeed?.title ?? stableSeed.title ?? payload.title,
         workflow: effectiveWorkflow,
-        signal: stableSeed.signal ?? payload.signal,
-        interpretation: stableSeed.interpretation ?? payload.interpretation,
-        recommendedAction: stableSeed.recommendedAction ?? payload.recommendedAction,
+        signal: noteSeed?.signal ?? stableSeed.signal ?? payload.signal,
+        interpretation: noteSeed?.interpretation ?? stableSeed.interpretation ?? payload.interpretation,
+        recommendedAction: noteSeed?.action ?? stableSeed.recommendedAction ?? payload.recommendedAction,
         summary: payload.summary ?? stableSeed.summary,
         task: payload.task ?? stableSeed.task,
         step: payload.step ?? stableSeed.step,
-        skillId: stableSeed.matchedSkillId ?? stableSeed.explicitSkillId ?? null,
+        skillId: noteSeed?.skillId ?? stableSeed.matchedSkillId ?? stableSeed.explicitSkillId ?? null,
         related: unique([
           ...(payload.matchedNotePaths ?? []),
           ...(stableSeed.matchedNotePaths ?? []),
@@ -3655,11 +3730,14 @@ export async function compileRecordedEvent(
         examples: unique([
           payload.summary,
           stableSeed.summary,
+        ].filter(Boolean)),
+        evidence: unique([
+          recordedEntry.relativePath,
           ...(payload.observations ?? []),
           ...(stableSeed.observations ?? []),
         ].filter(Boolean)),
-        evidence: unique([recordedEntry.relativePath, ...(payload.changedFiles ?? [])].filter(Boolean)),
         tags: unique([...(payload.tags ?? []), "promoted"]),
+        kind: noteSeed?.kind ?? derivePromotedNoteKind(payload.sourceKind ?? stableSeed.sourceKind),
       },
       cwd,
     );
@@ -3715,36 +3793,52 @@ export async function compileRecordedEvent(
     };
   }
 
-  const effectiveWorkflow = payload.workflow ?? config.runtime.defaultWorkflow;
+  const effectiveWorkflow = payload.workflow
+    ?? stabilityMemory.operationalNote?.note.workflow
+    ?? stabilityMemory.priorPromotablePayload?.workflow
+    ?? UNKNOWN_WORKFLOW;
 
   if (decision.action === "create_note_from_gap") {
+    const noteSeed = stabilityMemory.operationalNote?.note ?? null;
+    const stableSeed = stabilityMemory.priorPromotablePayload ?? payload;
     const note = await writeNoteDoc(
       {
-        id: buildNoteIdentity({
-          fingerprint: payload.fingerprint,
+        id: noteSeed?.id ?? buildNoteIdentityFromStabilityKey(stabilityMemory.stabilityKey) ?? buildNoteIdentity({
+          fingerprint: stableSeed.fingerprint ?? payload.fingerprint,
           workflow: effectiveWorkflow,
-          skillId: decision.selectedSkillId ?? null,
-          title: payload.title,
-          signal: payload.signal,
-          summary: payload.summary,
-          task: payload.task,
-          step: payload.step,
+          skillId: noteSeed?.skillId ?? decision.selectedSkillId ?? stableSeed.matchedSkillId ?? stableSeed.explicitSkillId ?? null,
+          title: stableSeed.title ?? payload.title,
+          signal: stableSeed.signal ?? payload.signal,
+          summary: stableSeed.summary ?? payload.summary,
+          task: payload.task ?? stableSeed.task,
+          step: payload.step ?? stableSeed.step,
         }),
-        fingerprint: payload.fingerprint,
-        title: payload.title,
+        fingerprint: stableSeed.fingerprint ?? payload.fingerprint,
+        title: noteSeed?.title ?? stableSeed.title ?? payload.title,
         workflow: effectiveWorkflow,
-        signal: payload.signal,
-        interpretation: payload.interpretation,
-        recommendedAction: payload.recommendedAction,
-        summary: payload.summary,
-        task: payload.task,
-        step: payload.step,
-        skillId: decision.selectedSkillId ?? null,
-        related: unique(payload.matchedNotePaths ?? []),
+        signal: noteSeed?.signal ?? stableSeed.signal ?? payload.signal,
+        interpretation: noteSeed?.interpretation ?? stableSeed.interpretation ?? payload.interpretation,
+        recommendedAction: noteSeed?.action ?? stableSeed.recommendedAction ?? payload.recommendedAction,
+        summary: stableSeed.summary ?? payload.summary,
+        task: payload.task ?? stableSeed.task,
+        step: payload.step ?? stableSeed.step,
+        skillId: noteSeed?.skillId ?? decision.selectedSkillId ?? stableSeed.matchedSkillId ?? stableSeed.explicitSkillId ?? null,
+        related: unique([
+          ...(payload.matchedNotePaths ?? []),
+          ...(stableSeed.matchedNotePaths ?? []),
+        ]),
         sources: [recordedEntry.relativePath],
-        examples: unique([payload.summary, ...(payload.observations ?? [])].filter(Boolean)),
-        evidence: unique([recordedEntry.relativePath, ...(payload.changedFiles ?? [])].filter(Boolean)),
+        examples: unique([
+          payload.summary,
+          stableSeed.summary,
+        ].filter(Boolean)),
+        evidence: unique([
+          recordedEntry.relativePath,
+          ...(payload.observations ?? []),
+          ...(stableSeed.observations ?? []),
+        ].filter(Boolean)),
         tags: unique([...(payload.tags ?? []), "promoted"]),
+        kind: noteSeed?.kind ?? derivePromotedNoteKind(payload.sourceKind ?? stableSeed.sourceKind),
       },
       cwd,
     );
@@ -3919,7 +4013,7 @@ export async function learnFromInteraction(
 
   const effectiveWorkflow = workflow
     || sourceSkill?.value?.workflow
-    || config.runtime.defaultWorkflow;
+    || ((task || step || summary || title || signal) ? UNKNOWN_WORKFLOW : config.runtime.defaultWorkflow);
 
   const derived = derivePatternFields({
     workflow: effectiveWorkflow,
@@ -3971,6 +4065,7 @@ export async function learnFromInteraction(
       examples: unique([summary, ...observations].filter(Boolean)),
       evidence: unique([...(evidence ?? []), ...(sourceRefs ?? [])]),
       tags: unique([...tags, effectiveWorkflow]),
+      kind: "workflow_note",
     },
     cwd,
   );

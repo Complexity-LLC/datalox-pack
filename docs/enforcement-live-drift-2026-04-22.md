@@ -345,3 +345,142 @@ Phase 2 fixed adjudication stability, but not note identity/rendering:
 - the second identical run still wrote a different promoted note path because its explicit markers changed
 - that is no longer an adjudication-regression bug
 - it is now a later-phase note semantics/rendering issue
+
+## Phase 3 Validation - 2026-04-23
+
+Phase 3 from [enforcement-fix-plan.md](./enforcement-fix-plan.md) was implemented and re-tested through fresh real `datalox codex` runs with `gpt-5.4-mini`.
+
+### Result
+
+Promoted operational notes now carry the correct semantics:
+
+- `kind: workflow_note`
+- `workflow: "unknown"` when the run is unscoped
+- stable promoted note identity across repeated identical real runs
+
+### Fresh live proof
+
+#### Fresh repo
+
+- repo: `/tmp/datalox-phase3-live-HTAZrk`
+
+#### Command
+
+```bash
+node dist/src/cli/main.js codex \
+  --repo /tmp/datalox-phase3-live-HTAZrk \
+  --post-run-mode promote \
+  --codex-bin /Users/yifanjin/.cursor/extensions/openai.chatgpt-26.417.40842-darwin-arm64/bin/macos-aarch64/codex \
+  --json -- \
+  exec --skip-git-repo-check -m gpt-5.4-mini \
+  "Inspect the repo setup instructions. If there is a reusable setup gap, explain the correction for future agents in one short paragraph."
+```
+
+This exact command was run twice on the same fresh repo.
+
+#### First run
+
+- promoted note:
+  - `relativePath: agent-wiki/notes/unknown-inspect-the-repo-setup-instructions-if-there-is-a-reusable-setup-gap-exp.md`
+  - `kind: "workflow_note"`
+  - `workflow: "unknown"`
+  - `title: "Canonical bootstrap entrypoints"`
+
+#### Second identical run
+
+- recorded:
+  - `adjudicationDecision: "record_trace"`
+- compiled result:
+  - `decision.action: "create_note_from_gap"`
+- promoted note:
+  - same `relativePath` as the first run
+  - same `kind: "workflow_note"`
+  - same `workflow: "unknown"`
+  - same stable title: `"Canonical bootstrap entrypoints"`
+
+### Interpretation
+
+This satisfies the Phase 3 pass criteria:
+
+- promoted operational notes are no longer written as `kind: trace`
+- note workflow stays correct or `unknown`
+- note slug/title basis is grounded in the reusable gap and stays stable across repeated identical runs
+
+### Residual Drift
+
+Phase 3 fixed note semantics, but the next cleanup is still Phase 4:
+
+- `When to Use` is still generic and template-shaped
+- `Evidence` is still too large and path-dump heavy
+- stored transcript/evidence still contains transport-warning residue
+
+## Phase 4 Validation - 2026-04-23
+
+Phase 4 from [enforcement-fix-plan.md](./enforcement-fix-plan.md) was implemented and re-tested through a fresh real `datalox codex` run with `gpt-5.4-mini`.
+
+### Result
+
+Promoted note rendering is now compact and grounded:
+
+- `When to Use` is signal-first instead of a lowercased prompt echo
+- `Evidence` is limited to the event path plus compact grounded observations
+- placeholder bullets no longer persist into generated notes
+- promoted note bodies stay small enough to inject back into later loops
+
+### Fresh live proof
+
+#### Fresh repo
+
+- repo: `/tmp/datalox-phase4-live-AaVtH0`
+
+#### Command
+
+```bash
+node dist/src/cli/main.js codex \
+  --repo /tmp/datalox-phase4-live-AaVtH0 \
+  --post-run-mode promote \
+  --codex-bin /Users/yifanjin/.cursor/extensions/openai.chatgpt-26.417.40842-darwin-arm64/bin/macos-aarch64/codex \
+  --json -- \
+  exec --skip-git-repo-check -m gpt-5.4-mini \
+  "Inspect the repo setup instructions. If there is a reusable setup gap, explain the correction for future agents in one short paragraph."
+```
+
+#### Promoted note
+
+- note:
+  - [unknown-inspect-the-repo-setup-instructions-if-there-is-a-reusable-setup-gap-exp.md](/tmp/datalox-phase4-live-AaVtH0/agent-wiki/notes/unknown-inspect-the-repo-setup-instructions-if-there-is-a-reusable-setup-gap-exp.md)
+- size:
+  - `1389` bytes
+
+Key rendered lines:
+
+- `## When to Use`
+  - `When \`START_HERE.md\` and \`.datalox/manifest.json\` reference \`adopt-*\` scripts that do not exist.`
+- `## Evidence`
+  - `agent-wiki/events/2026-04-23T03-38-20-699Z--align-bootstrap-entrypoints.json`
+  - one compact grounded observation bullet
+
+What is no longer present:
+
+- no `Use this note when inspect the repo setup instructions...`
+- no placeholder bullets like `Add a concrete observed case here...`
+- no repo-root path dump such as:
+  - `.claude/`
+  - `.cursor/`
+  - `skills/`
+  - `agent-wiki/`
+
+### Interpretation
+
+This satisfies the Phase 4 pass criteria:
+
+- `When to Use` is no longer a prompt echo
+- evidence is compact and grounded
+- the promoted note body is small enough to reuse in later loops without obvious context bloat
+
+### Residual Drift
+
+Phase 4 fixes note rendering, but Phase 5 remains:
+
+- stored event `stderr` / transcript payloads can still carry large Codex warning or HTML dumps
+- that is now a transcript hygiene issue, not a promoted-note rendering issue

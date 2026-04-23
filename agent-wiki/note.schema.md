@@ -2,6 +2,9 @@
 
 Notes are the default reusable knowledge unit in `agent-wiki/`.
 
+`trace` is the event source kind, not the durable note kind for promoted operational knowledge.
+Promoted agent-learned notes should normally use `kind: workflow_note`.
+
 Each note should be strong enough that an agent can read one page and get:
 
 - what signal to notice
@@ -20,7 +23,7 @@ Each note should be strong enough that an agent can read one page and get:
 ```yaml
 ---
 type: note
-kind: trace | web | pdf
+kind: workflow_note | web | pdf
 title: Human-readable note title
 workflow: workflow_id
 skill: skill_id

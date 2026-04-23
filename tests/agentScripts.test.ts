@@ -608,8 +608,9 @@ describe("agent scripts", () => {
 
     const body = JSON.parse(result.stdout);
     expect(body.matches[0].skill.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
+    expect(body.matches[0]).not.toHaveProperty("score");
     expect(body.matches[0].linkedNotes[0].path).toBe("agent-wiki/notes/viability-gate-review.md");
-    expect(body.matches[0].loopGuidance.whyMatched).toContain("workflow match: flow_cytometry");
+    expect(body.matches[0].loopGuidance.whyMatched).toContain("workflow_match");
     expect(body.matches[0].loopGuidance.whatToDoNow[0]).toContain("Review the linked exception pattern");
     expect(body.matches[0].loopGuidance.watchFor[0]).toContain("Live and dead populations");
   });
@@ -681,11 +682,13 @@ Make the onboarding path visible and reversible before asking the next agent to 
     expect(body.selectionBasis).toBe("direct_note_query");
     expect(body.matches).toHaveLength(0);
     expect(body.directNoteMatches[0].note.path).toBe("agent-wiki/notes/reversible-onboarding.md");
+    expect(body.directNoteMatches[0]).not.toHaveProperty("score");
+    expect(body.directNoteMatches[0]).not.toHaveProperty("backendScore");
     expect(body.loopGuidance.whatToDoNow[0]).toContain("visible and reversible");
     expect(body.loopGuidance.watchFor[0]).toContain("install surface is hidden or irreversible");
   });
 
-  it("auto-selects a local skill from repo context without an explicit task", async () => {
+  it("keeps repo-context resolution empty without an explicit task", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));
     tempDirs.push(tempDir);
     await createPack(tempDir);
@@ -695,8 +698,8 @@ Make the onboarding path visible and reversible before asking the next agent to 
 
     const body = JSON.parse(result.stdout);
     expect(body.selectionBasis).toBe("repo_context");
-    expect(body.matches[0].skill.id).toBe("repo-engineering.evolve-datalox-pack");
-    expect(body.workflow).toBe("repo_engineering");
+    expect(body.matches).toHaveLength(0);
+    expect(body.directNoteMatches).toHaveLength(0);
   });
 
   it("writes a generated skill into skills and points it at notes", async () => {
@@ -764,6 +767,7 @@ Make the onboarding path visible and reversible before asking the next agent to 
 
     const body = JSON.parse(learnResult.stdout);
     expect(body.note.relativePath).toContain("agent-wiki/notes/");
+    expect(body.note.payload.kind).toBe("workflow_note");
     expect(body.skill.payload.id).toBe("flow-cytometry.review-ambiguous-viability-gate");
     expect(body.skill.operation).toBe("update_skill");
     const indexFile = await readFile(path.join(tempDir, "agent-wiki/index.md"), "utf8");

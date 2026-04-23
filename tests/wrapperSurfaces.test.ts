@@ -919,6 +919,91 @@ fi
     expect(secondParsed.postRun.result.decision.action).toBe("create_note_from_gap");
   }, 60000);
 
+  it("reuses the same promoted note when a repeated wrapped run restates the same gap with different markers", async () => {
+    const hostDir = await adoptHostRepo();
+    const statePath = path.join(hostDir, "repeat-state-semantics.txt");
+    const fakeCodexPath = path.join(hostDir, "fake-codex-note-semantics.sh");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env bash
+count=0
+if [ -f "${statePath}" ]; then
+  count=$(cat "${statePath}")
+fi
+count=$((count + 1))
+printf "%s" "$count" > "${statePath}"
+if [ "$count" -eq 1 ]; then
+  cat <<'EOF'
+Future agents should use the committed onboarding bootstrap step.
+DATALOX_SUMMARY: repos need a committed onboarding bootstrap step before autonomous edits
+DATALOX_TITLE: committed onboarding bootstrap step
+DATALOX_SIGNAL: onboarding keeps depending on hidden setup steps
+DATALOX_INTERPRETATION: this is a reusable operational onboarding gap
+DATALOX_ACTION: add the committed bootstrap step to repo guidance before autonomous edits
+DATALOX_DECISION: create_operational_note
+EOF
+else
+  cat <<'EOF'
+Future agents should use the CLI-backed onboarding bootstrap step.
+DATALOX_SUMMARY: setup docs point at missing legacy bootstrap paths instead of the CLI-backed entrypoints
+DATALOX_TITLE: canonical setup path
+DATALOX_SIGNAL: README.md references scripts/bootstrap.sh and START_HERE.md names missing adoption scripts
+DATALOX_INTERPRETATION: onboarding is fragmented across stale wrappers and the real CLI entrypoint
+DATALOX_ACTION: rewrite the host-facing setup docs to use datalox adopt, datalox bootstrap, datalox setup, and bin/setup-multi-agent.sh only
+DATALOX_DECISION: record_trace
+EOF
+fi
+`,
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const runWrapped = () => spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--post-run-mode",
+        "promote",
+        "--codex-bin",
+        fakeCodexPath,
+        "--json",
+        "--",
+        "exec",
+        "--skip-git-repo-check",
+        "Inspect the repo setup instructions. If there is a reusable setup gap, explain the correction for future agents in one short paragraph.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    const first = runWrapped();
+    expect(first.status).toBe(0);
+    const firstParsed = JSON.parse(first.stdout);
+    expect(firstParsed.postRun.result.decision.action).toBe("create_note_from_gap");
+    expect(firstParsed.postRun.result.promotion.note.payload.kind).toBe("workflow_note");
+
+    const second = runWrapped();
+    expect(second.status).toBe(0);
+    const secondParsed = JSON.parse(second.stdout);
+    expect(secondParsed.postRun.result.decision.action).toBe("create_note_from_gap");
+    expect(secondParsed.postRun.result.promotion.note.relativePath).toBe(
+      firstParsed.postRun.result.promotion.note.relativePath,
+    );
+
+    const noteFile = await readFile(path.join(hostDir, firstParsed.postRun.result.promotion.note.relativePath), "utf8");
+    expect(noteFile).toContain("kind: workflow_note");
+    expect(noteFile).not.toContain("kind: trace");
+    expect(noteFile).toContain("workflow: unknown");
+    expect(noteFile).not.toContain("Add a concrete observed case here");
+    expect(noteFile).not.toContain("Add a concrete source, reviewer note, or case trace here");
+    expect(noteFile).not.toContain("Add a wiki page path such as agent-wiki/notes/example.md");
+  }, 60000);
+
   it("runs a second-pass Codex reviewer and persists reusable knowledge when review mode is enabled", async () => {
     const hostDir = await adoptHostRepo();
     const fakeCodexPath = path.join(hostDir, "fake-codex-review.sh");

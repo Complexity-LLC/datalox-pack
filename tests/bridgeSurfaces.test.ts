@@ -1280,7 +1280,7 @@ Use when changing the portable pack or agent guidance.
     expect(secondCompiled.decision.action).toBe("create_skill_from_gap");
     expect(secondCompiled.promotion?.skill?.operation).toBe("create_skill");
     const promotedNote = await readFile(path.join(tempDir, firstCompiled.promotion.note.relativePath), "utf8");
-    expect(promotedNote).toContain("Use this note when stabilize release onboarding in agent-managed repos and the same signal reappears");
+    expect(promotedNote).toContain("When release onboarding keeps failing because repos have no visible install surface.");
     expect(promotedNote).toContain("create an onboarding playbook and attach it to a reusable skill");
     expect(promotedNote).not.toContain("Reuse this note before changing the current workflow.");
     expect(await readFile(path.join(tempDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
@@ -1526,7 +1526,16 @@ Use when handling repo readme helper tasks.
     });
 
     expect(firstCompiled.decision.action).toBe("create_note_from_gap");
+    expect(firstCompiled.promotion?.note?.payload?.kind).toBe("workflow_note");
     expect(firstCompiled.promotion?.note?.relativePath).toContain("agent-wiki/notes/");
+    const firstNoteFile = await readFile(path.join(tempDir, firstCompiled.promotion?.note?.relativePath ?? ""), "utf8");
+    expect(firstNoteFile).toContain("kind: workflow_note");
+    expect(firstNoteFile).toContain("workflow: agent_adoption");
+    expect(firstNoteFile).toContain("When fresh repos cannot recover when onboarding is hidden.");
+    expect(firstNoteFile).not.toContain("Use this note when stabilize first-run onboarding in agent-managed repos");
+    expect(firstNoteFile).not.toContain("Add a concrete observed case here");
+    expect(firstNoteFile).not.toContain("Add a concrete source, reviewer note, or case trace here");
+    expect(firstNoteFile).not.toContain("Add a wiki page path such as agent-wiki/notes/example.md");
 
     const secondRecorded = await recordTurnResult({
       repoPath: tempDir,
@@ -1546,6 +1555,48 @@ Use when handling repo readme helper tasks.
     expect(secondCompiled.decision.action).toBe("create_note_from_gap");
     expect(secondCompiled.decision.reason).toContain("do not regress to trace only");
     expect(secondCompiled.promotion?.note?.relativePath).toBe(firstCompiled.promotion?.note?.relativePath);
+  });
+
+  it("keeps promoted note rendering compact and grounded", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-compact-promoted-note-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    const recorded = await recordTurnResult({
+      repoPath: tempDir,
+      task: "Inspect the repo setup instructions. If there is a reusable setup gap, explain the correction for future agents in one short paragraph.",
+      summary: "repo setup guidance still points at stale bootstrap entrypoints",
+      signal: "README.md and START_HERE.md still point at missing bootstrap entrypoints",
+      observations: [
+        "README.md still points at a missing setup script.",
+        "START_HERE.md still points at a missing adopt entrypoint.",
+      ],
+      interpretation: "the bootstrap path is fragmented across stale setup instructions",
+      recommendedAction: "rewrite the setup instructions to the canonical CLI-backed entrypoints",
+      changedFiles: [".claude/", ".cursor/", ".datalox/", "README.md", "START_HERE.md", "agent-wiki/", "bin/", "skills/"],
+      eventKind: "wrapper:codex:success",
+      eventClass: "candidate",
+      adjudicationDecision: "create_operational_note",
+    });
+
+    const compiled = await compileRecordedEvent({
+      repoPath: tempDir,
+      eventPath: recorded.event.relativePath,
+    });
+
+    expect(compiled.decision.action).toBe("create_note_from_gap");
+    const noteFile = await readFile(path.join(tempDir, compiled.promotion?.note?.relativePath ?? ""), "utf8");
+    expect(noteFile).toContain("When README.md and START_HERE.md still point at missing bootstrap entrypoints.");
+    expect(noteFile).toContain("## Evidence");
+    expect(noteFile).toContain(recorded.event.relativePath);
+    expect(noteFile).not.toContain("Use this note when inspect the repo setup instructions");
+    expect(noteFile).not.toContain(".claude/");
+    expect(noteFile).not.toContain(".cursor/");
+    expect(noteFile).not.toContain(".datalox/");
+    expect(noteFile).not.toContain("skills/");
+    expect(noteFile).not.toContain("Add a concrete observed case here");
+    expect(noteFile).not.toContain("Add a concrete source, reviewer note, or case trace here");
+    expect(noteFile).not.toContain("Add a wiki page path such as agent-wiki/notes/example.md");
   });
 
   it("requires provenance for durable writes unless an explicit override is provided", async () => {
