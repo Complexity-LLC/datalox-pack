@@ -1,149 +1,15 @@
 # TODO
 
-## Skill Boundary
+Completed items were moved to:
 
-- [x] Replace patch-vs-create heuristics with agent-side adjudication.
-  The deterministic layer should only retrieve candidate skills and linked notes.
-  The agent should return one structured decision:
-  `record_only`, `create_operational_note`, `patch_existing_skill`, or `create_new_skill`.
-  Code should still enforce hard product rules:
-  `pdf/web/source` cannot patch skills directly, only repeated operational evidence can create or patch a skill, and the agent can only patch one of the retrieved candidate skills.
+- [docs/completed-todo-items.md](/Users/yifanjin/datalox-pack/docs/completed-todo-items.md)
 
-- [x] Stop treating auto-retrieved matches as authoritative skill matches.
-  Retrieval should produce candidate skills plus linked notes, not silently upcast the top lexical match into a patch target.
-  A weak retrieval match should remain a suggestion unless the agent explicitly selects it.
+That doc now holds:
 
-- [x] Fix the bootstrap problem before relying on note-aware adjudication.
-  Notes cannot be a prerequisite for creating the first note.
-  The current path already depends on notes, but ordinary wrapped runs still generate only trace events.
-  That means the agent often has no first operational note to read before deciding whether to patch an existing skill or create a new one.
-  The bootstrap phase must operate from repeated trace evidence even when there are zero existing notes.
-
-- [x] Create a clean first-note path for repeated operational gaps.
-  This is the bootstrap phase.
-  The wrapped agent, hook, or CLI/MCP caller can now emit a structured adjudication decision so normal wrapped failures can cross:
-  `trace -> candidate -> operational note`
-  before any skill patch/create decision is attempted.
-  The adjudication packet can rely on repeated traces plus candidate skills, but it does not require linked notes to exist yet.
-  The pass criterion is that a normal repeated operational failure can produce at least one operational note without manual MCP intervention.
-
-- [x] Stop using repetition count as the main semantic test for note creation.
-  Repetition is only a debounce/brake, not the definition of value.
-  Some single runs are worth recording as operational notes immediately, and some repeated runs are still noise.
-  The agent should decide whether a run is reusable enough to become a note.
-  Code should still enforce the write rules.
-
-- [x] Let a single run create an operational note when the evidence is strong enough.
-  The adjudication output should distinguish:
-  `record_trace`, `create_operational_note`, `patch_existing_skill`, `create_new_skill`, and `needs_more_evidence`.
-  A single run may create a note when the pattern is specific, actionable, and grounded.
-  A single run should not create a skill.
-
-- [x] After the first operational note exists, let the agent adjudicate:
-  This is the mature phase.
-  `patch existing skill` vs `create new skill`.
-  The decision packet should include only the minimum bounded context:
-  current trace summary, a compact repeated-event summary, top candidate skills, linked operational notes, and linked source notes.
-  Do not inject full raw traces, whole notes, or large repo context by default.
-  The adjudication path must stay cheap enough for normal runs and must not depend on a giant context window.
-  The output must be structured and machine-validated, not free-form prose.
-
-- [x] Add proof tests for the real boundary.
-  Required proofs:
-  1. a single strong operational run can create a first operational note when there are zero existing notes
-  2. repeated ordinary wrapped failure with no explicit skill match can still create a first operational note without manual MCP intervention
-  3. repeated failure with a genuinely matching skill patches that skill
-  4. repeated failure with only weak lexical overlap does not patch an unrelated skill
-  5. repeated failure with no real match creates a new skill only after the note stage
-  6. the adjudication packet stays within a small bounded context budget and does not require whole-note or whole-trace injection
-
-## Concrete Steps
-
-- [x] Step 1: separate retrieved candidates from authoritative targets.
-  Main files:
-  `scripts/lib/agent-pack.mjs`
-  `src/adapters/shared.ts`
-  Change the runtime contract so retrieval returns only candidate skills and linked notes.
-  Do not upcast the top auto-match into an explicit patch target.
-  Keep explicit user-selected `skillId` separate from auto-retrieved `matchedSkillId`.
-
-- [x] Step 2: add a bootstrap adjudication path for the first operational note.
-  Main files:
-  `scripts/lib/agent-pack.mjs`
-  `src/adapters/shared.ts`
-  `src/mcp/loopPulse.ts`
-  Build a compact adjudication packet from:
-  current trace summary, compact repeated-event summary, and top candidate skills.
-  Let the agent choose:
-  `record_trace`, `create_operational_note`, or `needs_more_evidence`.
-  Do not require any existing notes in this phase.
-
-- [x] Step 3: make note creation semantic, not repetition-only.
-  Main files:
-  `scripts/lib/agent-pack.mjs`
-  Keep repetition only as a brake.
-  A single strong run may create an operational note.
-  A repeated weak run may still stay trace-only.
-  Code must still enforce that a single run cannot create or patch a skill.
-
-- [x] Step 4: add the mature adjudication path for patch-vs-create.
-  Main files:
-  `scripts/lib/agent-pack.mjs`
-  `src/adapters/shared.ts`
-  After at least one operational note exists, build a bounded mature packet from:
-  current trace summary, compact repeated-event summary, top candidate skills, linked operational notes, and linked source notes.
-  Let the agent choose:
-  `patch_existing_skill`, `create_new_skill`, `create_operational_note`, `record_trace`, or `needs_more_evidence`.
-  Validate the output against product rules before writing.
-
-- [x] Step 5: enforce hard write rules in code after adjudication.
-  Main files:
-  `scripts/lib/agent-pack.mjs`
-  `src/core/packCore.ts`
-  Hard rules:
-  `pdf/web/source` cannot patch skills directly.
-  Only operational evidence can create or patch skills.
-  A patched skill must be one of the retrieved candidate skills or an explicit user-selected skill.
-  New skill creation still requires stronger evidence than note creation.
-
-- [x] Step 6: keep the adjudication packet small.
-  Main files:
-  `src/adapters/shared.ts`
-  `scripts/lib/agent-pack.mjs`
-  Never inject full raw traces, full note bodies, or large repo context by default.
-  Use summaries, top-k candidate skills, and compact note excerpts only.
-  The path should be cheap enough for normal wrapped runs.
-
-- [x] Step 7: add end-to-end proofs, not only unit tests.
-  Main files:
-  `tests/wrapperSurfaces.test.ts`
-  `tests/hookIntegration.test.ts`
-  `tests/agentScripts.test.ts`
-  Add proof-style tests for first-note bootstrap, true match patching, weak-match rejection, no-match new-skill creation, and bounded context size.
-
-## Pass Criteria
-
-- [x] Pass 1: an ordinary wrapped run with weak evidence can stay `trace` only.
-
-- [x] Pass 2: a single strong operational run can create the first operational note even when there are zero existing notes.
-
-- [x] Pass 3: repeated ordinary wrapped failure can still create the first operational note without manual MCP intervention.
-
-- [x] Pass 4: a genuine existing-skill match can patch that skill automatically after adjudication.
-
-- [x] Pass 5: weak lexical overlap does not patch an unrelated skill.
-
-- [x] Pass 6: a true no-match path creates a note before it creates a skill.
-
-- [x] Pass 7: a single run cannot create or patch a skill.
-
-- [x] Pass 8: source-derived inputs can create evidence notes but cannot patch skills directly.
-
-- [x] Pass 9: the adjudication packet stays within a small bounded context budget and does not require full-note or full-trace injection.
-
-- [x] Pass 10: the runtime contract stays skill-first:
-  detect skill -> read linked notes -> act
-  and the bootstrap path does not deadlock when there are no notes yet.
+- completed skill-boundary work
+- completed concrete implementation steps
+- completed pass-criteria proofs
+- completed bootstrap-payload-shape work
 
 
 ## Refactor `agent-pack.mjs`
@@ -244,58 +110,15 @@
 
 ## Bootstrap Payload Shape
 
-- [x] Confirm the current problem precisely.
-  Grounded claim:
-  fresh repos currently receive unrelated seed knowledge through `adoptPack()` / `autoBootstrapIfSafe()`, not through MCP itself.
-  Proven examples already observed in fresh repos:
-  - `skills/github/SKILL.md`
-  - `skills/ordercli/SKILL.md`
-  - `skills/review-ambiguous-viability-gate/SKILL.md`
-  - `agent-wiki/notes/pdf/*`
-  - `agent-wiki/notes/web/*`
-
-- [x] Define the target bootstrap contract.
-  Fresh generic repos should receive only:
-  - core runtime/instruction surfaces
-  - the minimum seed knowledge required for the loop to function
-  They should not automatically receive unrelated domain/example skills and notes.
-
-- [x] Split bootstrap payload into two classes.
-  1. core runtime surfaces
-  2. optional seed knowledge
-  Core runtime surfaces should stay automatic.
-  Optional seed knowledge should be minimal by default or explicitly opted into.
-
-- [x] Inventory what is actually required for a fresh repo to function.
-  Main files:
-  - `src/core/packCore.ts`
-  - `.datalox/manifest.json`
-  Determine which adopted paths are truly necessary for:
-  - wrapper enforcement
-  - bootstrap
-  - event recording
-  - note creation
-  - skill creation
-
-- [x] Remove whole-tree adoption of unrelated seed knowledge.
-  Main file:
-  - `src/core/packCore.ts`
-  Current issue:
-  - `TREE_ADOPTION_PATHS = ["skills", "agent-wiki/notes"]`
-  Target:
-  - stop copying entire `skills/`
-  - stop copying entire `agent-wiki/notes/`
-  - replace that with a smaller explicit allowlist or a minimal bootstrap bundle
-
-- [x] Decide the minimal default seed set.
-  Candidate default keepers:
-  - only repo-evolution/bootstrap knowledge needed for the pack to explain itself
-  - only the smallest number of skills needed for host wrapper operation
-  Candidate removals from default bootstrap:
-  - `github`
-  - `ordercli`
-  - `review-ambiguous-viability-gate`
-  - unrelated `pdf/` and `web/` note corpora
+- Completed bootstrap payload work was moved to:
+  - [docs/completed-todo-items.md](/Users/yifanjin/datalox-pack/docs/completed-todo-items.md)
+  That includes:
+  - problem confirmation
+  - target contract
+  - bootstrap split
+  - minimal default seed set
+  - removal of whole-tree adoption
+  - focused proofs and pass criteria
 
 - [ ] Make optional seed knowledge explicit.
   If the pack still ships extra example/domain skills, they should live behind a separate install path, not fresh-repo bootstrap.
@@ -305,36 +128,252 @@
   - demo corpus
   But do not add a large new product surface unless needed; start with a small explicit split.
 
-- [x] Keep the live proof loop working with the smaller bootstrap set.
-  Required behaviors that must still work in a fresh repo:
-  - enforced wrapper path
-  - first operational note creation
-  - second-run skill creation
-  - repo-local retrieval of newly created note and skill
 
-- [x] Add focused adoption/bootstrapping proofs.
+## Retrieval Authority And Generated Skill Quality
+
+- [ ] Confirm the current failure mode with grounded repro.
+  Proven issue:
+  a workflow-bound task can still set `matchedSkillId` from a weak lexical overlap when the skill shares the workflow and happens to contain broad tokens.
+  The reproduced example was:
+  - task: `Fix the center-viewer PDF preview runtime error '#e.getOrInsertComputed is not a function' in the desktop app.`
+  - weakly matched skill: `desktop-agent-workspace.capture-the-reusable-lesson-from-the-desktop-host-stream-decode-failure-fix`
+  - current reasons: `workflow_match`, `primary_term_overlap`
+  This is wrong because the event is about PDF.js / WKWebView compatibility, while the matched skill is about Tauri SSE stream parsing.
+
+- [ ] Tighten authoritative skill matching.
+  Main file:
+  - `scripts/lib/agent-pack.mjs`
+  Current bug:
+  - `isAuthoritativeSkillMatch()` still treats `workflowMatch && primaryMatchCount >= 2` as authoritative
+  Target:
+  - deterministic authoritative match requires:
+    - `explicit_skill_match`, or
+    - `field_phrase_match`
+  Not enough:
+  - `workflow_match` + lexical token overlap
+  Weak lexical matches may still appear in `candidateSkills`, but must not set:
+  - `matchedSkillId`
+  - `matchedNotePaths`
+
+- [ ] Keep lexical retrieval as candidate generation only.
   Main files:
-  - `tests/adoptionScripts.test.ts`
-  - `tests/wrapperSurfaces.test.ts`
+  - `scripts/lib/agent-pack.mjs`
+  - `src/adapters/shared.ts`
+  Target contract:
+  - `candidateSkills` may still include weak same-workflow suggestions
+  - `matchedSkillId` stays `null` unless the match is authoritative
+  - wrapper/MCP/CLI outputs should clearly separate:
+    - candidate suggestions
+    - authoritative selected skill
+
+- [ ] Add a narrow skill match adjudicator only for ambiguous cases.
+  Main files:
+  - `scripts/lib/agent-pack.mjs`
+  - `src/adapters/shared.ts`
+  Do not call a model on every loop.
+  Use a 3-tier path:
+  1. deterministic accept
+  2. deterministic reject
+  3. cheap agent adjudication only when the candidate set is ambiguous
+  Ambiguous means examples like:
+  - same workflow
+  - no explicit skill match
+  - no field phrase match
+  - only weak lexical overlap
+  - multiple plausible candidates
+  Adjudicator packet should stay small:
+  - current task/step/summary
+  - top `2-5` candidate skills
+  - compact YAML/body summaries only
+  Output must be structured, for example:
+  - `matchedSkillId`
+  - `noMatch`
+  - `alternatives`
+  - `reason`
+  Code still enforces:
+  - adjudicator may only choose from the provided candidate set
+  - no-match is allowed
+  - weak lexical matches remain suggestions if the adjudicator does not confirm them
+
+- [ ] Replace direct event-to-skill creation with a periodic maintenance loop.
+  Main files:
+  - `scripts/lib/agent-pack.mjs`
+  - wrapper / promote entry surfaces as needed
+  Goal:
+  - the online loop should focus on capture
+  - the maintenance loop should focus on organization, compaction, and synthesis
+  Target model:
+  1. online loop records `trace`
+  2. strong evidence may still create or update a `note`
+  3. a periodic maintenance loop scans bounded recent traces
+  4. the maintenance loop compacts traces into note-backed evidence
+  5. only then does it decide whether to patch an existing skill or create a new one
+
+- [ ] Add a bounded periodic trigger for trace maintenance.
+  Main files:
+  - `scripts/lib/agent-pack.mjs`
+  - CLI / wrapper / MCP entrypoints as needed
+  Acceptable triggers:
+  - after `N` new traces
+  - on session end
+  - on explicit `promote`
+  - on `lint`
+  Do not:
+  - run a whole-repo full-history scan on every turn
+  - introduce a hidden global background process
+
+- [ ] Scan and compact recent traces before skill synthesis.
+  Main file:
+  - `scripts/lib/agent-pack.mjs`
+  Target behavior:
+  - group recent unresolved traces by stable reusable signal
+  - summarize repeated traces so raw event volume does not blow up
+  - create a new operational note or update an existing note from the compacted evidence
+  - mark which traces are now covered by that note
+  Hard rule:
+  - do not create a skill directly from raw trace scanning alone
+  - the durable bridge must be `trace -> note -> skill`
+
+- [ ] Synthesize skills from note-backed evidence, not raw event phrasing.
+  Main file:
+  - `scripts/lib/agent-pack.mjs`
+  Target flow:
+  1. identify notes with enough accumulated evidence
+  2. gather the linked/recent traces that justify that note
+  3. compare the note against candidate existing skills
+  4. decide:
+     - keep note only
+     - patch existing skill
+     - create new skill
+     - demote low-quality generated skill
+  Use the agent here as the semantic boundary, with a bounded packet:
+  - compact note summary
+  - compact trace summary
+  - small candidate skill set
+
+- [ ] Stop treating incident-capture phrasing as a good skill identity.
+  Main file:
+  - `scripts/lib/agent-pack.mjs`
+  Current problem:
+  generated skills can keep names/triggers like:
+  - `capture-the-reusable-lesson-from-the-...-fix`
+  - `Capture the reusable lesson from ...`
+  That describes the learning incident, not the reusable workflow.
+  Target:
+  - new skill `name`, `displayName`, `trigger`, and `description` must describe the reusable operational boundary
+  - event wording must not be copied through unchanged into skill identity fields
+
+- [ ] Compile new skills from note semantics.
+  Main file:
+  - `scripts/lib/agent-pack.mjs`
+  The draft should be derived from:
+  - note `When to Use`
+  - `Signal`
+  - `Interpretation`
+  - `Recommended Action`
+  - workflow
+  The draft should sound like:
+  - `use-legacy-pdfjs-build-for-wkwebview`
+  not:
+  - `capture-the-reusable-lesson-from-the-...-fix`
+
+- [ ] Add a cheap quality gate before writing a new skill.
+  Main files:
+  - `scripts/lib/agent-pack.mjs`
+  - tests covering skill synthesis
+  The gate should reject or demote a would-be skill when:
+  - `When to Use` is incident phrasing instead of reusable workflow phrasing
+  - trigger/description merely restate the capture event
+  - the draft reads like a single bug summary rather than a reusable procedure boundary
+  If the gate fails:
+  - keep or update the note
+  - do not create the skill yet
+
+- [ ] Add a review/demotion pass for low-quality generated draft skills.
+  Main files:
+  - `scripts/lib/agent-pack.mjs`
+  - docs or maintenance helpers as needed
+  Target scope:
+  - generated skills with:
+    - `status: generated`
+    - `maturity: draft`
+    - very low evidence count
+  Required behavior:
+  - re-evaluate them from note-backed semantics
+  - either rewrite into a real operational skill or keep only the note
+
+- [ ] Add focused regression proofs for this exact bug family.
+  Main files:
   - `tests/bridgeSurfaces.test.ts`
+  - `tests/agentScripts.test.ts`
+  - `tests/wrapperSurfaces.test.ts`
   Required proofs:
-  1. fresh adopted repo does not contain unrelated seeded skills
-  2. fresh auto-bootstrapped repo does not contain unrelated seeded notes
-  3. enforcement still works on a minimal adopted repo
-  4. note creation still works on a minimal adopted repo
-  5. skill creation proof loop still works on a minimal adopted repo
+  1. the WKWebView / PDF.js task may surface the SSE skill as a candidate, but must not set `matchedSkillId`
+  2. a real SSE task still matches the SSE skill authoritatively
+  3. an ambiguous same-workflow query can be resolved by the adjudicator without exposing a false authoritative match
+  4. repeated traces can be compacted into a note without unbounded raw-event growth
+  5. a one-off incident can create or patch a note without creating a low-quality skill
+  6. a new generated skill name/trigger comes from reusable note semantics, not incident-capture phrasing
+  7. skill creation happens from note-backed synthesis, not directly from raw trace scanning
 
-- [x] Update docs to match the smaller bootstrap contract.
-  Main docs:
-  - `README.md`
+- [ ] Final pass criteria:
+  1. weak workflow-bound lexical overlap no longer sets `matchedSkillId`
+  2. `candidateSkills` can still surface suggestions without being treated as authoritative
+  3. ambiguous cases use a cheap structured adjudicator only when deterministic accept/reject cannot decide
+  4. recent traces can be compacted periodically so event volume does not grow without bound
+  5. new skills are named after reusable workflows, not “capture the reusable lesson from ...” incidents
+  6. the pasted PDF.js / WKWebView event shape would stay trace-or-note only unless a real matching skill exists
+  7. true repeated reusable workflows can still create a good skill after the note stage
+
+
+## Same-Repo Session And Agent Bootstrap
+
+- [ ] Goal: make a fresh session or a different agent pick up the same repo-local Datalox pack automatically.
+  This is about the same repo and the same local durable knowledge.
+  It is not a global shared-memory project.
+
+- [ ] Scope this work to repo-local handoff only.
+  In scope:
+  - new Cursor/Codex/Claude session in the same repo
+  - another agent entering the same repo and discovering the pack automatically
+  - preserving the same repo-local skills, notes, and control artifacts
+  Out of scope:
+  - cross-repo shared memory
+  - global skills/notes ownership
+  - multi-repo sync or merge policy
+
+- [ ] Define the desired handoff contract.
+  A new session/agent in the same repo should:
+  1. discover the pack without manual re-explanation
+  2. read the same startup surfaces in the right order
+  3. use the same repo-local MCP / wrapper / hook path when available
+  4. write new notes, skills, and events back into the same repo
+
+- [ ] Audit the current bootstrap path for new sessions and new agents.
+  Main surfaces to check:
+  - `AGENTS.md`
+  - `.datalox/manifest.json`
+  - `.datalox/config.json`
+  - host adapter install state
   - `START_HERE.md`
-  - `docs/product-definition.md`
-  - `docs/skill-generation-proof-live-2026-04-23.md` if the proof setup changes
-  The docs should stop implying that every adopted repo receives the whole seed corpus.
+  - current MCP reconnect / reload path
+  Confirm what already works and what still requires manual prompting.
 
-- [x] Final pass criteria:
-  1. fresh `adopt` and `auto-bootstrap` repos no longer get unrelated skills like `github`, `ordercli`, or `review-ambiguous-viability-gate`
-  2. fresh generic repos no longer get unrelated `pdf/` and `web/` note corpora by default
-  3. enforced wrapper behavior still works
-  4. first-note bootstrap still works
-  5. the live skill-generation proof still passes on a fresh repo
+- [ ] Make same-repo handoff explicit in repo docs and setup surfaces.
+  Target:
+  - a new session or different agent should know how to use the same repo pack
+  - the repo should expose one clean “use this repo’s Datalox pack” instruction path
+  Do not blur this with global shared-memory language.
+
+- [ ] Add a concrete proof loop.
+  Required live proof:
+  1. start a fresh session or different agent in the same repo
+  2. verify it detects the same pack automatically or via one explicit repo-local instruction
+  3. verify it resolves the same skills/notes path
+  4. verify it writes back into the same repo-local knowledge surfaces
+
+- [ ] Final pass criteria:
+  1. same-repo handoff works without re-explaining the project each time
+  2. repo-local skills/notes/events remain the durable write target
+  3. the docs clearly separate repo-local handoff from global shared memory
+  4. no fake “global mode” is introduced just to make same-repo session handoff work
