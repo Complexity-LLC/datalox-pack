@@ -95,6 +95,14 @@ export interface CompileRecordedEventInput {
   minSkillOccurrences?: number;
 }
 
+export interface MaintainKnowledgeInput {
+  repoPath?: string;
+  maxEvents?: number;
+  includeCovered?: boolean;
+  minNoteOccurrences?: number;
+  minSkillOccurrences?: number;
+}
+
 export interface RecordLoopApplicationInput {
   repoPath?: string;
   notePaths: string[];
@@ -308,6 +316,9 @@ interface RecordedEventPayload {
   transcript?: string | null;
   sessionId?: string | null;
   hostKind?: string | null;
+  coveredByNotePath?: string | null;
+  coveredAt?: string | null;
+  maintenanceStatus?: string | null;
 }
 
 function normalizePath(value: string): string {
@@ -1237,6 +1248,20 @@ export async function compileRecordedEvent(input: CompileRecordedEventInput) {
       }
       : null,
   };
+}
+
+export async function maintainKnowledge(input: MaintainKnowledgeInput = {}) {
+  const repoPath = resolveRepoPath(input.repoPath);
+  const legacy = await loadLegacyPackModule();
+  return legacy.maintainKnowledge(
+    {
+      maxEvents: input.maxEvents,
+      includeCovered: input.includeCovered,
+      minNoteOccurrences: input.minNoteOccurrences,
+      minSkillOccurrences: input.minSkillOccurrences,
+    },
+    repoPath,
+  );
 }
 
 export async function lintLocalPack(input: LintPackInput = {}) {

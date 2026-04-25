@@ -92,3 +92,68 @@ Passed:
 Residual open item:
 
 - optional seed knowledge still needs an explicit separate install path if the pack keeps shipping extra example/domain bundles
+
+## Same-Repo Session And Agent Bootstrap
+
+Completed:
+
+- audited the current same-repo handoff surfaces
+- added one canonical repo-local handoff instruction
+- made the handoff machine-readable in `.datalox/manifest.json`
+- fixed the real same-repo bootstrap bug where the installed Codex shim broke after the host binary path changed
+- live-proved fresh same-repo pickup through the enforced Codex path
+
+Implemented shape:
+
+- supported enforced hosts can pick up the same repo pack automatically
+- non-automatic paths have one explicit repo-local instruction:
+  - `Use this repo's Datalox pack. Read AGENTS.md and DATALOX.md before acting.`
+- the repo-local write target stays inside the same repo
+- no global shared-memory mode was added
+
+Grounded proof:
+
+- [docs/same-repo-bootstrap-live-2026-04-24.md](/Users/yifanjin/datalox-pack/docs/same-repo-bootstrap-live-2026-04-24.md)
+
+## Periodic Trace Maintenance And Skill Synthesis
+
+Completed:
+
+- added a real bounded maintenance pass over `agent-wiki/events/`
+- grouped recent unresolved traces by `workflow + stabilityKey`
+- compacted repeated traces into operational notes
+- wrote explicit trace coverage back to the recorded event JSON
+- exposed the maintenance loop through a manual command:
+  - `datalox maintain`
+- synthesized new skills only from note-backed evidence in a later pass
+- prevented notes created in the same maintenance pass from immediately creating a skill
+- kept `unknown` wrapper-generated notes as note-only during new-skill synthesis
+- added review/demotion for low-evidence or incident-shaped generated draft skills
+- added focused tests and a fresh-agent live proof
+
+Implemented shape:
+
+- maintenance is explicit, bounded, and repo-local
+- first pass:
+  - scan recent unresolved traces
+  - compact repeated traces into notes
+  - mark those traces covered
+- later pass:
+  - scan existing note-backed evidence
+  - keep note only, patch skill, create skill, or demote generated draft skill
+- new skill synthesis requires note-backed evidence and a real workflow boundary
+
+Passed:
+
+1. recent traces in `agent-wiki/events/` can be compacted periodically instead of growing unbounded
+2. maintenance explicitly marks covered traces with durable metadata
+3. the first durable compaction boundary is `trace -> note`
+4. no skill is created in the same pass that first creates the note
+5. a later maintenance pass can synthesize a new skill only from note-backed evidence
+6. generated skill ids and names are reusable workflow names instead of incident-capture wording
+7. low-quality generated draft skills can be demoted by the same maintenance path
+8. wrapper-generated `unknown` notes stay note-only instead of creating a second unscoped skill
+
+Grounded proof:
+
+- [docs/periodic-trace-maintenance-live-2026-04-25.md](/Users/yifanjin/datalox-pack/docs/periodic-trace-maintenance-live-2026-04-25.md)

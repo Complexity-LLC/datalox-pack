@@ -998,7 +998,7 @@ Use when the pack is broken.
     expect(hostSkill).toContain(patched.note.relativePath);
     expect(hostSkill).toContain("## Workflow");
     expect(seedSkill).not.toContain(patched.note.relativePath);
-    expect(await readFile(hostPatternPath, "utf8")).toContain("Review the exception path before widening the gate");
+    expect(await readFile(hostPatternPath, "utf8")).toContain("review exception pattern before widening gate");
     expect(hostIndex).toContain(patched.note.relativePath);
     expect(hostLog).toContain("update_skill");
 
@@ -1020,6 +1020,84 @@ Use when the pack is broken.
     expect(resolvedAgain.matches[0].skillOrigin).toBe("host");
     expect(resolvedAgain.matches[0].linkedNotes.length).toBe(2);
   }, 15000);
+
+  it("runs the explicit maintenance command and returns structured compaction output", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-script-"));
+    tempDirs.push(tempDir);
+    await createPack(tempDir);
+    await mkdir(path.join(tempDir, "agent-wiki/events"), { recursive: true });
+
+    const events = [
+      {
+        version: 1,
+        id: "2026-04-25T00-00-00-000Z--bootstrap-a",
+        timestamp: "2026-04-25T00:00:00.000Z",
+        eventKind: "wrapper:codex:success",
+        eventClass: "trace",
+        sourceKind: "trace",
+        workflow: "agent_adoption",
+        task: "Document the committed Datalox bootstrap read order for future agents.",
+        summary: "future agents should start from the committed Datalox bootstrap surfaces",
+        observations: ["AGENTS.md, DATALOX.md, and .datalox/config.json are the committed bootstrap surfaces."],
+        title: "Use the committed Datalox bootstrap surfaces first",
+        signal: "AGENTS.md, DATALOX.md, and .datalox/config.json are the committed bootstrap surfaces.",
+        interpretation: "the same same-repo handoff guidance keeps being repeated in raw traces",
+        recommendedAction: "Use the committed Datalox bootstrap surfaces first.",
+        stabilityKey: "agent_adoption::document-the-committed-datalox-bootstrap-read-order-for-future-agents",
+      },
+      {
+        version: 1,
+        id: "2026-04-25T00-01-00-000Z--bootstrap-b",
+        timestamp: "2026-04-25T00:01:00.000Z",
+        eventKind: "wrapper:codex:success",
+        eventClass: "trace",
+        sourceKind: "trace",
+        workflow: "agent_adoption",
+        task: "Document the committed Datalox bootstrap read order for future agents.",
+        summary: "future agents should start from the committed Datalox bootstrap surfaces",
+        observations: ["AGENTS.md, DATALOX.md, and .datalox/config.json are the committed bootstrap surfaces."],
+        title: "Use the committed Datalox bootstrap surfaces first",
+        signal: "AGENTS.md, DATALOX.md, and .datalox/config.json are the committed bootstrap surfaces.",
+        interpretation: "the same same-repo handoff guidance keeps being repeated in raw traces",
+        recommendedAction: "Use the committed Datalox bootstrap surfaces first.",
+        stabilityKey: "agent_adoption::document-the-committed-datalox-bootstrap-read-order-for-future-agents",
+      },
+      {
+        version: 1,
+        id: "2026-04-25T00-02-00-000Z--bootstrap-c",
+        timestamp: "2026-04-25T00:02:00.000Z",
+        eventKind: "wrapper:codex:success",
+        eventClass: "trace",
+        sourceKind: "trace",
+        workflow: "agent_adoption",
+        task: "Document the committed Datalox bootstrap read order for future agents.",
+        summary: "future agents should start from the committed Datalox bootstrap surfaces",
+        observations: ["AGENTS.md, DATALOX.md, and .datalox/config.json are the committed bootstrap surfaces."],
+        title: "Use the committed Datalox bootstrap surfaces first",
+        signal: "AGENTS.md, DATALOX.md, and .datalox/config.json are the committed bootstrap surfaces.",
+        interpretation: "the same same-repo handoff guidance keeps being repeated in raw traces",
+        recommendedAction: "Use the committed Datalox bootstrap surfaces first.",
+        stabilityKey: "agent_adoption::document-the-committed-datalox-bootstrap-read-order-for-future-agents",
+      },
+    ];
+
+    await Promise.all(events.map((event) =>
+      writeFile(
+        path.join(tempDir, "agent-wiki/events", `${event.id}.json`),
+        `${JSON.stringify(event, null, 2)}\n`,
+      )
+    ));
+
+    const result = runNodeScript(tempDir, "scripts/agent-maintain.mjs", ["--json", "--max-events", "2"]);
+    expect(result.status).toBe(0);
+
+    const body = JSON.parse(result.stdout);
+    expect(body.scannedEvents).toBe(2);
+    expect(body.candidateCount).toBe(1);
+    expect(body.noteActions[0].action).toBe("create_note");
+    expect(body.coverage[0].eventPaths).toHaveLength(2);
+    expect(Array.isArray(body.skillActions)).toBe(true);
+  });
 
   it("creates a new skill when no existing skill matches the interaction", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-"));

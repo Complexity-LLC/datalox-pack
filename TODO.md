@@ -129,9 +129,16 @@ That doc now holds:
   But do not add a large new product surface unless needed; start with a small explicit split.
 
 
-## Retrieval Authority And Generated Skill Quality
+## Online Retrieval And Note Capture
 
-- [ ] Confirm the current failure mode with grounded repro.
+- [ ] Goal: keep the online loop limited to capture and immediate note-safe decisions.
+  The online loop should:
+  - detect a skill or no-match
+  - record `trace`
+  - maybe create or update a `note` when the signal is strong
+  It should not try to create a new `skill` eagerly.
+
+- [ ] Confirm the current retrieval failure mode with grounded repro.
   Proven issue:
   a workflow-bound task can still set `matchedSkillId` from a weak lexical overlap when the skill shares the workflow and happens to contain broad tokens.
   The reproduced example was:
@@ -139,6 +146,9 @@ That doc now holds:
   - weakly matched skill: `desktop-agent-workspace.capture-the-reusable-lesson-from-the-desktop-host-stream-decode-failure-fix`
   - current reasons: `workflow_match`, `primary_term_overlap`
   This is wrong because the event is about PDF.js / WKWebView compatibility, while the matched skill is about Tauri SSE stream parsing.
+  Pass criteria:
+  - the repro is recorded with the exact input task, returned candidate skill, and wrong `matchedSkillId`
+  - there is a focused test or live-proof fixture that fails before the fix and passes after it
 
 - [ ] Tighten authoritative skill matching.
   Main file:
@@ -154,6 +164,9 @@ That doc now holds:
   Weak lexical matches may still appear in `candidateSkills`, but must not set:
   - `matchedSkillId`
   - `matchedNotePaths`
+  Pass criteria:
+  - the WKWebView / PDF.js repro may still return the SSE skill as a weak candidate, but `matchedSkillId` stays `null`
+  - the same-workflow lexical-overlap case no longer becomes authoritative without `explicit_skill_match` or `field_phrase_match`
 
 - [ ] Keep lexical retrieval as candidate generation only.
   Main files:
@@ -165,8 +178,11 @@ That doc now holds:
   - wrapper/MCP/CLI outputs should clearly separate:
     - candidate suggestions
     - authoritative selected skill
+  Pass criteria:
+  - wrapper, MCP, and CLI outputs expose candidate suggestions without silently upgrading them into the authoritative selected skill
+  - weak same-workflow candidates can still be surfaced for agent inspection while the durable event shape records no false authoritative match
 
-- [ ] Add a narrow skill match adjudicator only for ambiguous cases.
+- [ ] Add a narrow skill match adjudicator only for ambiguous online cases.
   Main files:
   - `scripts/lib/agent-pack.mjs`
   - `src/adapters/shared.ts`
@@ -194,115 +210,25 @@ That doc now holds:
   - adjudicator may only choose from the provided candidate set
   - no-match is allowed
   - weak lexical matches remain suggestions if the adjudicator does not confirm them
+  Pass criteria:
+  - deterministic accept and deterministic reject paths do not call the adjudicator
+  - an actually ambiguous same-workflow query calls the adjudicator with a bounded packet and returns a structured result
+  - the adjudicator cannot select a skill outside the provided candidate set
 
-- [ ] Replace direct event-to-skill creation with a periodic maintenance loop.
+- [ ] Keep online capture note-safe.
   Main files:
   - `scripts/lib/agent-pack.mjs`
-  - wrapper / promote entry surfaces as needed
-  Goal:
-  - the online loop should focus on capture
-  - the maintenance loop should focus on organization, compaction, and synthesis
-  Target model:
-  1. online loop records `trace`
-  2. strong evidence may still create or update a `note`
-  3. a periodic maintenance loop scans bounded recent traces
-  4. the maintenance loop compacts traces into note-backed evidence
-  5. only then does it decide whether to patch an existing skill or create a new one
-
-- [ ] Add a bounded periodic trigger for trace maintenance.
-  Main files:
-  - `scripts/lib/agent-pack.mjs`
-  - CLI / wrapper / MCP entrypoints as needed
-  Acceptable triggers:
-  - after `N` new traces
-  - on session end
-  - on explicit `promote`
-  - on `lint`
-  Do not:
-  - run a whole-repo full-history scan on every turn
-  - introduce a hidden global background process
-
-- [ ] Scan and compact recent traces before skill synthesis.
-  Main file:
-  - `scripts/lib/agent-pack.mjs`
-  Target behavior:
-  - group recent unresolved traces by stable reusable signal
-  - summarize repeated traces so raw event volume does not blow up
-  - create a new operational note or update an existing note from the compacted evidence
-  - mark which traces are now covered by that note
-  Hard rule:
-  - do not create a skill directly from raw trace scanning alone
-  - the durable bridge must be `trace -> note -> skill`
-
-- [ ] Synthesize skills from note-backed evidence, not raw event phrasing.
-  Main file:
-  - `scripts/lib/agent-pack.mjs`
-  Target flow:
-  1. identify notes with enough accumulated evidence
-  2. gather the linked/recent traces that justify that note
-  3. compare the note against candidate existing skills
-  4. decide:
-     - keep note only
-     - patch existing skill
-     - create new skill
-     - demote low-quality generated skill
-  Use the agent here as the semantic boundary, with a bounded packet:
-  - compact note summary
-  - compact trace summary
-  - small candidate skill set
-
-- [ ] Stop treating incident-capture phrasing as a good skill identity.
-  Main file:
-  - `scripts/lib/agent-pack.mjs`
-  Current problem:
-  generated skills can keep names/triggers like:
-  - `capture-the-reusable-lesson-from-the-...-fix`
-  - `Capture the reusable lesson from ...`
-  That describes the learning incident, not the reusable workflow.
+  - wrapper / hook / MCP entry surfaces as needed
   Target:
-  - new skill `name`, `displayName`, `trigger`, and `description` must describe the reusable operational boundary
-  - event wording must not be copied through unchanged into skill identity fields
+  - a one-off incident may remain `trace`
+  - a strong incident may create or update a `note`
+  - the online loop must not create a `skill` directly from raw trace scanning
+  Pass criteria:
+  - a one-off weak incident stays `trace`
+  - a one-off strong incident may create or update a `note`
+  - no online-only run can create a new `skill` without going through the later note-backed synthesis path
 
-- [ ] Compile new skills from note semantics.
-  Main file:
-  - `scripts/lib/agent-pack.mjs`
-  The draft should be derived from:
-  - note `When to Use`
-  - `Signal`
-  - `Interpretation`
-  - `Recommended Action`
-  - workflow
-  The draft should sound like:
-  - `use-legacy-pdfjs-build-for-wkwebview`
-  not:
-  - `capture-the-reusable-lesson-from-the-...-fix`
-
-- [ ] Add a cheap quality gate before writing a new skill.
-  Main files:
-  - `scripts/lib/agent-pack.mjs`
-  - tests covering skill synthesis
-  The gate should reject or demote a would-be skill when:
-  - `When to Use` is incident phrasing instead of reusable workflow phrasing
-  - trigger/description merely restate the capture event
-  - the draft reads like a single bug summary rather than a reusable procedure boundary
-  If the gate fails:
-  - keep or update the note
-  - do not create the skill yet
-
-- [ ] Add a review/demotion pass for low-quality generated draft skills.
-  Main files:
-  - `scripts/lib/agent-pack.mjs`
-  - docs or maintenance helpers as needed
-  Target scope:
-  - generated skills with:
-    - `status: generated`
-    - `maturity: draft`
-    - very low evidence count
-  Required behavior:
-  - re-evaluate them from note-backed semantics
-  - either rewrite into a real operational skill or keep only the note
-
-- [ ] Add focused regression proofs for this exact bug family.
+- [ ] Add focused regression proofs for the online boundary.
   Main files:
   - `tests/bridgeSurfaces.test.ts`
   - `tests/agentScripts.test.ts`
@@ -311,69 +237,29 @@ That doc now holds:
   1. the WKWebView / PDF.js task may surface the SSE skill as a candidate, but must not set `matchedSkillId`
   2. a real SSE task still matches the SSE skill authoritatively
   3. an ambiguous same-workflow query can be resolved by the adjudicator without exposing a false authoritative match
-  4. repeated traces can be compacted into a note without unbounded raw-event growth
-  5. a one-off incident can create or patch a note without creating a low-quality skill
-  6. a new generated skill name/trigger comes from reusable note semantics, not incident-capture phrasing
-  7. skill creation happens from note-backed synthesis, not directly from raw trace scanning
+  4. a one-off incident can create or patch a note without creating a low-quality skill
+  Pass criteria:
+  - the focused suite covers all four proofs above
+  - the suite fails if lexical overlap becomes authoritative again or if the online loop creates a skill directly
 
 - [ ] Final pass criteria:
   1. weak workflow-bound lexical overlap no longer sets `matchedSkillId`
   2. `candidateSkills` can still surface suggestions without being treated as authoritative
   3. ambiguous cases use a cheap structured adjudicator only when deterministic accept/reject cannot decide
-  4. recent traces can be compacted periodically so event volume does not grow without bound
-  5. new skills are named after reusable workflows, not “capture the reusable lesson from ...” incidents
-  6. the pasted PDF.js / WKWebView event shape would stay trace-or-note only unless a real matching skill exists
-  7. true repeated reusable workflows can still create a good skill after the note stage
+  4. the pasted PDF.js / WKWebView event shape would stay trace-or-note only unless a real matching skill exists
+
+
+## Periodic Trace Maintenance And Skill Synthesis
+
+- Completed maintenance-loop work was moved to:
+  - [docs/completed-todo-items.md](/Users/yifanjin/datalox-pack/docs/completed-todo-items.md)
+  Grounded live proof:
+  - [docs/periodic-trace-maintenance-live-2026-04-25.md](/Users/yifanjin/datalox-pack/docs/periodic-trace-maintenance-live-2026-04-25.md)
 
 
 ## Same-Repo Session And Agent Bootstrap
 
-- [ ] Goal: make a fresh session or a different agent pick up the same repo-local Datalox pack automatically.
-  This is about the same repo and the same local durable knowledge.
-  It is not a global shared-memory project.
-
-- [ ] Scope this work to repo-local handoff only.
-  In scope:
-  - new Cursor/Codex/Claude session in the same repo
-  - another agent entering the same repo and discovering the pack automatically
-  - preserving the same repo-local skills, notes, and control artifacts
-  Out of scope:
-  - cross-repo shared memory
-  - global skills/notes ownership
-  - multi-repo sync or merge policy
-
-- [ ] Define the desired handoff contract.
-  A new session/agent in the same repo should:
-  1. discover the pack without manual re-explanation
-  2. read the same startup surfaces in the right order
-  3. use the same repo-local MCP / wrapper / hook path when available
-  4. write new notes, skills, and events back into the same repo
-
-- [ ] Audit the current bootstrap path for new sessions and new agents.
-  Main surfaces to check:
-  - `AGENTS.md`
-  - `.datalox/manifest.json`
-  - `.datalox/config.json`
-  - host adapter install state
-  - `START_HERE.md`
-  - current MCP reconnect / reload path
-  Confirm what already works and what still requires manual prompting.
-
-- [ ] Make same-repo handoff explicit in repo docs and setup surfaces.
-  Target:
-  - a new session or different agent should know how to use the same repo pack
-  - the repo should expose one clean “use this repo’s Datalox pack” instruction path
-  Do not blur this with global shared-memory language.
-
-- [ ] Add a concrete proof loop.
-  Required live proof:
-  1. start a fresh session or different agent in the same repo
-  2. verify it detects the same pack automatically or via one explicit repo-local instruction
-  3. verify it resolves the same skills/notes path
-  4. verify it writes back into the same repo-local knowledge surfaces
-
-- [ ] Final pass criteria:
-  1. same-repo handoff works without re-explaining the project each time
-  2. repo-local skills/notes/events remain the durable write target
-  3. the docs clearly separate repo-local handoff from global shared memory
-  4. no fake “global mode” is introduced just to make same-repo session handoff work
+- Completed same-repo bootstrap work was moved to:
+  - [docs/completed-todo-items.md](/Users/yifanjin/datalox-pack/docs/completed-todo-items.md)
+  Grounded live proof:
+  - [docs/same-repo-bootstrap-live-2026-04-24.md](/Users/yifanjin/datalox-pack/docs/same-repo-bootstrap-live-2026-04-24.md)

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { compileRecordedEvent, patchKnowledge, promoteGap, recordTurnResult } from "../src/core/packCore.js";
+import { compileRecordedEvent, maintainKnowledge, patchKnowledge, promoteGap, recordTurnResult } from "../src/core/packCore.js";
 
 const repoRoot = process.cwd();
 const builtCliPath = path.join(repoRoot, "dist", "src", "cli", "main.js");
@@ -1646,6 +1646,247 @@ Use when handling repo readme helper tasks.
     expect(noteFile).not.toContain("Add a concrete observed case here");
     expect(noteFile).not.toContain("Add a concrete source, reviewer note, or case trace here");
     expect(noteFile).not.toContain("Add a wiki page path such as agent-wiki/notes/example.md");
+  });
+
+  it("runs bounded maintenance over recent traces, compacts them into a note, marks coverage, and only synthesizes a skill on the next pass", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-loop-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    for (let index = 0; index < 4; index += 1) {
+      await recordTurnResult({
+        repoPath: tempDir,
+        task: "Document the committed Datalox bootstrap read order for future agents.",
+        workflow: "agent_adoption",
+        summary: "future agents should start from the committed Datalox bootstrap surfaces",
+        observations: ["AGENTS.md, DATALOX.md, and .datalox/config.json are the committed bootstrap surfaces."],
+        interpretation: "the same same-repo handoff guidance keeps being repeated in raw traces",
+        recommendedAction: "Use the committed Datalox bootstrap surfaces first.",
+        eventKind: "wrapper:codex:success",
+        eventClass: "trace",
+      });
+    }
+
+    const firstPass = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 3,
+    });
+
+    expect(firstPass.scannedEvents).toBe(3);
+    expect(firstPass.candidateCount).toBe(1);
+    expect(firstPass.candidates[0].workflow).toBe("agent_adoption");
+    expect(firstPass.candidates[0].eventCount).toBe(3);
+    expect(firstPass.noteActions).toHaveLength(1);
+    expect(firstPass.noteActions[0].action).toBe("create_note");
+    expect(firstPass.skillActions).toHaveLength(0);
+    expect(firstPass.coverage).toHaveLength(1);
+    expect(firstPass.coverage[0].eventPaths).toHaveLength(3);
+
+    const notePath = firstPass.noteActions[0].notePath;
+    const noteFile = await readFile(path.join(tempDir, notePath), "utf8");
+    expect(noteFile).toContain("Use the committed Datalox bootstrap surfaces first");
+    expect(noteFile).toContain("## Evidence");
+
+    for (const eventPath of firstPass.coverage[0].eventPaths) {
+      const eventPayload = JSON.parse(await readFile(path.join(tempDir, eventPath), "utf8"));
+      expect(eventPayload.maintenanceStatus).toBe("covered");
+      expect(eventPayload.coveredByNotePath).toBe(notePath);
+      expect(typeof eventPayload.coveredAt).toBe("string");
+    }
+
+    const secondPass = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 3,
+    });
+
+    expect(secondPass.scannedEvents).toBe(1);
+    expect(secondPass.noteActions[0].action).toBe("noop");
+    expect(secondPass.noteActions[0].reason).toBe("insufficient_repeated_trace_evidence");
+    expect(secondPass.skillActions).toHaveLength(1);
+    expect(secondPass.skillActions[0].action).toBe("create_skill");
+    expect(secondPass.skillActions[0].reason).toBe("note_backed_skill_synthesis");
+
+    const skillFile = await readFile(path.join(tempDir, secondPass.skillActions[0].skillPath), "utf8");
+    expect(skillFile).toContain("name: use-the-committed-datalox-bootstrap-surfaces-first");
+    expect(skillFile).toContain("display_name: Use the committed Datalox bootstrap surfaces first");
+    expect(skillFile).not.toContain("capture-the-reusable-lesson");
+
+    const relinkedNote = await readFile(path.join(tempDir, secondPass.skillActions[0].notePath), "utf8");
+    expect(relinkedNote).toContain(`skill: ${secondPass.skillActions[0].skillId}`);
+  });
+
+  it("prefers clean workflow-scoped notes over wrapper-polluted unknown notes during maintenance synthesis", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-quality-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    const cleanSummary = "Future agents should read the committed Datalox bootstrap surfaces before acting.";
+    const cleanAction = "Read the committed Datalox bootstrap surfaces before acting.";
+    const wrappedSignal = "# Wrapped Prompt # Datalox Loop Guidance Selection basis: repo_context Workflow: unknown Matched skill: none # Datalox Reusable-Gap Protocol";
+
+    for (let index = 0; index < 2; index += 1) {
+      await recordTurnResult({
+        repoPath: tempDir,
+        task: "state the committed Datalox bootstrap read order for future agents",
+        workflow: "agent_adoption",
+        title: cleanSummary,
+        summary: cleanSummary,
+        signal: cleanSummary,
+        observations: [cleanSummary],
+        recommendedAction: cleanAction,
+        eventKind: "live:codex:success",
+        eventClass: "trace",
+      });
+      await recordTurnResult({
+        repoPath: tempDir,
+        task: "In one sentence, state the committed Datalox bootstrap read order for future agents in this repo.",
+        workflow: "unknown",
+        title: cleanSummary,
+        summary: cleanSummary,
+        signal: wrappedSignal,
+        observations: [],
+        recommendedAction: cleanAction,
+        eventKind: "wrapper:codex:success",
+        eventClass: "trace",
+      });
+    }
+
+    const firstPass = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 10,
+      minSkillOccurrences: 2,
+    });
+
+    expect(firstPass.noteActions.filter((action: { action: string }) => action.action !== "noop")).toHaveLength(2);
+
+    const unknownNotePath = firstPass.noteActions.find((action: { workflow: string }) => action.workflow === "unknown")?.notePath;
+    const agentAdoptionNotePath = firstPass.noteActions.find((action: { workflow: string }) => action.workflow === "agent_adoption")?.notePath;
+    expect(typeof unknownNotePath).toBe("string");
+    expect(typeof agentAdoptionNotePath).toBe("string");
+
+    const unknownNote = await readFile(path.join(tempDir, unknownNotePath), "utf8");
+    expect(unknownNote).not.toContain("# Wrapped Prompt");
+    expect(unknownNote).not.toContain("# Datalox Loop Guidance");
+
+    const secondPass = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 10,
+      minSkillOccurrences: 2,
+    });
+
+    const createdSkill = secondPass.skillActions.find((action: { action: string }) => action.action === "create_skill");
+    expect(createdSkill).toBeDefined();
+    if (!createdSkill) {
+      throw new Error("expected maintenance to create a skill");
+    }
+    expect(createdSkill.skillId.startsWith("agent_adoption.")).toBe(true);
+    expect(createdSkill.notePath).toBe(agentAdoptionNotePath);
+
+    const keptUnknown = secondPass.skillActions.find((action: { action: string; notePath?: string | null }) =>
+      action.action === "keep_note_only" && action.notePath === unknownNotePath
+    );
+    expect(keptUnknown?.reason).toBe("workflow_unknown_for_skill_synthesis");
+
+    const skillFile = await readFile(path.join(tempDir, createdSkill.skillPath), "utf8");
+    expect(skillFile).not.toContain("# Wrapped Prompt");
+    expect(skillFile).not.toContain("Datalox Loop Guidance");
+    expect(skillFile).toContain("workflow: agent_adoption");
+    expect(skillFile).toContain("display_name: Read the committed Datalox bootstrap surfaces before acting");
+  });
+
+  it("demotes low-evidence generated draft skills during maintenance", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-demote-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    await recordTurnResult({
+      repoPath: tempDir,
+      task: "Investigate one desktop host fix",
+      workflow: "desktop_agent_workspace",
+      summary: "one-off desktop host fix was captured",
+      observations: ["single trace only"],
+      eventKind: "wrapper:codex:success",
+      eventClass: "trace",
+    });
+
+    const eventFiles = await readdir(path.join(tempDir, "agent-wiki", "events"));
+    expect(eventFiles).toHaveLength(1);
+    const relativeEventPath = `agent-wiki/events/${eventFiles[0]}`;
+
+    await writeFile(
+      path.join(tempDir, "agent-wiki", "notes", "desktop-host-fix.md"),
+      `---
+type: note
+id: desktop-agent-workspace-desktop-host-fix
+title: Desktop host fix
+kind: workflow_note
+workflow: desktop_agent_workspace
+sources:
+  - ${relativeEventPath}
+status: active
+updated: 2026-04-25T00:00:00.000Z
+---
+
+# Desktop host fix
+
+## When to Use
+
+When the same desktop host fix returns.
+
+## Signal
+
+Single desktop host trace was recorded.
+
+## Interpretation
+
+This note is still too thin to justify a skill.
+
+## Action
+
+Wait for more repeated evidence before creating a workflow.
+`,
+      "utf8",
+    );
+    await mkdir(path.join(tempDir, "skills", "capture-the-reusable-lesson-from-the-desktop-fix"), { recursive: true });
+    await writeFile(
+      path.join(tempDir, "skills", "capture-the-reusable-lesson-from-the-desktop-fix", "SKILL.md"),
+      `---
+name: capture-the-reusable-lesson-from-the-desktop-fix
+description: Capture the reusable lesson from the desktop fix.
+metadata:
+  datalox:
+    id: desktop-agent-workspace.capture-the-reusable-lesson-from-the-desktop-fix
+    workflow: desktop_agent_workspace
+    trigger: Capture the reusable lesson from the desktop fix.
+    note_paths:
+      - agent-wiki/notes/desktop-host-fix.md
+    status: generated
+    maturity: draft
+    evidence_count: 1
+---
+
+# Capture the reusable lesson from the desktop fix
+
+Capture the reusable lesson from the desktop fix.
+`,
+      "utf8",
+    );
+
+    const result = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 10,
+    });
+
+    expect(result.skillActions.some((action: { action: string; reason: string }) =>
+      action.action === "demote_skill" && action.reason === "insufficient_note_backed_evidence"
+    )).toBe(true);
+
+    const skillFile = await readFile(
+      path.join(tempDir, "skills", "capture-the-reusable-lesson-from-the-desktop-fix", "SKILL.md"),
+      "utf8",
+    );
+    expect(skillFile).toContain("status: archived");
+    expect(skillFile).toContain("maturity: draft");
   });
 
   it("requires provenance for durable writes unless an explicit override is provided", async () => {

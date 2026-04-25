@@ -1060,6 +1060,149 @@ export async function countPackFiles(config, cwd = process.cwd(), sourcePath) {
   };
 }
 
+function isEventSourceRef(value) {
+  return typeof value === "string"
+    && value.startsWith("agent-wiki/events/")
+    && value.endsWith(".json");
+}
+
+function normalizeMaintenanceStatus(status) {
+  if (typeof status !== "string") {
+    return null;
+  }
+  const normalized = status.trim().toLowerCase();
+  return normalized || null;
+}
+
+function isCoveredRecordedEvent(payload) {
+  return normalizeMaintenanceStatus(payload?.maintenanceStatus) === "covered"
+    && typeof payload?.coveredByNotePath === "string"
+    && payload.coveredByNotePath.trim().length > 0;
+}
+
+function selectPreferredText(values, maxLength = 140) {
+  const normalized = values
+    .filter((value) => typeof value === "string")
+    .map((value) => truncateLine(value, maxLength))
+    .filter(Boolean);
+
+  if (normalized.length === 0) {
+    return null;
+  }
+
+  const counts = new Map();
+  for (const value of normalized) {
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+
+  return normalized
+    .sort((left, right) => {
+      const frequencyDelta = (counts.get(right) ?? 0) - (counts.get(left) ?? 0);
+      if (frequencyDelta !== 0) {
+        return frequencyDelta;
+      }
+      const lengthDelta = left.length - right.length;
+      if (lengthDelta !== 0) {
+        return lengthDelta;
+      }
+      return left.localeCompare(right);
+    })[0];
+}
+
+function buildMaintenanceCandidate(entries) {
+  const sorted = [...entries].sort((left, right) => parseTimestamp(right.value?.timestamp) - parseTimestamp(left.value?.timestamp));
+  const payloads = sorted.map((entry) => entry.value ?? {});
+  const latestPayload = payloads[0] ?? {};
+  return {
+    workflow: latestPayload.workflow ?? UNKNOWN_WORKFLOW,
+    stabilityKey: extractStabilityKeyFromPayload(latestPayload),
+    eventPaths: sorted.map((entry) => entry.relativePath),
+    eventCount: sorted.length,
+    latestTimestamp: latestPayload.timestamp ?? null,
+    eventSummaries: unique(payloads.map((payload) =>
+      firstNonEmpty([payload.summary, payload.signal, payload.title])
+    ).filter(Boolean)).slice(0, 3),
+    matchedNotePaths: unique(payloads.flatMap((payload) => Array.isArray(payload.matchedNotePaths) ? payload.matchedNotePaths : [])),
+    matchedSkillIds: unique(payloads.flatMap((payload) =>
+      [payload.matchedSkillId, payload.explicitSkillId].filter(Boolean)
+    )),
+    covered: sorted.every((entry) => isCoveredRecordedEvent(entry.value)),
+    entries: sorted,
+    latestPayload,
+  };
+}
+
+async function listParsedOperationalNotes(config, cwd, sourcePath, includeContent = false) {
+  const wikiEntries = await listWikiEntries(config, cwd, sourcePath);
+  const noteEntries = wikiEntries.filter((entry) => entry.pageType === "note");
+  const parsed = await Promise.all(
+    noteEntries.map(async (entry) => ({
+      filePath: entry.filePath,
+      relativePath: entry.relativePath,
+      origin: entry.origin,
+      note: parseNoteDoc(entry.relativePath, await readFile(entry.filePath, "utf8"), includeContent),
+    })),
+  );
+
+  return parsed.filter((entry) => !["pdf", "web"].includes(String(entry.note.kind ?? "").toLowerCase()));
+}
+
+async function loadMaintenancePlannerInput(
+  config,
+  cwd = process.cwd(),
+  sourcePath,
+  {
+    maxEvents = 50,
+    includeCovered = false,
+  } = {},
+) {
+  const [recordedEvents, noteEntries, skillEntries] = await Promise.all([
+    listRecordedEvents(config, cwd, sourcePath),
+    listParsedOperationalNotes(config, cwd, sourcePath, false),
+    listLocalSkills(config, cwd, sourcePath),
+  ]);
+
+  const selectedEvents = [];
+  let skippedCoveredEvents = 0;
+
+  for (const entry of recordedEvents) {
+    if (entry.value?.eventClass !== "trace") {
+      continue;
+    }
+    if (!includeCovered && isCoveredRecordedEvent(entry.value)) {
+      skippedCoveredEvents += 1;
+      continue;
+    }
+    selectedEvents.push(entry);
+    if (selectedEvents.length >= maxEvents) {
+      break;
+    }
+  }
+
+  const grouped = new Map();
+  for (const entry of selectedEvents) {
+    const key = [
+      entry.value?.workflow ?? UNKNOWN_WORKFLOW,
+      extractStabilityKeyFromPayload(entry.value),
+    ].join("::");
+    const existing = grouped.get(key) ?? [];
+    existing.push(entry);
+    grouped.set(key, existing);
+  }
+
+  const candidates = Array.from(grouped.values())
+    .map((entries) => buildMaintenanceCandidate(entries))
+    .sort((left, right) => parseTimestamp(right.latestTimestamp) - parseTimestamp(left.latestTimestamp));
+
+  return {
+    selectedEvents,
+    skippedCoveredEvents,
+    candidates,
+    noteEntries,
+    skillEntries,
+  };
+}
+
 function formatTimestamp(value) {
   return value ?? new Date().toISOString();
 }
@@ -1605,6 +1748,19 @@ function buildSkillQuerySections(skill) {
   };
 }
 
+function normalizeSkillStatus(status) {
+  if (typeof status !== "string") {
+    return "generated";
+  }
+  return status.trim().toLowerCase() || "generated";
+}
+
+function isLocalSkillEligible(skill) {
+  return !["archived", "inactive", "disabled", "deprecated", "demoted", "superseded"].includes(
+    normalizeSkillStatus(skill?.status),
+  );
+}
+
 function collectFieldPhraseMatches(taskText, fields) {
   if (!taskText) {
     return [];
@@ -1728,6 +1884,10 @@ function collectRepoHintMatches(skill, repoContext) {
 }
 
 function evaluateSkillCandidate(skill, query, repoContext) {
+  if (!isLocalSkillEligible(skill)) {
+    return null;
+  }
+
   const explicitSkillMatch = Boolean(
     query.skill && (skill.id === query.skill || skill.name === query.skill),
   );
@@ -2772,23 +2932,31 @@ export async function writeNoteDoc(
     ? (identityMatch?.note ?? parseNoteDoc(normalizePath(path.relative(hostRoot, filePath)), await readFile(filePath, "utf8"), false))
     : null;
   const existingUsage = existingNote?.usage ?? null;
-  const titleText = (existingNote?.title ?? title).trim();
-  const signalText = (existingNote?.signal || signal).trim();
+  const titleText = firstNonEmpty([
+    normalizeMaintenanceTextCandidate(title, 140),
+    normalizeMaintenanceTextCandidate(existingNote?.title, 140),
+    String(existingNote?.title ?? title ?? "").trim(),
+  ]) ?? String(existingNote?.title ?? title ?? "").trim();
+  const signalText = firstNonEmpty([
+    normalizeMaintenanceTextCandidate(signal, 180),
+    normalizeMaintenanceTextCandidate(existingNote?.signal, 180),
+    titleText,
+  ]) ?? titleText;
   const interpretationText = firstNonEmpty([
-    existingNote?.interpretation,
-    interpretation,
+    normalizeMaintenanceTextCandidate(interpretation, 180),
+    normalizeMaintenanceTextCandidate(existingNote?.interpretation, 180),
     summary ? `This ${workflow} loop keeps converging on ${shortenSentence(summary, 100)}.` : null,
     `This note captures a repeated ${workflow} decision around ${signalText.toLowerCase()}.`,
   ])?.trim() ?? "";
   const action = firstNonEmpty([
-    existingNote?.action,
-    recommendedAction,
+    !isGenericMaintenanceAction(recommendedAction) ? normalizeMaintenanceTextCandidate(recommendedAction, 180) : null,
+    !isGenericMaintenanceAction(existingNote?.action) ? normalizeMaintenanceTextCandidate(existingNote?.action, 180) : null,
     task ? `Check this note before repeating ${task}.` : null,
     step ? `Check this note before repeating ${step}.` : null,
     `Check this note before repeating the same ${workflow} loop.`,
   ])?.trim() ?? "";
   const whenToUseText = buildWhenToUseText({
-    existingWhenToUse: existingNote?.whenToUse,
+    existingWhenToUse: containsMaintenanceProtocolNoise(existingNote?.whenToUse) ? null : existingNote?.whenToUse,
     signal: signalText,
     summary,
     title: titleText,
@@ -2862,6 +3030,7 @@ export async function writeNoteDoc(
   return {
     filePath,
     relativePath,
+    operation,
     payload: {
       version: 1,
       id: stableId,
@@ -2975,6 +3144,658 @@ export async function writeSkill(
     payload,
     operation,
     artifacts,
+  };
+}
+
+function isGenericMaintenanceAction(value) {
+  return typeof value === "string"
+    && /^(check|reuse) this note\b/i.test(value.trim());
+}
+
+const MAINTENANCE_PROTOCOL_MARKERS = [
+  "# wrapped prompt",
+  "# datalox loop guidance",
+  "# datalox reusable-gap protocol",
+  "# original prompt",
+  "selection basis:",
+  "matched skill:",
+  "datalox_summary:",
+  "datalox_title:",
+  "datalox_signal:",
+  "datalox_interpretation:",
+  "datalox_action:",
+  "datalox_decision:",
+  "datalox_skill:",
+];
+
+function containsMaintenanceProtocolNoise(value) {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const normalized = value.replace(/\s+/g, " ").trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return MAINTENANCE_PROTOCOL_MARKERS.some((marker) => normalized.includes(marker));
+}
+
+function normalizeMaintenanceTextCandidate(value, maxLength = 160) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized || containsMaintenanceProtocolNoise(normalized)) {
+    return null;
+  }
+  return truncateLine(normalized, maxLength);
+}
+
+function normalizeReusableBoundaryText(value, maxLength = 120) {
+  const normalized = normalizeMaintenanceTextCandidate(value, maxLength + 40);
+  if (typeof normalized !== "string") {
+    return null;
+  }
+  const trimmed = normalized
+    .replace(/^use this note when\s+/i, "")
+    .replace(/^when\s+/i, "")
+    .replace(/^use when\s+/i, "")
+    .replace(/\s+/g, " ")
+    .replace(/[.]+$/, "")
+    .trim();
+  if (!trimmed) {
+    return null;
+  }
+  return shortenSentence(`${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`, maxLength);
+}
+
+function buildMaintenanceNoteSeed(candidate, existingNote = null) {
+  const payloads = candidate.entries.map((entry) => entry.value ?? {});
+  const cleanedRecommendedActions = payloads
+    .map((payload) => normalizeMaintenanceTextCandidate(payload.recommendedAction, 160))
+    .filter((value) => value && !isGenericMaintenanceAction(value));
+  const cleanedTitles = payloads
+    .map((payload) => normalizeMaintenanceTextCandidate(payload.title, 100))
+    .filter(Boolean);
+  const cleanedSignals = payloads
+    .map((payload) => normalizeMaintenanceTextCandidate(payload.signal, 140))
+    .filter(Boolean);
+  const cleanedSummaries = payloads
+    .map((payload) => normalizeMaintenanceTextCandidate(payload.summary, 160))
+    .filter(Boolean);
+  const cleanedTasks = payloads
+    .map((payload) => normalizeMaintenanceTextCandidate(payload.task, 100))
+    .filter(Boolean);
+  const cleanedSteps = payloads
+    .map((payload) => normalizeMaintenanceTextCandidate(payload.step, 120))
+    .filter(Boolean);
+  const repeatedObservations = unique(
+    payloads
+      .flatMap((payload) => Array.isArray(payload.observations) ? payload.observations : [])
+      .map((value) => normalizeMaintenanceTextCandidate(value, 160))
+      .filter(Boolean),
+  ).slice(0, 3);
+  const preferredTitle = firstNonEmpty([
+    selectPreferredText(cleanedRecommendedActions, 100),
+    selectPreferredText(cleanedTitles, 100),
+    selectPreferredText(cleanedSummaries, 100),
+    selectPreferredText(cleanedSignals, 100),
+    selectPreferredText(cleanedTasks, 100),
+    normalizeMaintenanceTextCandidate(existingNote?.title, 100),
+    `${candidate.workflow} repeated trace pattern`,
+  ]) ?? `${candidate.workflow} repeated trace pattern`;
+  const preferredSignal = firstNonEmpty([
+    selectPreferredText(cleanedSummaries, 140),
+    selectPreferredText(cleanedTitles, 140),
+    selectPreferredText(cleanedSignals, 140),
+    preferredTitle,
+  ]) ?? preferredTitle;
+  const preferredInterpretation = firstNonEmpty([
+    selectPreferredText(
+      payloads
+        .map((payload) => normalizeMaintenanceTextCandidate(payload.interpretation, 160))
+        .filter(Boolean),
+      160,
+    ),
+    candidate.eventCount > 1
+      ? `This ${candidate.workflow} gap repeated across ${candidate.eventCount} grounded traces.`
+      : null,
+    normalizeMaintenanceTextCandidate(existingNote?.interpretation, 160),
+  ]) ?? `This ${candidate.workflow} trace cluster exposed a reusable local pattern.`;
+  const preferredAction = firstNonEmpty([
+    selectPreferredText(cleanedRecommendedActions, 160),
+    selectPreferredText(cleanedSummaries, 160),
+    normalizeMaintenanceTextCandidate(existingNote?.action, 160),
+    `Check this note before repeating the same ${candidate.workflow} loop.`,
+  ]) ?? `Check this note before repeating the same ${candidate.workflow} loop.`;
+  const effectiveSkillId = candidate.matchedSkillIds.length === 1
+    ? candidate.matchedSkillIds[0]
+    : existingNote?.skillId ?? null;
+
+  return {
+    id: existingNote?.id ?? buildNoteIdentityFromStabilityKey(candidate.stabilityKey) ?? buildNoteIdentity({
+      workflow: candidate.workflow,
+      skillId: effectiveSkillId,
+      title: preferredTitle,
+      signal: preferredSignal,
+      summary: selectPreferredText(cleanedSummaries, 160),
+      task: selectPreferredText(cleanedTasks, 160),
+      step: selectPreferredText(cleanedSteps, 120),
+    }),
+    title: preferredTitle,
+    workflow: candidate.workflow,
+    signal: preferredSignal,
+    interpretation: preferredInterpretation,
+    recommendedAction: preferredAction,
+    summary: selectPreferredText(cleanedSummaries, 180),
+    task: selectPreferredText(cleanedTasks, 180),
+    step: selectPreferredText(cleanedSteps, 120),
+    skillId: effectiveSkillId,
+    related: unique([
+      ...(candidate.matchedNotePaths ?? []),
+      ...(existingNote?.related ?? []),
+    ]),
+    sources: candidate.eventPaths,
+    examples: unique([
+      ...(candidate.eventSummaries ?? [])
+        .map((value) => normalizeMaintenanceTextCandidate(value, 180))
+        .filter(Boolean),
+      ...(existingNote?.examples ?? []),
+    ]).slice(0, 2),
+    evidence: unique([
+      ...candidate.eventPaths,
+      ...repeatedObservations,
+      ...(existingNote?.evidenceLines ?? []),
+    ]).slice(0, 4),
+    tags: unique([
+      candidate.workflow,
+      "maintenance",
+      ...payloads.flatMap((payload) => Array.isArray(payload.tags) ? payload.tags : []),
+      ...(existingNote?.tags ?? []),
+    ]),
+    kind: existingNote?.kind ?? "workflow_note",
+  };
+}
+
+async function patchRecordedEventFiles(entries, patch) {
+  const updated = [];
+  for (const entry of entries) {
+    const current = await readJson(entry.filePath);
+    const next = {
+      ...current,
+      ...patch,
+    };
+    await writeFile(entry.filePath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    updated.push({
+      filePath: entry.filePath,
+      relativePath: entry.relativePath,
+      payload: next,
+    });
+  }
+  return updated;
+}
+
+function countNoteBackedEventSources(note) {
+  return unique([
+    ...(note.sources ?? []).filter(isEventSourceRef),
+    ...(note.evidenceLines ?? []).filter(isEventSourceRef),
+  ]).length;
+}
+
+function buildSkillDraftFromNote(note, evidenceCount) {
+  const displayName = firstNonEmpty([
+    normalizeReusableBoundaryText(
+      isGenericMaintenanceAction(note.action) ? null : normalizeMaintenanceTextCandidate(note.action, 160),
+      96,
+    ),
+    normalizeReusableBoundaryText(normalizeMaintenanceTextCandidate(note.title, 120), 96),
+    normalizeReusableBoundaryText(normalizeMaintenanceTextCandidate(note.signal, 120), 96),
+  ]);
+  if (!displayName) {
+    return null;
+  }
+
+  const trigger = firstNonEmpty([
+    normalizeMaintenanceTextCandidate(note.whenToUse, 180),
+    normalizeMaintenanceTextCandidate(note.signal, 180),
+    normalizeMaintenanceTextCandidate(note.title, 120),
+    displayName,
+  ]);
+  const description = firstNonEmpty([
+    normalizeMaintenanceTextCandidate(note.interpretation, 180),
+    normalizeMaintenanceTextCandidate(note.action, 180),
+    normalizeMaintenanceTextCandidate(note.summary, 180),
+  ]);
+  if (!trigger || !description) {
+    return null;
+  }
+
+  const stableName = slugify(displayName);
+  return {
+    id: `${note.workflow ?? UNKNOWN_WORKFLOW}.${stableName}`,
+    name: stableName,
+    displayName,
+    workflow: note.workflow ?? UNKNOWN_WORKFLOW,
+    trigger,
+    description,
+    notePaths: [note.path],
+    tags: unique([...(note.tags ?? []), note.workflow ?? UNKNOWN_WORKFLOW, "generated"]),
+    status: "generated",
+    maturity: evidenceCount >= 4 ? "stable" : "draft",
+    evidenceCount,
+    lastUsedAt: new Date().toISOString(),
+  };
+}
+
+function skillIdentityLooksIncidentShaped(skill) {
+  const haystack = [
+    skill?.name,
+    skill?.displayName,
+    skill?.trigger,
+    skill?.description,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return containsMaintenanceProtocolNoise(haystack)
+    || haystack.includes("capture the reusable lesson")
+    || haystack.includes("lesson from")
+    || haystack.includes("incident")
+    || haystack.includes("failure fix")
+    || haystack.includes("error fix");
+}
+
+function scoreNoteForSkillSynthesis(note, evidenceCount) {
+  let score = evidenceCount * 10;
+  if ((note.workflow ?? UNKNOWN_WORKFLOW) !== UNKNOWN_WORKFLOW) {
+    score += 200;
+  }
+  if (normalizeMaintenanceTextCandidate(note.whenToUse, 180)) {
+    score += 40;
+  }
+  if (normalizeMaintenanceTextCandidate(note.signal, 180)) {
+    score += 30;
+  }
+  if (normalizeMaintenanceTextCandidate(note.title, 120)) {
+    score += 20;
+  }
+  if (!isGenericMaintenanceAction(note.action) && normalizeMaintenanceTextCandidate(note.action, 180)) {
+    score += 30;
+  }
+  return score;
+}
+
+async function relinkNoteToSkill(note, skillId, cwd) {
+  return writeNoteDoc(
+    {
+      id: note.id ?? buildNoteIdentity({
+        workflow: note.workflow ?? UNKNOWN_WORKFLOW,
+        skillId,
+        title: note.title,
+        signal: note.signal,
+        summary: note.summary,
+      }),
+      title: note.title,
+      workflow: note.workflow ?? UNKNOWN_WORKFLOW,
+      signal: note.signal || note.title,
+      interpretation: note.interpretation || note.summary || "",
+      recommendedAction: note.action || note.summary || "",
+      summary: note.summary ?? undefined,
+      skillId,
+      related: note.related ?? [],
+      sources: note.sources ?? [],
+      examples: note.examples ?? [],
+      evidence: note.evidenceLines ?? [],
+      tags: note.tags ?? [],
+      kind: note.kind ?? "workflow_note",
+    },
+    cwd,
+  );
+}
+
+async function reviewGeneratedDraftSkills(
+  skillEntries,
+  noteEntriesByPath,
+  minSkillOccurrences,
+  cwd,
+) {
+  const actions = [];
+
+  for (const entry of skillEntries) {
+    const skill = entry.value;
+    if (normalizeSkillStatus(skill.status) !== "generated" || skill.maturity !== "draft") {
+      continue;
+    }
+
+    const linkedNotes = toArray(skill.notePaths)
+      .map((notePath) => noteEntriesByPath.get(notePath)?.note)
+      .filter(Boolean);
+    const strongestNote = linkedNotes
+      .sort((left, right) => countNoteBackedEventSources(right) - countNoteBackedEventSources(left))[0] ?? null;
+    const noteEvidenceCount = strongestNote ? countNoteBackedEventSources(strongestNote) : 0;
+    const lacksEvidence = noteEvidenceCount < minSkillOccurrences;
+    const incidentShaped = skillIdentityLooksIncidentShaped(skill);
+
+    if (!lacksEvidence && !incidentShaped) {
+      continue;
+    }
+
+    const archived = await writeSkill(
+      {
+        ...skill,
+        filePath: entry.origin === "host" ? entry.filePath : undefined,
+        status: "archived",
+        maturity: "draft",
+        evidenceCount: Math.max(skill.evidenceCount ?? 0, noteEvidenceCount),
+      },
+      cwd,
+    );
+    entry.value = archived.payload;
+    entry.filePath = archived.filePath;
+    actions.push({
+      action: "demote_skill",
+      reason: lacksEvidence ? "insufficient_note_backed_evidence" : "incident_shaped_identity",
+      skillId: archived.payload.id,
+      skillPath: normalizePath(path.relative(cwd, archived.filePath)),
+      notePath: strongestNote?.path ?? null,
+      evidenceCount: noteEvidenceCount,
+    });
+  }
+
+  return actions;
+}
+
+async function synthesizeSkillsFromOperationalNotes(
+  noteEntries,
+  skillEntries,
+  minSkillOccurrences,
+  cwd,
+) {
+  const actions = [];
+  const notesByPath = new Map(noteEntries.map((entry) => [entry.relativePath, entry]));
+  const skillsById = new Map(skillEntries.map((entry) => [entry.value.id, entry]));
+  const preferredDraftOwners = new Map();
+
+  actions.push(...(await reviewGeneratedDraftSkills(skillEntries, notesByPath, minSkillOccurrences, cwd)));
+
+  for (const noteEntry of noteEntries) {
+    const note = noteEntry.note;
+    const noteEvidenceCount = countNoteBackedEventSources(note);
+    if (noteEvidenceCount < minSkillOccurrences) {
+      continue;
+    }
+
+    const linkedSkillEntry = note.skillId ? skillsById.get(note.skillId) ?? null : null;
+    const reusableSkill = linkedSkillEntry && isLocalSkillEligible(linkedSkillEntry.value)
+      ? linkedSkillEntry
+      : null;
+    if (reusableSkill) {
+      continue;
+    }
+
+    const draft = buildSkillDraftFromNote(note, noteEvidenceCount);
+    if (!draft || skillIdentityLooksIncidentShaped(draft)) {
+      continue;
+    }
+
+    const existing = preferredDraftOwners.get(draft.name);
+    const current = {
+      notePath: note.path,
+      workflow: note.workflow ?? UNKNOWN_WORKFLOW,
+      evidenceCount: noteEvidenceCount,
+      qualityScore: scoreNoteForSkillSynthesis(note, noteEvidenceCount),
+    };
+    if (!existing) {
+      preferredDraftOwners.set(draft.name, current);
+      continue;
+    }
+    if (current.qualityScore > existing.qualityScore) {
+      preferredDraftOwners.set(draft.name, current);
+      continue;
+    }
+    if (current.qualityScore === existing.qualityScore && current.evidenceCount > existing.evidenceCount) {
+      preferredDraftOwners.set(draft.name, current);
+      continue;
+    }
+    if (
+      current.qualityScore === existing.qualityScore
+      && current.evidenceCount === existing.evidenceCount
+      && current.notePath.localeCompare(existing.notePath) < 0
+    ) {
+      preferredDraftOwners.set(draft.name, current);
+    }
+  }
+
+  for (const noteEntry of noteEntries) {
+    const note = noteEntry.note;
+    const noteEvidenceCount = countNoteBackedEventSources(note);
+    if (noteEvidenceCount === 0) {
+      continue;
+    }
+
+    const linkedSkillEntry = note.skillId ? skillsById.get(note.skillId) ?? null : null;
+    const reusableSkill = linkedSkillEntry && isLocalSkillEligible(linkedSkillEntry.value)
+      ? linkedSkillEntry
+      : null;
+
+    if (noteEvidenceCount < minSkillOccurrences) {
+      actions.push({
+        action: "keep_note_only",
+        reason: "note_backed_evidence_below_skill_threshold",
+        notePath: note.path,
+        skillId: reusableSkill?.value.id ?? null,
+        evidenceCount: noteEvidenceCount,
+      });
+      continue;
+    }
+
+    if ((note.workflow ?? UNKNOWN_WORKFLOW) === UNKNOWN_WORKFLOW && !reusableSkill?.value) {
+      actions.push({
+        action: "keep_note_only",
+        reason: "workflow_unknown_for_skill_synthesis",
+        notePath: note.path,
+        skillId: null,
+        evidenceCount: noteEvidenceCount,
+      });
+      continue;
+    }
+
+    const draft = buildSkillDraftFromNote(note, noteEvidenceCount);
+    if (!draft || skillIdentityLooksIncidentShaped(draft)) {
+      actions.push({
+        action: "keep_note_only",
+        reason: "note_semantics_not_reusable_enough_for_skill",
+        notePath: note.path,
+        skillId: null,
+        evidenceCount: noteEvidenceCount,
+      });
+      continue;
+    }
+
+    const preferredOwner = preferredDraftOwners.get(draft.name);
+    if (preferredOwner && preferredOwner.notePath !== note.path) {
+      actions.push({
+        action: "keep_note_only",
+        reason: "overlapping_note_semantics_preferred_elsewhere",
+        notePath: note.path,
+        skillId: null,
+        evidenceCount: noteEvidenceCount,
+      });
+      continue;
+    }
+
+    if (reusableSkill?.value) {
+      const patched = await writeSkill(
+        {
+          ...reusableSkill.value,
+          filePath: reusableSkill.origin === "host" ? reusableSkill.filePath : undefined,
+          displayName: draft.displayName,
+          trigger: draft.trigger,
+          description: draft.description,
+          notePaths: unique([...(reusableSkill.value.notePaths ?? []), note.path]),
+          evidenceCount: Math.max(reusableSkill.value.evidenceCount ?? 0, noteEvidenceCount),
+          lastUsedAt: new Date().toISOString(),
+        },
+        cwd,
+      );
+      skillsById.set(patched.payload.id, {
+        ...reusableSkill,
+        value: patched.payload,
+        filePath: patched.filePath,
+      });
+      const relinkedNote = await relinkNoteToSkill(note, patched.payload.id, cwd);
+      actions.push({
+        action: "patch_skill",
+        reason: "existing_note_backed_skill",
+        notePath: relinkedNote.relativePath,
+        skillId: patched.payload.id,
+        skillPath: normalizePath(path.relative(cwd, patched.filePath)),
+        evidenceCount: noteEvidenceCount,
+      });
+      continue;
+    }
+
+    const created = await writeSkill(draft, cwd);
+    skillsById.set(created.payload.id, {
+      filePath: created.filePath,
+      origin: "host",
+      repoRoot: cwd,
+      value: created.payload,
+    });
+    const relinkedNote = await relinkNoteToSkill(note, created.payload.id, cwd);
+    actions.push({
+      action: "create_skill",
+      reason: "note_backed_skill_synthesis",
+      notePath: relinkedNote.relativePath,
+      skillId: created.payload.id,
+      skillPath: normalizePath(path.relative(cwd, created.filePath)),
+      evidenceCount: noteEvidenceCount,
+    });
+  }
+
+  return actions;
+}
+
+export async function maintainKnowledge(
+  {
+    maxEvents = 50,
+    includeCovered = false,
+    minNoteOccurrences = 2,
+    minSkillOccurrences = 3,
+  } = {},
+  cwd = process.cwd(),
+) {
+  const { config, sourcePath } = await loadAgentConfig(cwd);
+  const planner = await loadMaintenancePlannerInput(config, cwd, sourcePath, {
+    maxEvents,
+    includeCovered,
+  });
+  const notesByPath = new Map(planner.noteEntries.map((entry) => [entry.relativePath, entry]));
+  const notesById = new Map(
+    planner.noteEntries
+      .filter((entry) => entry.note.id)
+      .map((entry) => [entry.note.id, entry]),
+  );
+  const noteActions = [];
+  const coverage = [];
+  const touchedNotePaths = new Set();
+
+  for (const candidate of planner.candidates) {
+    if (candidate.covered) {
+      noteActions.push({
+        action: "noop",
+        reason: "candidate_already_covered",
+        stabilityKey: candidate.stabilityKey,
+        workflow: candidate.workflow,
+        notePath: candidate.entries[0]?.value?.coveredByNotePath ?? null,
+        eventPaths: candidate.eventPaths,
+      });
+      continue;
+    }
+
+    if (candidate.eventCount < minNoteOccurrences) {
+      noteActions.push({
+        action: "noop",
+        reason: "insufficient_repeated_trace_evidence",
+        stabilityKey: candidate.stabilityKey,
+        workflow: candidate.workflow,
+        notePath: null,
+        eventPaths: candidate.eventPaths,
+      });
+      continue;
+    }
+
+    const matchedNoteEntry = candidate.matchedNotePaths
+      .map((notePath) => notesByPath.get(notePath))
+      .find(Boolean)
+      ?? (candidate.stabilityKey ? notesById.get(buildNoteIdentityFromStabilityKey(candidate.stabilityKey)) : null)
+      ?? null;
+    const noteSeed = buildMaintenanceNoteSeed(candidate, matchedNoteEntry?.note ?? null);
+    const note = await writeNoteDoc(noteSeed, cwd);
+    const coveredAt = new Date().toISOString();
+    const updatedEvents = await patchRecordedEventFiles(candidate.entries, {
+      coveredByNotePath: note.relativePath,
+      coveredAt,
+      maintenanceStatus: "covered",
+    });
+    const reloadedNote = await loadNoteDoc(cwd, sourcePath, note.relativePath, false);
+    const reloadedEntry = {
+      filePath: note.filePath,
+      relativePath: note.relativePath,
+      origin: "host",
+      note: reloadedNote,
+    };
+    notesByPath.set(note.relativePath, reloadedEntry);
+    touchedNotePaths.add(note.relativePath);
+    if (reloadedNote.id) {
+      notesById.set(reloadedNote.id, reloadedEntry);
+    }
+    noteActions.push({
+      action: note.operation,
+      reason: "repeated_trace_compaction",
+      stabilityKey: candidate.stabilityKey,
+      workflow: candidate.workflow,
+      notePath: note.relativePath,
+      eventPaths: candidate.eventPaths,
+    });
+    coverage.push({
+      notePath: note.relativePath,
+      coveredAt,
+      eventPaths: updatedEvents.map((entry) => entry.relativePath),
+    });
+  }
+
+  const skillActions = await synthesizeSkillsFromOperationalNotes(
+    Array.from(notesByPath.values()).filter((entry) => !touchedNotePaths.has(entry.relativePath)),
+    planner.skillEntries,
+    minSkillOccurrences,
+    cwd,
+  );
+
+  await updateControlArtifacts(config, cwd, sourcePath, {
+    logEntry: {
+      action: "maintain_knowledge",
+      detail: `${planner.selectedEvents.length} event(s) scanned | ${noteActions.filter((entry) => entry.action !== "noop").length} note action(s) | ${skillActions.length} skill action(s)`,
+    },
+  });
+
+  return {
+    scannedEvents: planner.selectedEvents.length,
+    skippedCoveredEvents: planner.skippedCoveredEvents,
+    candidateCount: planner.candidates.length,
+    candidates: planner.candidates.map((candidate) => ({
+      workflow: candidate.workflow,
+      stabilityKey: candidate.stabilityKey,
+      eventCount: candidate.eventCount,
+      latestTimestamp: candidate.latestTimestamp,
+      eventPaths: candidate.eventPaths,
+      eventSummaries: candidate.eventSummaries,
+      matchedNotePaths: candidate.matchedNotePaths,
+      matchedSkillIds: candidate.matchedSkillIds,
+      covered: candidate.covered,
+    })),
+    noteActions,
+    coverage,
+    skillActions,
   };
 }
 

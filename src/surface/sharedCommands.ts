@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   adoptPack,
   lintLocalPack,
+  maintainKnowledge,
   patchKnowledge,
   promoteGap,
   recordTurnResult,
@@ -282,6 +283,32 @@ const minSkillOccurrencesArg: SharedArgSpec = {
   kind: "int",
   cliFlag: "min-skill-occurrences",
   mcpKey: "min_skill_occurrences",
+  positive: true,
+};
+
+const maxEventsArg: SharedArgSpec = {
+  key: "maxEvents",
+  description: "Maximum number of recent events to scan during maintenance.",
+  kind: "int",
+  cliFlag: "max-events",
+  mcpKey: "max_events",
+  positive: true,
+};
+
+const includeCoveredArg: SharedArgSpec = {
+  key: "includeCovered",
+  description: "Include already covered traces in the maintenance scan.",
+  kind: "boolean",
+  cliFlag: "include-covered",
+  mcpKey: "include_covered",
+};
+
+const minNoteOccurrencesArg: SharedArgSpec = {
+  key: "minNoteOccurrences",
+  description: "Minimum repeated trace count before maintenance compacts a group into a note.",
+  kind: "int",
+  cliFlag: "min-note-occurrences",
+  mcpKey: "min_note_occurrences",
   positive: true,
 };
 
@@ -763,6 +790,27 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
         minSkillOccurrences: maybeNumber(input.minSkillOccurrences),
         adjudicationDecision: maybeString(input.adjudicationDecision),
         adjudicationSkillId: maybeString(input.adjudicationSkillId),
+      });
+    },
+  },
+  {
+    cliCommand: "maintain",
+    mcpTool: "maintain_knowledge",
+    description: "Run a bounded maintenance pass over recent repo-local traces, compact them into notes, and synthesize note-backed skills.",
+    args: [
+      repoPathArg,
+      maxEventsArg,
+      includeCoveredArg,
+      minNoteOccurrencesArg,
+      minSkillOccurrencesArg,
+    ],
+    async run(input) {
+      return maintainKnowledge({
+        repoPath: maybeString(input.repoPath),
+        maxEvents: maybeNumber(input.maxEvents),
+        includeCovered: maybeBoolean(input.includeCovered),
+        minNoteOccurrences: maybeNumber(input.minNoteOccurrences),
+        minSkillOccurrences: maybeNumber(input.minSkillOccurrences),
       });
     },
   },
