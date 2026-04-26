@@ -131,12 +131,18 @@ That doc now holds:
 
 ## Online Retrieval And Note Capture
 
-- [ ] Goal: keep the online loop limited to capture and immediate note-safe decisions.
-  The online loop should:
-  - detect a skill or no-match
-  - record `trace`
-  - maybe create or update a `note` when the signal is strong
-  It should not try to create a new `skill` eagerly.
+- [ ] Goal: keep the online loop narrow, cheap, and note-first.
+  Current reality:
+  - the online loop can still create a `skill`
+  Target model:
+  - online loop should primarily:
+    - detect a skill or no-match
+    - record `trace`
+    - maybe create or update a `note` when the signal is strong
+  Preferred boundary:
+  - new-skill creation should default to the later periodic maintenance / synthesis loop
+  Online exception:
+  - online skill creation may remain as a narrow compatibility path for unusually clear cases, but it should not be the dominant or default path
 
 - [ ] Confirm the current retrieval failure mode with grounded repro.
   Proven issue:
@@ -222,11 +228,13 @@ That doc now holds:
   Target:
   - a one-off incident may remain `trace`
   - a strong incident may create or update a `note`
-  - the online loop must not create a `skill` directly from raw trace scanning
+  - online skill creation remains allowed only as a narrow compatibility path
+  - the online loop must not treat direct new-skill creation as the default outcome for raw trace capture
   Pass criteria:
   - a one-off weak incident stays `trace`
   - a one-off strong incident may create or update a `note`
-  - no online-only run can create a new `skill` without going through the later note-backed synthesis path
+  - online new-skill creation is either absent or clearly rarer than note creation in the same class of cases
+  - the preferred path for new skills remains later note-backed synthesis, not eager online promotion
 
 - [ ] Add focused regression proofs for the online boundary.
   Main files:
@@ -238,15 +246,19 @@ That doc now holds:
   2. a real SSE task still matches the SSE skill authoritatively
   3. an ambiguous same-workflow query can be resolved by the adjudicator without exposing a false authoritative match
   4. a one-off incident can create or patch a note without creating a low-quality skill
+  5. if online new-skill creation still exists, it is exercised only in a narrow explicit proof and does not become the default path
   Pass criteria:
-  - the focused suite covers all four proofs above
-  - the suite fails if lexical overlap becomes authoritative again or if the online loop creates a skill directly
+  - the focused suite covers all five proofs above
+  - the suite fails if lexical overlap becomes authoritative again
+  - the suite fails if online new-skill creation becomes the broad/default path again
 
 - [ ] Final pass criteria:
   1. weak workflow-bound lexical overlap no longer sets `matchedSkillId`
   2. `candidateSkills` can still surface suggestions without being treated as authoritative
   3. ambiguous cases use a cheap structured adjudicator only when deterministic accept/reject cannot decide
   4. the pasted PDF.js / WKWebView event shape would stay trace-or-note only unless a real matching skill exists
+  5. online new-skill creation is no longer the default product path
+  6. periodic note-backed synthesis remains the primary path for creating new reusable skills
 
 
 ## Periodic Trace Maintenance And Skill Synthesis
