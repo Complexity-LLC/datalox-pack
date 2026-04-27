@@ -15,10 +15,10 @@ That doc now holds:
 ## Refactor `agent-pack.mjs`
 
 - [ ] Goal: split `scripts/lib/agent-pack.mjs` into smaller modules without behavior drift.
-  This is a seam-extraction refactor, not a redesign.
+  This is a boundary-extraction refactor, not a redesign.
   Do not change the runtime contract, promotion rules, retrieval policy, or live loop semantics as part of the split.
 
-- [ ] Step 1: inventory the current responsibilities inside `scripts/lib/agent-pack.mjs`.
+- [x] Step 1: inventory the current responsibilities inside `scripts/lib/agent-pack.mjs`.
   Identify and pin the main seams:
   - frontmatter / markdown parsing
   - skill/note read models
@@ -28,7 +28,7 @@ That doc now holds:
   - event/note/skill write paths
   - lint / pack maintenance helpers
 
-- [ ] Step 2: extract parsing helpers into a read-only module first.
+- [x] Step 2: extract parsing helpers into a read-only module first.
   Target examples:
   - `splitFrontmatter`
   - `parseFrontmatter`
@@ -38,6 +38,10 @@ That doc now holds:
   - no output-shape changes
   - no frontmatter compatibility changes
   - CRLF handling must stay intact
+  Completed first pass:
+  - extracted markdown/frontmatter parsing into `scripts/lib/agent-pack/markdown.mjs`
+  - kept `scripts/lib/agent-pack.mjs` as the compatibility surface for existing script imports
+  - added focused parser and export-contract coverage in `tests/agentPackMarkdown.test.ts`
 
 - [ ] Step 3: extract retrieval into its own module.
   Target examples:
@@ -99,7 +103,7 @@ That doc now holds:
 
 - [ ] Final pass criteria:
   1. `scripts/lib/agent-pack.mjs` is reduced to orchestration or thin exports, not a 4k+ line sink.
-  2. The live skill-generation proof in `docs/skill-generation-proof-live-2026-04-23.md` still passes on a fresh repo.
+  2. The fresh-repo skill-generation proof documented in `docs/bootstrap-payload-shape-live-2026-04-23.md` still passes.
   3. Focused bridge/wrapper suites still pass.
   4. No runtime contract drift in:
      - `resolve`
