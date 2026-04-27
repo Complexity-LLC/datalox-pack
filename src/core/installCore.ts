@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { constants as fsConstants, existsSync } from "node:fs";
-import { access, chmod, copyFile, lstat, mkdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { access, chmod, copyFile, lstat, mkdir, readFile, readdir, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -81,7 +81,17 @@ export interface HostSurfaceStatus {
   supportsPostRunHook: boolean;
   supportsSecondPassReview: boolean;
   requiresPromptPlaceholder: boolean;
+  nativeSkillLinks?: NativeSkillLinkStatus;
   notes: string[];
+}
+
+export interface NativeSkillLinkStatus {
+  installed: boolean;
+  canonical: boolean;
+  root: string;
+  linked: string[];
+  missing: string[];
+  legacyPackLink: string | null;
 }
 
 export interface EnforcementStatusSnapshot {
@@ -108,6 +118,14 @@ const INSTALL_STATUS_RELATIVE_PATH = path.join(".datalox", "install.json");
 
 function normalizePath(value: string): string {
   return value.replaceAll("\\", "/");
+}
+
+function claudeSkillsDir(): string {
+  return path.join(os.homedir(), ".claude", "skills");
+}
+
+function claudeLegacyPackSkillsLink(): string {
+  return path.join(claudeSkillsDir(), "datalox-pack");
 }
 
 function validFullPackRoot(candidate: string): boolean {
@@ -137,6 +155,11 @@ async function ensureLocalPackCache(packRootPath: string): Promise<string> {
   return cachePath;
 }
 
+interface SkillLinkSpec {
+  target: string;
+  destination: string;
+}
+
 async function linkIfMissing(target: string, destination: string, summary: InstallLinkSummary): Promise<void> {
   await mkdir(path.dirname(destination), { recursive: true });
 
@@ -161,43 +184,103 @@ async function linkIfMissing(target: string, destination: string, summary: Insta
   summary.linked.push(destination);
 }
 
-function skillLinkDestinations(host: InstallHost, packRootPath: string): string[] {
-  return host === "codex"
-    ? [
-        path.join(os.homedir(), ".codex", "skills", "datalox-pack"),
-      ]
-    : host === "claude"
-      ? [
-          path.join(os.homedir(), ".claude", "skills", "datalox-pack"),
-        ]
-      : [
-          path.join(os.homedir(), ".codex", "skills", "datalox-pack"),
-          path.join(os.homedir(), ".claude", "skills", "datalox-pack"),
-          path.join(os.homedir(), ".opencode", "skills", "datalox-pack"),
-          path.join(os.homedir(), ".gemini", "skills", "datalox-pack"),
-          path.join(packRootPath, ".cursor", "skills"),
-          path.join(packRootPath, ".windsurf", "skills"),
-        ];
+async function listPackSkillNames(packRootPath: string): Promise<string[]> {
+  const skillsDir = path.join(packRootPath, "skills");
+  let entries;
+  try {
+    entries = await readdir(skillsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  return entries
+    .filter((entry) => (entry.isDirectory() || entry.isSymbolicLink()) && existsSync(path.join(skillsDir, entry.name, "SKILL.md")))
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+}
+
+async function claudeSkillLinkSpecs(packRootPath: string): Promise<SkillLinkSpec[]> {
+  const skillNames = await listPackSkillNames(packRootPath);
+  return skillNames.map((skillName) => ({
+    target: path.join(packRootPath, "skills", skillName),
+    destination: path.join(claudeSkillsDir(), skillName),
+  }));
+}
+
+async function skillLinkSpecs(host: InstallHost, packRootPath: string): Promise<SkillLinkSpec[]> {
+  const skillsDir = path.join(packRootPath, "skills");
+  const specs: SkillLinkSpec[] = [];
+  const selected = new Set(selectedHosts(host));
+
+  if (selected.has("codex")) {
+    specs.push({
+      target: skillsDir,
+      destination: path.join(os.homedir(), ".codex", "skills", "datalox-pack"),
+    });
+  }
+
+  if (selected.has("claude")) {
+    specs.push(...await claudeSkillLinkSpecs(packRootPath));
+  }
+
+  if (host === "all") {
+    specs.push(
+      {
+        target: skillsDir,
+        destination: path.join(os.homedir(), ".opencode", "skills", "datalox-pack"),
+      },
+      {
+        target: skillsDir,
+        destination: path.join(os.homedir(), ".gemini", "skills", "datalox-pack"),
+      },
+      {
+        target: skillsDir,
+        destination: path.join(packRootPath, ".cursor", "skills"),
+      },
+      {
+        target: skillsDir,
+        destination: path.join(packRootPath, ".windsurf", "skills"),
+      },
+    );
+  }
+
+  return specs;
 }
 
 async function installSkillLinks(host: InstallHost, packRootPath: string): Promise<InstallLinkSummary> {
   const summary: InstallLinkSummary = { linked: [], skipped: [] };
   const skillsDir = path.join(packRootPath, "skills");
-  for (const destination of skillLinkDestinations(host, packRootPath)) {
-    await linkIfMissing(skillsDir, destination, summary);
+  if (selectedHosts(host).includes("claude")) {
+    await removeSymlinkIfTargetMatches(claudeLegacyPackSkillsLink(), skillsDir);
+  }
+  for (const spec of await skillLinkSpecs(host, packRootPath)) {
+    await linkIfMissing(spec.target, spec.destination, summary);
   }
 
   return summary;
 }
 
-async function removeSymlinkIfTargetMatches(linkPath: string, expectedTarget: string): Promise<boolean> {
+async function symlinkTargetMatches(linkPath: string, expectedTarget: string): Promise<boolean> {
   try {
     const stats = await lstat(linkPath);
     if (!stats.isSymbolicLink()) {
       return false;
     }
     const existing = await readlink(linkPath);
-    if (path.resolve(path.dirname(linkPath), existing) !== path.resolve(expectedTarget)) {
+    const resolvedExisting = path.resolve(path.dirname(linkPath), existing);
+    const [existingRealPath, expectedRealPath] = await Promise.all([
+      realpath(resolvedExisting).catch(() => path.resolve(resolvedExisting)),
+      realpath(expectedTarget).catch(() => path.resolve(expectedTarget)),
+    ]);
+    return existingRealPath === expectedRealPath;
+  } catch {
+    return false;
+  }
+}
+
+async function removeSymlinkIfTargetMatches(linkPath: string, expectedTarget: string): Promise<boolean> {
+  try {
+    if (!await symlinkTargetMatches(linkPath, expectedTarget)) {
       return false;
     }
     await rm(linkPath, { force: true });
@@ -211,13 +294,22 @@ async function uninstallSkillLinks(host: InstallHost, packRootPath: string): Pro
   const summary: DisableLinkSummary = { removed: [], skipped: [] };
   const skillsDir = path.join(packRootPath, "skills");
 
-  for (const destination of skillLinkDestinations(host, packRootPath)) {
-    if (await removeSymlinkIfTargetMatches(destination, skillsDir)) {
-      summary.removed.push(destination);
+  for (const spec of await skillLinkSpecs(host, packRootPath)) {
+    if (await removeSymlinkIfTargetMatches(spec.destination, spec.target)) {
+      summary.removed.push(spec.destination);
       continue;
     }
-    if (existsSync(destination)) {
-      summary.skipped.push(destination);
+    if (existsSync(spec.destination)) {
+      summary.skipped.push(spec.destination);
+    }
+  }
+
+  if (selectedHosts(host).includes("claude")) {
+    const legacyLink = claudeLegacyPackSkillsLink();
+    if (await removeSymlinkIfTargetMatches(legacyLink, skillsDir)) {
+      summary.removed.push(legacyLink);
+    } else if (existsSync(legacyLink)) {
+      summary.skipped.push(legacyLink);
     }
   }
 
@@ -440,11 +532,14 @@ async function writePackInstallStatusFile(
 }
 
 function buildCodexShim(realBinary: string, packRootPath: string): string {
+  const stableCodexPaths = STABLE_BIN_DIRS.map((dir) => path.join(dir, "codex"));
   return `#!/usr/bin/env bash
 set -euo pipefail
 
-REAL_CODEX_BIN=${JSON.stringify(realBinary)}
+REAL_CODEX_BIN_FALLBACK=${JSON.stringify(realBinary)}
 PACK_ROOT=${JSON.stringify(packRootPath)}
+SHIM_PATH=${JSON.stringify(path.join(os.homedir(), ".local", "bin", "codex"))}
+STABLE_CODEX_PATHS=(${stableCodexPaths.map((item) => JSON.stringify(item)).join(" ")})
 
 resolve_repo() {
   local repo="$(pwd)"
@@ -473,6 +568,44 @@ should_wrap() {
   return 1
 }
 
+resolve_real_codex_bin() {
+  if [[ -n "\${DATALOX_REAL_CODEX_BIN:-}" && -x "\${DATALOX_REAL_CODEX_BIN}" ]]; then
+    printf '%s\\n' "\${DATALOX_REAL_CODEX_BIN}"
+    return 0
+  fi
+
+  if [[ -x "$REAL_CODEX_BIN_FALLBACK" ]]; then
+    printf '%s\\n' "$REAL_CODEX_BIN_FALLBACK"
+    return 0
+  fi
+
+  local candidate
+  while IFS= read -r candidate; do
+    [[ -z "$candidate" ]] && continue
+    if [[ "$candidate" == "$SHIM_PATH" ]]; then
+      continue
+    fi
+    local skip=0
+    for stable in "\${STABLE_CODEX_PATHS[@]}"; do
+      if [[ "$candidate" == "$stable" ]]; then
+        skip=1
+        break
+      fi
+    done
+    if (( skip == 1 )); then
+      continue
+    fi
+    if [[ -x "$candidate" ]]; then
+      printf '%s\\n' "$candidate"
+      return 0
+    fi
+  done < <(which -a codex 2>/dev/null || true)
+
+  printf 'datalox-codex shim could not resolve a real codex binary. Re-run setup or set DATALOX_REAL_CODEX_BIN.\\n' >&2
+  return 1
+}
+
+REAL_CODEX_BIN="$(resolve_real_codex_bin)"
 repo="$(resolve_repo "$@")"
 if should_wrap "$@"; then
   export DATALOX_CODEX_BIN="$REAL_CODEX_BIN"
@@ -488,11 +621,14 @@ exec "$REAL_CODEX_BIN" "$@"
 }
 
 function buildClaudeShim(realBinary: string, packRootPath: string): string {
+  const stableClaudePaths = STABLE_BIN_DIRS.map((dir) => path.join(dir, "claude"));
   return `#!/usr/bin/env bash
 set -euo pipefail
 
-REAL_CLAUDE_BIN=${JSON.stringify(realBinary)}
+REAL_CLAUDE_BIN_FALLBACK=${JSON.stringify(realBinary)}
 PACK_ROOT=${JSON.stringify(packRootPath)}
+SHIM_PATH=${JSON.stringify(path.join(os.homedir(), ".local", "bin", "claude"))}
+STABLE_CLAUDE_PATHS=(${stableClaudePaths.map((item) => JSON.stringify(item)).join(" ")})
 
 resolve_repo() {
   local repo="$(pwd)"
@@ -538,6 +674,44 @@ should_wrap() {
   return 1
 }
 
+resolve_real_claude_bin() {
+  if [[ -n "\${DATALOX_REAL_CLAUDE_BIN:-}" && -x "\${DATALOX_REAL_CLAUDE_BIN}" ]]; then
+    printf '%s\\n' "\${DATALOX_REAL_CLAUDE_BIN}"
+    return 0
+  fi
+
+  if [[ -x "$REAL_CLAUDE_BIN_FALLBACK" ]]; then
+    printf '%s\\n' "$REAL_CLAUDE_BIN_FALLBACK"
+    return 0
+  fi
+
+  local candidate
+  while IFS= read -r candidate; do
+    [[ -z "$candidate" ]] && continue
+    if [[ "$candidate" == "$SHIM_PATH" ]]; then
+      continue
+    fi
+    local skip=0
+    for stable in "\${STABLE_CLAUDE_PATHS[@]}"; do
+      if [[ "$candidate" == "$stable" ]]; then
+        skip=1
+        break
+      fi
+    done
+    if (( skip == 1 )); then
+      continue
+    fi
+    if [[ -x "$candidate" ]]; then
+      printf '%s\\n' "$candidate"
+      return 0
+    fi
+  done < <(which -a claude 2>/dev/null || true)
+
+  printf 'datalox-claude shim could not resolve a real claude binary. Re-run setup or set DATALOX_REAL_CLAUDE_BIN.\\n' >&2
+  return 1
+}
+
+REAL_CLAUDE_BIN="$(resolve_real_claude_bin)"
 repo="$(resolve_repo "$@")"
 if should_wrap "$@"; then
   export DATALOX_CLAUDE_BIN="$REAL_CLAUDE_BIN"
@@ -698,6 +872,36 @@ async function isClaudeHookInstalled(): Promise<boolean> {
   return false;
 }
 
+async function inspectClaudeNativeSkillLinks(packRootPath: string): Promise<NativeSkillLinkStatus> {
+  const specs = await claudeSkillLinkSpecs(packRootPath);
+  const linked: string[] = [];
+  const missing: string[] = [];
+
+  for (const spec of specs) {
+    if (await symlinkTargetMatches(spec.destination, spec.target)) {
+      linked.push(spec.destination);
+      continue;
+    }
+    missing.push(spec.destination);
+  }
+
+  const legacyPackLink = await symlinkTargetMatches(
+    claudeLegacyPackSkillsLink(),
+    path.join(packRootPath, "skills"),
+  )
+    ? claudeLegacyPackSkillsLink()
+    : null;
+
+  return {
+    installed: specs.length > 0 && missing.length === 0,
+    canonical: specs.length > 0 && missing.length === 0 && legacyPackLink === null,
+    root: claudeSkillsDir(),
+    linked: linked.map(normalizePath),
+    missing: missing.map(normalizePath),
+    legacyPackLink: legacyPackLink ? normalizePath(legacyPackLink) : null,
+  };
+}
+
 function computeRepoEnforcementLevel(
   automaticReady: boolean,
   conditionalReady: boolean,
@@ -730,6 +934,7 @@ export async function inspectEnforcementStatus(input: {
   const claudeInstalled = await hasManagedShim(claudeShimPath, "datalox-claude.js");
   const claudeStableLinks = await stableLinksPointingTo(claudeShimPath, "claude");
   const claudeHookInstalled = await isClaudeHookInstalled();
+  const claudeNativeSkillLinks = await inspectClaudeNativeSkillLinks(packRootPath);
   const claudeAutomatic = claudeInstalled && (claudeStableLinks.length > 0 || pathActivationAvailable);
 
   const repoProbe = await probeBootstrapCandidate(repoPath);
@@ -774,11 +979,21 @@ export async function inspectEnforcementStatus(input: {
       supportsPostRunHook: getHostCapability("claude").supportsPostRunHook,
       supportsSecondPassReview: getHostCapability("claude").supportsSecondPassReview,
       requiresPromptPlaceholder: getHostCapability("claude").requiresPromptPlaceholder,
+      nativeSkillLinks: claudeNativeSkillLinks,
       notes: claudeAutomatic
-        ? (claudeHookInstalled ? [] : ["Claude shim is automatic; hook is optional sidecar automation and is not installed."])
+        ? [
+            ...(claudeHookInstalled ? [] : ["Claude shim is automatic; hook is optional sidecar automation and is not installed."]),
+            ...(claudeNativeSkillLinks.canonical ? [] : ["Claude native skill links are not installed at canonical ~/.claude/skills/<skill-name> paths."]),
+          ]
         : claudeInstalled
-          ? ["Claude shim is installed, but no stable link or shell PATH export was detected yet."]
-          : ["Claude shim is not installed."],
+          ? [
+              "Claude shim is installed, but no stable link or shell PATH export was detected yet.",
+              ...(claudeNativeSkillLinks.canonical ? [] : ["Claude native skill links are not installed at canonical ~/.claude/skills/<skill-name> paths."]),
+            ]
+          : [
+              "Claude shim is not installed.",
+              ...(claudeNativeSkillLinks.canonical ? [] : ["Claude native skill links are not installed at canonical ~/.claude/skills/<skill-name> paths."]),
+            ],
     },
     generic_cli: {
       hostId: "generic_cli",

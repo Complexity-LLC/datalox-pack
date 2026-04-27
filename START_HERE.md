@@ -33,6 +33,16 @@ bash bin/adopt-host-repo.sh "$TARGET_REPO"
 node bin/datalox.js status --repo "$TARGET_REPO" --json
 ```
 
+## New Session In The Same Repo
+
+If this is a fresh session or a different agent entering the same repo, the canonical repo-local handoff is:
+
+`Use this repo's Datalox pack. Read AGENTS.md and DATALOX.md before acting.`
+
+On supported installed host paths such as enforced Codex, that handoff should already be automatic. If you want to confirm the current repo state, run:
+
+- `node bin/datalox.js status --repo . --json`
+
 ## What You Should See
 
 - `skills/`: reusable workflows
@@ -90,6 +100,8 @@ The user's agent can run `bash bin/setup-multi-agent.sh claude` once from the so
 The installed shims route those runs through Datalox automatically and default the second-pass reviewer to `review` mode with `gpt-5.4-mini`.
 
 That automation is only true on supported host adapter paths. If a host only sees repo instructions or MCP tools, Datalox is guidance-only until a wrapper, hook, or plugin owns the loop.
+
+Claude native skills are linked at `~/.claude/skills/<skill-name>/SKILL.md`. Restart Claude Code only if it was already running before `~/.claude/skills` existed, or if the host does not pick up new skill links live. The Claude hook is sidecar post-run automation; `CLAUDE.md`, wrapper/shim paths, MCP tools, and repo-local `skills/` remain the fallback.
 
 To stop the host interception later, run `bash bin/disable-default-host-integrations.sh`.
 

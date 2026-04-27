@@ -209,3 +209,45 @@ Passed:
 Grounded proof:
 
 - [docs/periodic-trace-maintenance-live-2026-04-25.md](/Users/yifanjin/datalox-pack/docs/periodic-trace-maintenance-live-2026-04-25.md)
+
+## Claude Native Skill Installation
+
+Completed:
+
+- changed Claude skill link installation from one nested `~/.claude/skills/datalox-pack` link to per-skill links at `~/.claude/skills/<skill-name>`
+- disable removes only Datalox-managed per-skill links; user-owned skill directories are preserved
+- disable handles old nested `datalox-pack` links (removes if they target this pack's `skills/` directory)
+- install status reports native Claude skill surfacing separately from hook/shim state
+- `status --json` exposes `nativeSkillLinks.installed`, `canonical`, `linked`, `missing`, and `legacyPackLink`
+- docs updated: README, DATALOX.md, docs/agent-configuration.md, START_HERE.md
+- focused install/disable test coverage added in `adoptionScripts.test.ts`
+- live proof written to `docs/claude-native-skill-install-live-2026-04-27.md`
+
+Implemented shape:
+
+- `datalox install claude` links each pack skill to `~/.claude/skills/<skill-name>` and removes the old nested `datalox-pack` link if it targets the current pack
+- `datalox disable claude` removes each managed per-skill link; leaves unrelated user skill directories untouched
+- `status --json` exposes `nativeSkillLinks` under `adapters.claude`
+- `CLAUDE.md` and hook/wrapper paths remain the robust fallback when native skill surfacing is unavailable
+
+Passed:
+
+1. install in temp HOME creates canonical per-skill symlinks at `~/.claude/skills/<skill-name>`
+2. each linked directory contains a root `SKILL.md`
+3. disable removes Datalox-managed per-skill links
+4. disable preserves unrelated user-owned skill directories
+5. old nested `datalox-pack` symlink is removed during install when it targets the same pack
+6. `status --json` correctly reports `nativeSkillLinks.canonical` after install
+7. `npm run build` passes
+8. bridge/wrapper regression passes (54/54)
+
+Grounded proof:
+
+- [docs/claude-native-skill-install-live-2026-04-27.md](/Users/yifanjin/datalox-pack/docs/claude-native-skill-install-live-2026-04-27.md)
+
+Live machine state (2026-04-27):
+
+- `~/.claude/skills/` now contains direct per-skill symlinks for all current pack skills
+- `~/.claude/hooks/datalox-auto-promote.sh` present
+- `status.adapters.claude.nativeSkillLinks.canonical: true`
+- host limitation recorded: `claude` CLI not in shell PATH (IDE extension mode); canonical skill links are installed and will surface in a CLI-launched session

@@ -1,4 +1,4 @@
-import { chmod, cp, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -22,6 +22,12 @@ async function copyPackSnapshot(sourceRoot: string, destinationRoot: string): Pr
       },
     });
   }
+}
+
+function parseLastJsonObject(stdout: string): any {
+  const trimmed = stdout.trim();
+  const objectStart = trimmed.lastIndexOf("\n{");
+  return JSON.parse(objectStart >= 0 ? trimmed.slice(objectStart + 1) : trimmed.slice(trimmed.indexOf("{")));
 }
 
 describe("adoption scripts", () => {
@@ -105,6 +111,9 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(homeDir, ".local/bin/claude"), "utf8")).toContain("DATALOX_DEFAULT_POST_RUN_MODE:=review");
     expect(await readFile(path.join(homeDir, ".local/bin/claude"), "utf8")).toContain("DATALOX_DEFAULT_REVIEW_MODEL:=gpt-5.4-mini");
     expect(await readFile(path.join(homeDir, ".claude/hooks/datalox-auto-promote.sh"), "utf8")).toContain("datalox-auto-promote.js");
+    expect(await readlink(path.join(homeDir, ".claude/skills/maintain-datalox-pack"))).toBe(path.join(repoRoot, "skills/maintain-datalox-pack"));
+    expect(await readFile(path.join(homeDir, ".claude/skills/maintain-datalox-pack/SKILL.md"), "utf8")).toContain("Maintain Datalox Pack");
+    expect(spawnSync("test", ["-e", path.join(homeDir, ".claude/skills/datalox-pack")]).status).not.toBe(0);
     expect(await readlink(path.join(homeDir, ".datalox/cache/datalox-pack"))).toBe(repoRoot);
   }, 15000);
 
@@ -151,6 +160,7 @@ describe("adoption scripts", () => {
     expect(spawnSync("test", ["-e", path.join(homeDir, ".local/bin/codex")]).status).not.toBe(0);
     expect(spawnSync("test", ["-e", path.join(homeDir, ".local/bin/claude")]).status).not.toBe(0);
     expect(spawnSync("test", ["-e", path.join(homeDir, ".claude/hooks/datalox-auto-promote.sh")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(homeDir, ".claude/skills/maintain-datalox-pack")]).status).not.toBe(0);
     expect(spawnSync("test", ["-e", path.join(homeDir, ".codex/skills/datalox-pack")]).status).not.toBe(0);
     expect(await readFile(path.join(homeDir, ".claude/settings.json"), "utf8")).not.toContain("datalox-auto-promote.sh");
   }, 20000);
@@ -185,7 +195,77 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(homeDir, ".local/bin/codex"), "utf8")).toContain(`PACK_ROOT="${resolvedPackDir}"`);
     expect(await readFile(path.join(homeDir, ".local/bin/claude"), "utf8")).toContain(`PACK_ROOT="${resolvedPackDir}"`);
     expect(await readlink(path.join(homeDir, ".codex/skills/datalox-pack"))).toBe(path.join(resolvedPackDir, "skills"));
+    expect(await readlink(path.join(homeDir, ".claude/skills/maintain-datalox-pack"))).toBe(path.join(resolvedPackDir, "skills/maintain-datalox-pack"));
+    expect(spawnSync("test", ["-e", path.join(homeDir, ".claude/skills/datalox-pack")]).status).not.toBe(0);
     expect(await readFile(path.join(homeDir, ".claude/hooks/datalox-auto-promote.sh"), "utf8")).toContain("datalox-auto-promote.js");
+  }, 60000);
+
+  it("installs Claude native skills at canonical paths and safely cleans managed links", async () => {
+    const packDir = await mkdtemp(path.join(tmpdir(), "datalox-claude-skills-pack-"));
+    const homeDir = await mkdtemp(path.join(tmpdir(), "datalox-claude-skills-home-"));
+    tempDirs.push(packDir, homeDir);
+
+    await copyPackSnapshot(repoRoot, packDir);
+
+    const fakeClaude = path.join(homeDir, "fake-claude");
+    await writeFile(fakeClaude, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+    await chmod(fakeClaude, 0o755);
+
+    const userSkillDir = path.join(homeDir, ".claude", "skills", "user-owned-skill");
+    await mkdir(userSkillDir, { recursive: true });
+    await writeFile(path.join(userSkillDir, "SKILL.md"), "# User-owned skill\n", "utf8");
+
+    await symlink(path.join(packDir, "skills"), path.join(homeDir, ".claude", "skills", "datalox-pack"), "dir");
+
+    const install = spawnSync("node", [path.join(packDir, "bin/datalox.js"), "install", "claude", "--json"], {
+      cwd: packDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        DATALOX_REAL_CLAUDE_BIN: fakeClaude,
+      },
+    });
+    expect(install.status).toBe(0);
+    const installed = parseLastJsonObject(install.stdout);
+    expect(installed.status.adapters.claude.nativeSkillLinks.canonical).toBe(true);
+    expect(installed.status.adapters.claude.nativeSkillLinks.linked).toContain(path.join(homeDir, ".claude/skills/maintain-datalox-pack"));
+    expect(installed.status.adapters.claude.nativeSkillLinks.missing).toEqual([]);
+
+    const resolvedPackDir = await realpath(packDir);
+    expect(await readlink(path.join(homeDir, ".claude/skills/maintain-datalox-pack"))).toBe(path.join(resolvedPackDir, "skills/maintain-datalox-pack"));
+    expect(await readFile(path.join(homeDir, ".claude/skills/maintain-datalox-pack/SKILL.md"), "utf8")).toContain("Maintain Datalox Pack");
+    expect(spawnSync("test", ["-e", path.join(homeDir, ".claude/skills/datalox-pack")]).status).not.toBe(0);
+    expect(await readFile(path.join(userSkillDir, "SKILL.md"), "utf8")).toContain("User-owned skill");
+
+    const status = spawnSync("node", [path.join(packDir, "bin/datalox.js"), "status", "--repo", packDir, "--json"], {
+      cwd: packDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+      },
+    });
+    expect(status.status).toBe(0);
+    const parsedStatus = JSON.parse(status.stdout);
+    expect(parsedStatus.adapters.claude.nativeSkillLinks.installed).toBe(true);
+    expect(parsedStatus.adapters.claude.nativeSkillLinks.canonical).toBe(true);
+    expect(parsedStatus.adapters.claude.hookInstalled).toBe(true);
+
+    await symlink(path.join(packDir, "skills"), path.join(homeDir, ".claude", "skills", "datalox-pack"), "dir");
+
+    const disable = spawnSync("node", [path.join(packDir, "bin/datalox.js"), "disable", "claude", "--json"], {
+      cwd: packDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+      },
+    });
+    expect(disable.status).toBe(0);
+    expect(spawnSync("test", ["-e", path.join(homeDir, ".claude/skills/maintain-datalox-pack")]).status).not.toBe(0);
+    expect(spawnSync("test", ["-e", path.join(homeDir, ".claude/skills/datalox-pack")]).status).not.toBe(0);
+    expect(await readFile(path.join(userSkillDir, "SKILL.md"), "utf8")).toContain("User-owned skill");
   }, 60000);
 
   it("runs the CLI-first setup flow from a fresh pack copy and bootstraps the current repo", async () => {
@@ -337,5 +417,49 @@ describe("adoption scripts", () => {
     const installJson = JSON.parse(await readFile(path.join(packDir, ".datalox", "install.json"), "utf8"));
     expect(installJson.packRootPath).toBe(await realpath(packDir));
     expect(installJson.enforcement.adapters.codex.automatic).toBe(true);
+  }, 60000);
+
+  it("keeps the codex shim working after the original real binary path changes", async () => {
+    const packDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-shim-refresh-"));
+    const homeDir = await mkdtemp(path.join(tmpdir(), "datalox-shim-home-"));
+    const fallbackDir = await mkdtemp(path.join(tmpdir(), "datalox-shim-fallback-"));
+    tempDirs.push(packDir, homeDir, fallbackDir);
+
+    await copyPackSnapshot(repoRoot, packDir);
+
+    const originalCodex = path.join(homeDir, "fake-codex-original");
+    const fallbackCodex = path.join(fallbackDir, "codex");
+    await writeFile(originalCodex, "#!/usr/bin/env bash\necho original-codex\n", "utf8");
+    await writeFile(fallbackCodex, "#!/usr/bin/env bash\necho fallback-codex\n", "utf8");
+    await chmod(originalCodex, 0o755);
+    await chmod(fallbackCodex, 0o755);
+
+    const install = spawnSync("node", [path.join(packDir, "bin/datalox.js"), "install", "codex", "--json"], {
+      cwd: packDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        PATH: `${fallbackDir}:${process.env.PATH ?? ""}`,
+        DATALOX_REAL_CODEX_BIN: originalCodex,
+      },
+    });
+    expect(install.status).toBe(0);
+
+    await rm(originalCodex, { force: true });
+
+    const shimPath = path.join(homeDir, ".local", "bin", "codex");
+    const version = spawnSync(shimPath, ["--version"], {
+      cwd: packDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        PATH: `${path.join(homeDir, ".local", "bin")}:${fallbackDir}:${process.env.PATH ?? ""}`,
+      },
+    });
+
+    expect(version.status).toBe(0);
+    expect(version.stdout.trim()).toBe("fallback-codex");
   }, 60000);
 });

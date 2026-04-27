@@ -72,7 +72,7 @@ They do not receive unrelated example or domain seed knowledge such as:
 
 - `github`
 - `ordercli`
-- flow-cytometry review skills
+- unrelated domain review skills
 - `agent-wiki/notes/pdf/*`
 - `agent-wiki/notes/web/*`
 
@@ -82,7 +82,11 @@ Or from GitHub:
 bash bin/adopt-from-github.sh /path/to/your-project
 ```
 
-Supported default host paths include the Codex shim, the Claude shim when a real `claude` CLI exists, the Claude hook, and the generic CLI wrapper.
+Supported default host paths include the Codex shim, the Claude shim when a real `claude` CLI exists, canonical Claude native skill links, the Claude hook, and the generic CLI wrapper.
+
+Claude native skills are linked at `~/.claude/skills/<skill-name>/SKILL.md`. Restart Claude Code only if it was already running before the top-level `~/.claude/skills` directory existed, or if the host does not pick up the new links live.
+
+The Claude hook is sidecar post-run automation. It can record what happened after a turn, but it is not proof that Claude used the right skill before acting. `CLAUDE.md`, wrapper/shim paths, MCP tools, and repo-local `skills/` remain the robust fallback.
 
 Automatic enforcement only applies on supported host adapter paths. MCP and repo instruction files are still available outside those paths, but they are guidance surfaces, not enforcement.
 
@@ -90,6 +94,20 @@ Inspect the current enforcement state with:
 
 ```bash
 node dist/src/cli/main.js status --repo . --json
+```
+
+## Same-Repo Handoff
+
+For a fresh session or a different agent entering the same repo, the canonical repo-local instruction is:
+
+```text
+Use this repo's Datalox pack. Read AGENTS.md and DATALOX.md before acting.
+```
+
+On supported installed host paths such as enforced Codex, that handoff should already be automatic. If the host only sees repo instructions or MCP tools, use the instruction above explicitly and then verify the current state with:
+
+```bash
+node bin/datalox.js status --repo . --json
 ```
 
 ## CLI

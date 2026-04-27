@@ -231,6 +231,14 @@ After setup, the user should keep using the host normally:
 
 The installed shims infer the repo from the current working directory and default post-run review to `review` with `gpt-5.4-mini`.
 
+Claude native skills are linked at the canonical personal-skill paths:
+
+- `~/.claude/skills/<skill-name>/SKILL.md`
+
+Restart Claude Code only if it was already running before `~/.claude/skills` existed, or if the host does not pick up new skill links live.
+
+The Claude hook is sidecar post-run automation. It records or promotes after a turn; it does not prove Claude used the right skill before acting. Keep `CLAUDE.md`, the wrapper/shim paths, MCP tools, and repo-local `skills/` as the robust fallback surfaces.
+
 Only run machine-level setup when the user allows writes under `HOME` such as `~/.local/bin`, `~/.claude`, or `~/.codex`.
 
 For the enforcement model and implementation roadmap, read [docs/automatic-enforcement-plan.md](docs/automatic-enforcement-plan.md).

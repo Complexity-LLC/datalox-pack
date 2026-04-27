@@ -136,133 +136,14 @@ That doc now holds:
 
 ## Online Retrieval And Note Capture
 
-- [ ] Goal: keep the online loop narrow, cheap, and note-first.
-  Current reality:
-  - the online loop can still create a `skill`
-  Target model:
-  - online loop should primarily:
-    - detect a skill or no-match
-    - record `trace`
-    - maybe create or update a `note` when the signal is strong
-  Preferred boundary:
-  - new-skill creation should default to the later periodic maintenance / synthesis loop
-  Online exception:
-  - online skill creation may remain as a narrow compatibility path for unusually clear cases, but it should not be the dominant or default path
-
-- [ ] Confirm the current retrieval failure mode with grounded repro.
-  Proven issue:
-  a workflow-bound task can still set `matchedSkillId` from a weak lexical overlap when the skill shares the workflow and happens to contain broad tokens.
-  The reproduced example was:
-  - task: `Fix the center-viewer PDF preview runtime error '#e.getOrInsertComputed is not a function' in the desktop app.`
-  - weakly matched skill: `desktop-agent-workspace.capture-the-reusable-lesson-from-the-desktop-host-stream-decode-failure-fix`
-  - current reasons: `workflow_match`, `primary_term_overlap`
-  This is wrong because the event is about PDF.js / WKWebView compatibility, while the matched skill is about Tauri SSE stream parsing.
-  Pass criteria:
-  - the repro is recorded with the exact input task, returned candidate skill, and wrong `matchedSkillId`
-  - there is a focused test or live-proof fixture that fails before the fix and passes after it
-
-- [ ] Tighten authoritative skill matching.
-  Main file:
-  - `scripts/lib/agent-pack.mjs`
-  Current bug:
-  - `isAuthoritativeSkillMatch()` still treats `workflowMatch && primaryMatchCount >= 2` as authoritative
-  Target:
-  - deterministic authoritative match requires:
-    - `explicit_skill_match`, or
-    - `field_phrase_match`
-  Not enough:
-  - `workflow_match` + lexical token overlap
-  Weak lexical matches may still appear in `candidateSkills`, but must not set:
-  - `matchedSkillId`
-  - `matchedNotePaths`
-  Pass criteria:
-  - the WKWebView / PDF.js repro may still return the SSE skill as a weak candidate, but `matchedSkillId` stays `null`
-  - the same-workflow lexical-overlap case no longer becomes authoritative without `explicit_skill_match` or `field_phrase_match`
-
-- [ ] Keep lexical retrieval as candidate generation only.
-  Main files:
-  - `scripts/lib/agent-pack.mjs`
-  - `src/adapters/shared.ts`
-  Target contract:
-  - `candidateSkills` may still include weak same-workflow suggestions
-  - `matchedSkillId` stays `null` unless the match is authoritative
-  - wrapper/MCP/CLI outputs should clearly separate:
-    - candidate suggestions
-    - authoritative selected skill
-  Pass criteria:
-  - wrapper, MCP, and CLI outputs expose candidate suggestions without silently upgrading them into the authoritative selected skill
-  - weak same-workflow candidates can still be surfaced for agent inspection while the durable event shape records no false authoritative match
-
-- [ ] Add a narrow skill match adjudicator only for ambiguous online cases.
-  Main files:
-  - `scripts/lib/agent-pack.mjs`
-  - `src/adapters/shared.ts`
-  Do not call a model on every loop.
-  Use a 3-tier path:
-  1. deterministic accept
-  2. deterministic reject
-  3. cheap agent adjudication only when the candidate set is ambiguous
-  Ambiguous means examples like:
-  - same workflow
-  - no explicit skill match
-  - no field phrase match
-  - only weak lexical overlap
-  - multiple plausible candidates
-  Adjudicator packet should stay small:
-  - current task/step/summary
-  - top `2-5` candidate skills
-  - compact YAML/body summaries only
-  Output must be structured, for example:
-  - `matchedSkillId`
-  - `noMatch`
-  - `alternatives`
-  - `reason`
-  Code still enforces:
-  - adjudicator may only choose from the provided candidate set
-  - no-match is allowed
-  - weak lexical matches remain suggestions if the adjudicator does not confirm them
-  Pass criteria:
-  - deterministic accept and deterministic reject paths do not call the adjudicator
-  - an actually ambiguous same-workflow query calls the adjudicator with a bounded packet and returns a structured result
-  - the adjudicator cannot select a skill outside the provided candidate set
-
-- [ ] Keep online capture note-safe.
-  Main files:
-  - `scripts/lib/agent-pack.mjs`
-  - wrapper / hook / MCP entry surfaces as needed
-  Target:
-  - a one-off incident may remain `trace`
-  - a strong incident may create or update a `note`
-  - online skill creation remains allowed only as a narrow compatibility path
-  - the online loop must not treat direct new-skill creation as the default outcome for raw trace capture
-  Pass criteria:
-  - a one-off weak incident stays `trace`
-  - a one-off strong incident may create or update a `note`
-  - online new-skill creation is either absent or clearly rarer than note creation in the same class of cases
-  - the preferred path for new skills remains later note-backed synthesis, not eager online promotion
-
-- [ ] Add focused regression proofs for the online boundary.
-  Main files:
-  - `tests/bridgeSurfaces.test.ts`
-  - `tests/agentScripts.test.ts`
-  - `tests/wrapperSurfaces.test.ts`
-  Required proofs:
-  1. the WKWebView / PDF.js task may surface the SSE skill as a candidate, but must not set `matchedSkillId`
-  2. a real SSE task still matches the SSE skill authoritatively
-  3. an ambiguous same-workflow query can be resolved by the adjudicator without exposing a false authoritative match
-  4. a one-off incident can create or patch a note without creating a low-quality skill
-  5. if online new-skill creation still exists, it is exercised only in a narrow explicit proof and does not become the default path
-  Pass criteria:
-  - the focused suite covers all five proofs above
-  - the suite fails if lexical overlap becomes authoritative again
-  - the suite fails if online new-skill creation becomes the broad/default path again
-
-- [ ] Final pass criteria:
-  1. weak workflow-bound lexical overlap no longer sets `matchedSkillId`
-  2. `candidateSkills` can still surface suggestions without being treated as authoritative
-  3. ambiguous cases use a cheap structured adjudicator only when deterministic accept/reject cannot decide
-  4. the pasted PDF.js / WKWebView event shape would stay trace-or-note only unless a real matching skill exists
-  5. online new-skill creation is no longer the default product path
+- Completed online retrieval / note-capture work was moved to:
+  - [docs/completed-todo-items.md](/Users/yifanjin/datalox-pack/docs/completed-todo-items.md)
+  That includes:
+  - authoritative match boundary tightening
+  - candidate-only retrieval contract
+  - bounded ambiguous-case adjudicator
+  - note-safe online capture boundary
+  - focused proofs and live validation
   6. periodic note-backed synthesis remains the primary path for creating new reusable skills
 
 
@@ -280,3 +161,270 @@ That doc now holds:
   - [docs/completed-todo-items.md](/Users/yifanjin/datalox-pack/docs/completed-todo-items.md)
   Grounded live proof:
   - [docs/same-repo-bootstrap-live-2026-04-24.md](/Users/yifanjin/datalox-pack/docs/same-repo-bootstrap-live-2026-04-24.md)
+
+
+## Claude Native Skill Installation
+
+- Completed native skill installation work was moved to:
+  - [docs/completed-todo-items.md](/Users/yifanjin/datalox-pack/docs/completed-todo-items.md)
+  That includes:
+  - per-skill canonical link installation
+  - disable/uninstall for new link shape
+  - status reporting for native skill surfacing
+  - doc updates
+  - focused proofs and live validation
+  Grounded live proof:
+  - [docs/claude-native-skill-install-live-2026-04-27.md](/Users/yifanjin/datalox-pack/docs/claude-native-skill-install-live-2026-04-27.md)
+
+
+## Maintenance Defaults And Skill Synthesis Boundary
+
+- [ ] Goal: make periodic maintenance cheap and note-first by default before adding service-backed shared traces.
+  Current issue:
+  - `maintainKnowledge` defaults to `maxEvents = 50`
+  - the same maintenance run always calls note-backed skill synthesis after trace compaction
+  - this is too much default scope for a mini model or lightweight agent loop, especially once service-backed mode can increase event volume
+  Target:
+  - frequent cheap loop:
+    - bounded trace scan
+    - repeated trace group -> repo-local note
+    - mark covered events
+  - less frequent careful loop:
+    - existing notes -> skill synthesis
+    - explicit command or flag only
+
+- [ ] Step 1: lower the default maintenance scan window.
+  Target files:
+  - `scripts/lib/agent-pack.mjs`
+  - `scripts/agent-maintain.mjs`
+  - `src/surface/sharedCommands.ts`
+  Requirements:
+  - default `maxEvents` should be small enough for lightweight maintenance, for example `12`
+  - explicit `--max-events` continues to work for larger manual passes
+  - service-backed planning should later fetch bounded repeated groups, not 50 raw events by default
+  Pass criteria:
+  - default maintain run scans the new smaller default
+  - explicit `--max-events 50` still scans up to 50
+  - docs and help text do not imply the default pass is broad synthesis
+
+- [ ] Step 2: make `datalox maintain` note-only by default.
+  Target files:
+  - `scripts/lib/agent-pack.mjs`
+  - `scripts/agent-maintain.mjs`
+  - `src/core/packCore.ts`
+  - `src/surface/sharedCommands.ts`
+  Requirements:
+  - default maintenance compacts traces into notes and marks covered events
+  - default maintenance does not create or patch skills
+  - default maintenance may still report existing note evidence that is eligible for later skill synthesis
+  - existing safety rule remains:
+    - notes created in the current pass are excluded from skill synthesis
+  Pass criteria:
+  - repeated trace group creates or updates a note with no skill action by default
+  - a note with enough evidence does not create a skill unless synthesis is explicitly requested
+  - event coverage behavior stays unchanged
+
+- [ ] Step 3: add an explicit skill synthesis path.
+  Target files:
+  - `scripts/lib/agent-pack.mjs`
+  - `scripts/agent-maintain.mjs`
+  - `src/cli/main.ts`
+  - `src/surface/sharedCommands.ts`
+  Options:
+  - add `datalox maintain --synthesize-skills`
+  - or add a dedicated `datalox synthesize-skills`
+  Preferred shape:
+  - keep `maintain` as note-first
+  - use an explicit flag or command for note-backed skill synthesis
+  Requirements:
+  - skill synthesis still requires note-backed evidence
+  - `minSkillOccurrences` remains configurable
+  - unknown-workflow and incident-shaped note protections remain
+  Pass criteria:
+  - explicit synthesis can create or patch a skill from existing note-backed evidence
+  - default maintenance cannot create or patch a skill
+  - generated skill ids remain reusable workflow names, not incident captures
+
+- [ ] Step 4: update tests and completed-work docs after implementation.
+  Target files:
+  - `tests/bridgeSurfaces.test.ts`
+  - `tests/agentScripts.test.ts`
+  - `docs/completed-todo-items.md`
+  Requirements:
+  - update the existing maintenance regression to expect note-only default behavior
+  - add explicit synthesis regression for the old second-pass skill creation path
+  - record the completed behavior only after the implementation passes
+  Pass criteria:
+  - `npm run build` passes
+  - focused maintenance tests pass
+  - completed docs clearly say:
+    - default maintenance is trace -> note only
+    - skill synthesis is explicit and note-backed
+
+
+## Service-Backed Shared Trace Plane
+
+- Current foundation already exists:
+  - `datalox maintain` / `maintain_knowledge` runs a bounded repo-local maintenance pass
+  - current maintenance scans `agent-wiki/events/`
+  - repeated unresolved traces compact into `agent-wiki/notes/`
+  - covered events are marked so the same trace group does not keep re-promoting
+  - note-backed skill synthesis runs only from existing notes, normally on a later pass
+  Service-backed work should reuse this materialization loop. Do not build a second note/skill promotion path.
+
+- [ ] Goal: make `mode: "service_backed"` real so different agents and sessions can share traces, events, and coordination state for the same repo without turning notes and skills into a hidden global blob.
+  The target boundary is:
+  - shared/service-backed:
+    - raw traces
+    - recorded events
+    - session state
+    - leases / signals / checkpoints
+    - maintenance coverage state
+  - repo-owned:
+    - `agent-wiki/notes/`
+    - `skills/`
+    - visible control artifacts
+    - repo-local materialized reusable knowledge
+
+- [ ] Step 1: define the service-backed boundary in config and docs.
+  Ground it in the already-existing `service_backed` mode instead of inventing a parallel concept.
+  Target files:
+  - `.datalox/config.schema.json`
+  - `.datalox/config.json`
+  - `.datalox/manifest.json`
+  - `docs/product-definition.md`
+  Requirements:
+  - `repo_only` stays the default
+  - `service_backed` is documented as:
+    - shared trace/event plane
+    - repo-local note/skill materialization plane
+  - do not describe the service as the primary durable home for notes or skills
+  Pass criteria:
+  - config schema can express the service-backed fields without ambiguity
+  - docs explicitly say "agents share what happened; the repo owns what was learned"
+
+- [ ] Step 2: add a stable repo identity and service namespace contract.
+  The service must know when two sessions belong to the same repo and when they do not.
+  Target files:
+  - `src/domain/agentConfig.ts`
+  - `src/agent/loadAgentConfig.ts`
+  - `src/types/legacy-agent-pack.d.ts`
+  - `scripts/lib/agent-pack.mjs`
+  Add or clarify fields such as:
+  - `repoId`
+  - `workspaceRoot`
+  - `branch` when available
+  - `sessionId`
+  - `agentId` / `hostKind`
+  Requirements:
+  - same repo from two agents resolves to the same service namespace
+  - different repos cannot accidentally share traces
+  - no heuristic matching for repo identity when a stable id is available
+  Pass criteria:
+  - two synthetic sessions with the same repo id land in the same trace namespace
+  - a second repo with a different id does not see those traces
+
+- [ ] Step 3: implement a service-backed trace/event client.
+  This should be a real client surface, not a hidden fallback branch inside unrelated code.
+  Target files:
+  - `src/core/packCore.ts`
+  - `src/adapters/shared.ts`
+  - `src/cli/main.ts`
+  - new dedicated module if needed, such as:
+    - `src/core/serviceBackedTraceClient.ts`
+  Requirements:
+  - in `repo_only`, keep current local event behavior
+  - in `service_backed`, record traces/events to the shared service using the repo namespace contract
+  - agent-readable errors only; avoid human-first ceremony
+  - do not silently fall back from service-backed writes to some hidden local substitute
+  Pass criteria:
+  - service-backed write path is exercised in tests
+  - when the service rejects a write, the failure is explicit and attributable
+  - `repo_only` behavior remains unchanged
+
+- [ ] Step 4: teach retrieval and maintenance to read shared traces for the current repo.
+  The online and maintenance loops must be able to see traces from other agents in the same repo.
+  Target files:
+  - `scripts/lib/agent-pack.mjs`
+  - `src/core/packCore.ts`
+  - `src/adapters/shared.ts`
+  Requirements:
+  - online capture can still stay cheap
+  - the existing `maintainKnowledge` planner reads a bounded unresolved trace set from the service for the current repo
+  - local `agent-wiki/events/` traces and service-backed traces use one normalized planner input shape
+  - no cross-repo bleed
+  - current local note/skill retrieval remains repo-local
+  - do not create a parallel service-only maintenance loop
+  Pass criteria:
+  - agent A writes a trace in service-backed mode
+  - agent B in a fresh session, same repo, can see that trace in `maintainKnowledge` planner input
+  - agent C in a different repo cannot
+
+- [ ] Step 5: keep existing periodic maintenance as the materialization boundary.
+  Shared traces must feed the current maintenance loop, compact into repo-local notes first, then synthesize repo-local skills from note-backed evidence.
+  Target files:
+  - `scripts/lib/agent-pack.mjs`
+  - `scripts/agent-maintain.mjs`
+  - `src/surface/sharedCommands.ts`
+  Requirements:
+  - do not create global notes or global skills
+  - service-backed traces compact into repo-local notes
+  - note-backed synthesis stays the primary path for new skills
+  - notes created during the current pass must stay excluded from skill synthesis until a later pass, matching current repo-local behavior
+  - covered/compacted service events are marked so they do not keep exploding the maintenance input
+  - `repo_only` continues to scan only local `agent-wiki/events/`
+  Pass criteria:
+  - two service-backed traces from two different agents in the same repo compact into one repo-local note
+  - repeating the same maintenance run does not re-promote the same unresolved traces forever
+  - a repeated reusable workflow can still synthesize one repo-local skill from note-backed evidence
+  - the existing repo-local maintenance regression still passes unchanged
+
+- [ ] Step 6: share coordination state across agents in service-backed mode.
+  This is where leases, signals, or checkpoints belong if Datalox wants cross-agent coordination.
+  Target files:
+  - `src/core/packCore.ts`
+  - `src/cli/main.ts`
+  - `src/surface/sharedCommands.ts`
+  Requirements:
+  - coordination state is scoped by repo id
+  - it remains optional and does not block trace sharing
+  - do not mix coordination metadata into skill or note files
+  Pass criteria:
+  - two agents in the same repo can exchange one coordination artifact through the shared plane
+  - the same call in a different repo namespace returns nothing
+
+- [ ] Step 7: add one explicit status/doctor surface for service-backed mode.
+  The system needs a visible way to say whether the shared plane is actually connected.
+  Target files:
+  - `src/cli/main.ts`
+  - `src/core/packCore.ts`
+  - `README.md`
+  - `START_HERE.md`
+  Requirements:
+  - `status --json` must say whether:
+    - service-backed mode is enabled
+    - the shared trace plane is reachable
+    - the current repo id is known
+  - keep the output machine-readable first
+  Pass criteria:
+  - fresh service-backed repo returns a positive status with repo id + connectivity
+  - broken connectivity returns a clear explicit failure state
+
+- [ ] Step 8: prove it with a fresh multi-agent live test.
+  Use cheap models where possible.
+  Required live proof shape:
+  1. fresh repo in `service_backed` mode
+  2. agent/session A records a trace
+  3. fresh agent/session B in the same repo sees that trace
+  4. maintenance compacts shared traces into one repo-local note
+  5. repeated note-backed evidence can synthesize one repo-local skill
+  6. agent/session C in a different repo does not see repo A's traces
+  Write the result into a dedicated live proof doc under `docs/`.
+
+- [ ] Final pass criteria:
+  1. `mode: "service_backed"` is a real implemented mode, not just a schema value.
+  2. Multiple agents in the same repo can share traces/events without sharing raw chat state.
+  3. Notes and skills still materialize into the repo filesystem, not a hidden global store.
+  4. Periodic maintenance compacts shared traces into repo-local notes and then repo-local skills.
+  5. No cross-repo trace bleed occurs.
+  6. `repo_only` mode keeps its current local-only behavior.

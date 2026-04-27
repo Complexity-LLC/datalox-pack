@@ -95,6 +95,10 @@ The source clone owns `bin/adopt-host-repo.sh`. The adopted host repo owns host-
 
 After setup, the user should keep using `codex` or `claude` normally from the target repo.
 
+Claude native skills install at `~/.claude/skills/<skill-name>/SKILL.md`. Restart Claude Code only if it was already running before `~/.claude/skills` existed, or if the host does not pick up the new links live.
+
+The Claude hook is sidecar post-run automation. `CLAUDE.md`, wrapper/shim paths, MCP tools, and repo-local `skills/` remain the fallback when native skills are not surfaced.
+
 ## Stop
 
 To stop Datalox-managed host interception:
