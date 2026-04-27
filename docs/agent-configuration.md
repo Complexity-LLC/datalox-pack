@@ -80,10 +80,18 @@ Lint checks:
 
 The user's agent may perform one-time machine setup.
 
-Preferred commands:
+Preferred first-time setup from the repo the user wants Datalox to manage:
 
-- `bash bin/setup-multi-agent.sh`
-- `node bin/datalox.js install all --json`
+```bash
+TARGET_REPO="$(pwd)"
+git clone https://github.com/Complexity-LLC/datalox-pack.git
+cd datalox-pack
+bash bin/setup-multi-agent.sh claude
+bash bin/adopt-host-repo.sh "$TARGET_REPO"
+node bin/datalox.js status --repo "$TARGET_REPO" --json
+```
+
+The source clone owns `bin/adopt-host-repo.sh`. The adopted host repo owns host-local shims such as `bin/setup-multi-agent.sh`, `bin/install-default-host-integrations.sh`, and `bin/disable-default-host-integrations.sh`.
 
 After setup, the user should keep using `codex` or `claude` normally from the target repo.
 

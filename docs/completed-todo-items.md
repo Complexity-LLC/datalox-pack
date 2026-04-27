@@ -115,6 +115,58 @@ Grounded proof:
 
 - [docs/same-repo-bootstrap-live-2026-04-24.md](/Users/yifanjin/datalox-pack/docs/same-repo-bootstrap-live-2026-04-24.md)
 
+## Setup And Partial Adoption Recovery
+
+Completed:
+
+- kept the safety block for partial Datalox-owned paths without an install stamp
+- added explicit recovery guidance to blocked bootstrap probe output
+- updated setup instructions to preserve the target repo path before changing into the source clone
+- clarified that `datalox-pack` is the source clone and the user's current project is the adoption target
+- clarified that `bin/adopt-host-repo.sh` belongs to the source clone, while adopted host repos get host-local shims
+- updated the public `datalox.ai` source copy and manifest to use the same setup shape
+- added focused regression coverage for the reported partial-adoption state
+
+Implemented shape:
+
+- first-time setup from the target repo now uses:
+
+```bash
+TARGET_REPO="$(pwd)"
+git clone https://github.com/Complexity-LLC/datalox-pack.git
+cd datalox-pack
+bash bin/setup-multi-agent.sh claude
+bash bin/adopt-host-repo.sh "$TARGET_REPO"
+node bin/datalox.js status --repo "$TARGET_REPO" --json
+```
+
+- `probe-bootstrap --json` still returns `status: "blocked"` and `canAutoBootstrap: false` for unrecognized partial repos
+- the blocked partial-state probe now includes:
+  - `recommendedAction: "explicit_adopt_from_source_pack"`
+  - `recoveryCommands` that preserve the target repo path and adopt from a source clone
+- explicit adoption from a real source clone repairs the repo by writing the core bundle and `.datalox/install.json`
+
+Passed:
+
+1. a git repo with `agent-wiki/` but no `.datalox/install.json` remains blocked for auto-bootstrap
+2. the blocked probe output includes an explicit recovery action and command shape
+3. explicit `bash bin/adopt-host-repo.sh "$TARGET_REPO"` from a real source clone repairs the repo and writes `.datalox/install.json`
+4. the repaired repo reports `status: "ready"`
+5. setup docs use `TARGET_REPO="$(pwd)"` before changing directories
+6. focused adoption and wrapper suites pass
+7. `datalox.ai` production is redeployed and the live page/manifest are checked
+
+Focused verification:
+
+- `npm run build`
+- `npx vitest run tests/adoptionScripts.test.ts tests/wrapperSurfaces.test.ts`
+
+Public deployment:
+
+- deployed production `datalox.ai` to `https://datalox-land-hnws45vdb-oshawott1124s-projects.vercel.app`
+- live page check confirmed `TARGET_REPO="$(pwd)"`, `bash bin/setup-multi-agent.sh claude`, and `bash bin/adopt-host-repo.sh "$TARGET_REPO"`
+- live manifest check confirmed the same `agent_setup_prompt`
+
 ## Periodic Trace Maintenance And Skill Synthesis
 
 Completed:

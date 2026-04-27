@@ -10,6 +10,7 @@ That doc now holds:
 - completed concrete implementation steps
 - completed pass-criteria proofs
 - completed bootstrap-payload-shape work
+- completed setup and partial-adoption recovery work
 
 
 ## Refactor `agent-pack.mjs`

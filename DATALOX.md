@@ -198,13 +198,31 @@ If a repo is already partially adopted or conflicting, do not mutate it blindly.
 
 One-time machine setup can be delegated to the user's agent.
 
-Preferred commands:
+Preferred first-time setup from the repo the user wants Datalox to manage:
 
-- install all default host integrations:
-  `bash bin/setup-multi-agent.sh`
-- install one host only:
-  `node bin/datalox.js install codex --json`
-  `node bin/datalox.js install claude --json`
+```bash
+TARGET_REPO="$(pwd)"
+git clone https://github.com/Complexity-LLC/datalox-pack.git
+cd datalox-pack
+bash bin/setup-multi-agent.sh claude
+bash bin/adopt-host-repo.sh "$TARGET_REPO"
+node bin/datalox.js status --repo "$TARGET_REPO" --json
+```
+
+Source and target roles:
+
+- `datalox-pack` is the source clone and owns source-only scripts such as `bin/adopt-host-repo.sh`.
+- `$TARGET_REPO` is the user's current project and receives `.datalox/install.json`, instruction surfaces, core skills, and notes.
+- If a repo claims to be the source pack but lacks `bin/adopt-host-repo.sh`, clone a fresh source pack.
+
+Host-specific setup:
+
+- Claude only:
+  `bash bin/setup-multi-agent.sh claude`
+- Codex only:
+  `bash bin/setup-multi-agent.sh codex`
+- all default host integrations:
+  `bash bin/setup-multi-agent.sh all`
 
 After setup, the user should keep using the host normally:
 

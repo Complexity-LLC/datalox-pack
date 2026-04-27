@@ -38,20 +38,26 @@ Use:
 
 ## Install
 
-Machine-level install:
+From the repo you want Datalox to manage, paste this into the agent chatbox and send it:
 
 ```bash
+TARGET_REPO="$(pwd)"
 git clone https://github.com/Complexity-LLC/datalox-pack.git
 cd datalox-pack
-bash bin/setup-multi-agent.sh
+bash bin/setup-multi-agent.sh claude
+bash bin/adopt-host-repo.sh "$TARGET_REPO"
+node bin/datalox.js status --repo "$TARGET_REPO" --json
 ```
 
-This one-time machine setup can be done by the user's agent.
+This does two separate things:
 
-Repo-level adoption:
+- `datalox-pack` is the source clone. It owns source-only scripts such as `bin/adopt-host-repo.sh`.
+- `$TARGET_REPO` is the user's current project. Adoption writes the Datalox instruction surfaces, core skills, notes, and `.datalox/install.json` there.
+
+For Codex instead of Claude, use:
 
 ```bash
-bash bin/adopt-host-repo.sh /path/to/your-project
+bash bin/setup-multi-agent.sh codex
 ```
 
 If the host repo already has `AGENTS.md`, `CLAUDE.md`, or `.github/copilot-instructions.md`, adoption preserves that file and injects a small Datalox adapter instead of skipping the Datalox entrypoint entirely.
@@ -116,7 +122,7 @@ node bin/datalox-codex.js -- exec "Update the docs."
 node bin/datalox-wrap.js command --repo /path/to/repo --task "update docs" --prompt "Update the docs." -- <host-command> __DATALOX_PROMPT__
 ```
 
-After `node bin/datalox.js setup codex` or `bash bin/setup-multi-agent.sh`, the user should not need Datalox flags at all:
+After `node bin/datalox.js setup codex`, `bash bin/setup-multi-agent.sh codex`, or `bash bin/setup-multi-agent.sh claude`, the user should not need Datalox flags at all:
 
 ```bash
 codex exec "Update the docs."

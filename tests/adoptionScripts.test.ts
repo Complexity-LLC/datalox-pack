@@ -228,6 +228,63 @@ describe("adoption scripts", () => {
     expect(spawnSync("test", ["-e", path.join(hostDir, "agent-wiki/notes/web")]).status).not.toBe(0);
   }, 60000);
 
+  it("keeps partial Datalox paths blocked for auto-bootstrap but gives explicit recovery", async () => {
+    const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-partial-recovery-"));
+    tempDirs.push(hostDir);
+
+    const init = spawnSync("git", ["init"], {
+      cwd: hostDir,
+      encoding: "utf8",
+    });
+    expect(init.status).toBe(0);
+    await mkdir(path.join(hostDir, "agent-wiki"), { recursive: true });
+    await writeFile(path.join(hostDir, "agent-wiki", "hot.md"), "# partial\n", "utf8");
+
+    const probe = spawnSync("node", [path.join(repoRoot, "bin/datalox.js"), "probe-bootstrap", "--repo", hostDir, "--json"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    expect(probe.status).toBe(0);
+    const parsedProbe = JSON.parse(probe.stdout);
+    expect(parsedProbe.status).toBe("blocked");
+    expect(parsedProbe.canAutoBootstrap).toBe(false);
+    expect(parsedProbe.detected.hasAgentWiki).toBe(true);
+    expect(parsedProbe.detected.hasInstallStamp).toBe(false);
+    expect(parsedProbe.recommendedAction).toBe("explicit_adopt_from_source_pack");
+    expect(parsedProbe.recoveryCommands).toEqual([
+      `TARGET_REPO=${JSON.stringify(hostDir)}`,
+      "git clone https://github.com/Complexity-LLC/datalox-pack.git",
+      "cd datalox-pack",
+      "bash bin/adopt-host-repo.sh \"$TARGET_REPO\"",
+    ]);
+
+    const autoBootstrap = spawnSync("node", [path.join(repoRoot, "bin/datalox.js"), "auto-bootstrap", "--repo", hostDir, "--json"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    expect(autoBootstrap.status).toBe(0);
+    const parsedAutoBootstrap = JSON.parse(autoBootstrap.stdout);
+    expect(parsedAutoBootstrap.action).toBe("none");
+    expect(parsedAutoBootstrap.probeBefore.status).toBe("blocked");
+    expect(spawnSync("test", ["-f", path.join(hostDir, ".datalox", "install.json")]).status).not.toBe(0);
+
+    const adopt = spawnSync("bash", [path.join(repoRoot, "bin/adopt-host-repo.sh"), hostDir], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    expect(adopt.status).toBe(0);
+    expect(await readFile(path.join(hostDir, ".datalox", "install.json"), "utf8")).toContain("\"installMode\": \"manual\"");
+
+    const repairedProbe = spawnSync("node", [path.join(repoRoot, "bin/datalox.js"), "probe-bootstrap", "--repo", hostDir, "--json"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    expect(repairedProbe.status).toBe(0);
+    const parsedRepairedProbe = JSON.parse(repairedProbe.stdout);
+    expect(parsedRepairedProbe.status).toBe("ready");
+    expect(parsedRepairedProbe.detected.hasInstallStamp).toBe(true);
+  }, 60000);
+
   it("reports enforced host adapters as automatic in status output", async () => {
     const packDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-status-copy-"));
     const homeDir = await mkdtemp(path.join(tmpdir(), "datalox-status-home-"));

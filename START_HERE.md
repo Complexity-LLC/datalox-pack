@@ -11,9 +11,8 @@ The main structure is:
 
 ## Fastest Path
 
-1. Put this pack in the repo you want the agent to work on.
-2. Tell the agent once:
-   `Read DATALOX.md and use the Datalox pack.`
+1. From the repo you want the agent to work on, paste the setup block below into the agent chatbox.
+2. Let the agent clone the source pack, install the host integration, adopt the current repo, and verify status.
 3. The normal read path should be:
    - detect the relevant `skill`
    - read `skills/<name>/SKILL.md`
@@ -24,6 +23,15 @@ The main structure is:
    - `agent-wiki/lint.md`
    - `agent-wiki/hot.md`
    - `agent-wiki/events/`
+
+```bash
+TARGET_REPO="$(pwd)"
+git clone https://github.com/Complexity-LLC/datalox-pack.git
+cd datalox-pack
+bash bin/setup-multi-agent.sh claude
+bash bin/adopt-host-repo.sh "$TARGET_REPO"
+node bin/datalox.js status --repo "$TARGET_REPO" --json
+```
 
 ## What You Should See
 
@@ -45,12 +53,14 @@ The main structure is:
 
 ## One-Click Options
 
-- Adopt into a host repo:
+- Full setup from the target repo:
+  `TARGET_REPO="$(pwd)" && git clone https://github.com/Complexity-LLC/datalox-pack.git && cd datalox-pack && bash bin/setup-multi-agent.sh claude && bash bin/adopt-host-repo.sh "$TARGET_REPO"`
+- Adopt a target repo from an existing source-pack clone:
   `bash bin/adopt-host-repo.sh /path/to/host-repo`
 - Pull from GitHub and adopt:
   `bash bin/adopt-from-github.sh /path/to/host-repo`
 - Wire skills into common agent tools:
-  `bash bin/setup-multi-agent.sh`
+  `bash bin/setup-multi-agent.sh claude`
 - Automatic post-turn hook recording for hosts with hook support:
   `node bin/datalox-auto-promote.js`
   Default hook events are recorded as `trace`. Set `DATALOX_HOOK_EVENT_CLASS=candidate` only when the hook should enter the promotion ladder.
@@ -70,7 +80,7 @@ They do not get unrelated example or domain bundles by default.
 
 ## Normal Usage After Setup
 
-The user's agent can run `bash bin/setup-multi-agent.sh` once. After that, the user should keep using the host normally.
+The user's agent can run `bash bin/setup-multi-agent.sh claude` once from the source pack and `bash bin/adopt-host-repo.sh "$TARGET_REPO"` for the current project. After that, the user should keep using the host normally.
 
 - Codex:
   `codex exec "Update the onboarding docs."`

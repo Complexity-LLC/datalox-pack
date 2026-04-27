@@ -150,6 +150,8 @@ export interface BootstrapProbeResult {
   status: "ready" | "bootstrappable" | "repairable" | "blocked";
   canAutoBootstrap: boolean;
   reasons: string[];
+  recommendedAction?: "explicit_adopt_from_source_pack";
+  recoveryCommands?: string[];
   installStampPath: string;
   installStamp: InstallStamp | null;
   detected: {
@@ -197,6 +199,20 @@ function resolvePackRootPath(): string {
 
 const PACK_ROOT = resolvePackRootPath();
 const DEFAULT_PACK_URL = "https://github.com/Complexity-LLC/datalox-pack.git";
+
+function shellDoubleQuote(value: string): string {
+  return JSON.stringify(value);
+}
+
+function buildExplicitAdoptionRecoveryCommands(repoPath: string): string[] {
+  return [
+    `TARGET_REPO=${shellDoubleQuote(repoPath)}`,
+    `git clone ${DEFAULT_PACK_URL}`,
+    "cd datalox-pack",
+    "bash bin/adopt-host-repo.sh \"$TARGET_REPO\"",
+  ];
+}
+
 const SINGLE_FILE_ADOPTION_PATHS = [
   "DATALOX.md",
   "AGENTS.md",
@@ -973,6 +989,8 @@ export async function probeBootstrapCandidate(repoPath?: string): Promise<Bootst
     reasons: [
       `repo already contains partial Datalox-owned paths (${detectedRoots.join(", ")}) without a safe repair marker`,
     ],
+    recommendedAction: "explicit_adopt_from_source_pack",
+    recoveryCommands: buildExplicitAdoptionRecoveryCommands(resolvedRepoPath),
     installStampPath,
     installStamp,
     detected: {
