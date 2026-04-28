@@ -192,6 +192,7 @@ That doc now holds:
   - less frequent careful loop:
     - existing notes -> skill synthesis
     - explicit command or flag only
+  - this must land before hook/wrapper backlog warnings recommend `datalox maintain`
 
 - [ ] Step 1: lower the default maintenance scan window.
   Target files:
@@ -260,6 +261,117 @@ That doc now holds:
   - completed docs clearly say:
     - default maintenance is trace -> note only
     - skill synthesis is explicit and note-backed
+
+
+## Event Backlog Visibility And Maintenance Nudges
+
+- [ ] Goal: stop repos from silently accumulating large `agent-wiki/events/` backlogs with no notes, skills, or visible maintenance signal.
+  Dependency:
+  - complete `Maintenance Defaults And Skill Synthesis Boundary` first, so the recommended maintenance command is note-only by default
+  Current issue:
+  - hooks and wrappers can keep recording events every turn
+  - this is not Claude Code-specific; Codex wrapper runs can show the same silent backlog behavior
+  - `datalox-auto-promote` compiles the current hook event but does not drain accumulated backlog
+  - `datalox maintain` exists but is manual
+  - a repo can have 135+ events with no obvious warning, no compaction, and no agent-readable next action
+  Target:
+  - agents should see when the repo needs maintenance
+  - Claude Code and Codex should both expose the same backlog status from shared pack logic
+  - warnings should recommend a bounded note-only maintenance command
+  - hooks should not run heavy synthesis automatically
+  - Claude Code must not rely on stderr alone; the signal must land where the next agent turn can read it
+  - backlog visibility must land before service-backed mode increases event volume
+
+- [ ] Step 1: add shared event backlog stats and status output.
+  Target files:
+  - `scripts/lib/agent-pack.mjs`
+  - `src/core/packCore.ts`
+  - `src/core/installCore.ts`
+  - `src/cli/main.ts`
+  Requirements:
+  - add one shared helper for backlog stats and policy evaluation; status, hooks, and wrappers must call it instead of reimplementing counts
+  - `status --json` reports:
+    - total event count
+    - uncovered event count
+    - covered event count
+    - maintainable unresolved trace group count
+    - policy level: `none`, `warn`, or `urgent`
+    - oldest uncovered event timestamp/path
+    - `maintenanceRecommended`
+    - recommended bounded command, for example:
+      - `datalox maintain --max-events 12 --json`
+  - output stays machine-readable first
+  Pass criteria:
+  - empty repo reports zero backlog
+  - repo with covered events does not over-warn
+  - repo with many uncovered events reports `maintenanceRecommended: true`
+  - repo with a repeated group that meets `minNoteOccurrences` reports a maintainable group
+
+- [ ] Step 2: add agent-readable backlog warning to hook/wrapper surfaces.
+  Target files:
+  - `bin/datalox-auto-promote.js`
+  - `src/adapters/shared.ts`
+  - wrapper tests
+  Requirements:
+  - after recording/compiling the current event, surfaces can warn when the shared backlog policy returns `warn` or `urgent`
+  - apply the same warning contract to Claude Code hooks and Codex wrapper runs
+  - warning must be compact and actionable
+  - warning should recommend bounded note-only maintenance after the maintenance-defaults change lands
+  - do not run broad maintenance or skill synthesis from the hook
+  - Claude Code warning must be written to a next-turn-readable surface, such as `agent-wiki/hot.md` or an equivalent generated control artifact; stderr alone is not enough
+  Pass criteria:
+  - hook stderr includes a clear maintenance recommendation when backlog is high
+  - Claude Code's next turn can discover the backlog recommendation from repo-local control artifacts
+  - Codex wrapper JSON includes a machine-readable backlog warning
+  - Claude Code and Codex report consistent counts for the same repo state
+  - no automatic skill creation is triggered by the warning path
+
+- [ ] Step 3: add a composite backlog policy.
+  Target files:
+  - `.datalox/config.schema.json`
+  - `.datalox/config.json`
+  - `src/agent/loadAgentConfig.ts`
+  - `scripts/lib/agent-pack.mjs`
+  Requirements:
+  - policy evaluates three signals with OR semantics:
+    - uncovered event depth
+    - oldest uncovered event age
+    - maintainable unresolved group count
+  - maintainable group means a repeated unresolved trace group that already meets `minNoteOccurrences`
+  - default policy is conservative and grounded in current observations, for example:
+    - warn:
+      - uncovered events >= `50`
+      - oldest uncovered age >= `7` days
+      - maintainable groups >= `1`
+    - urgent:
+      - uncovered events >= `100`
+      - oldest uncovered age >= `14` days
+      - maintainable groups >= `5`
+  - each signal is configurable per repo
+  - missing individual signal fields disable only that signal, but config validation must reject a policy that disables all warning signals
+  - if config is absent, default policy still works
+  Pass criteria:
+  - changing config policy changes status/warning behavior
+  - repo with 135 uncovered events reports urgent by depth
+  - quiet repo with old uncovered events reports at least warn by age
+  - small repo with one maintainable repeated group reports warn by group signal
+  - invalid policy values fail clearly
+
+- [ ] Step 4: add focused backlog tests.
+  Target files:
+  - `tests/bridgeSurfaces.test.ts`
+  - `tests/wrapperSurfaces.test.ts`
+  - `tests/agentScripts.test.ts`
+  Requirements:
+  - synthetic Claude Code hook and Codex wrapper runs both surface the backlog warning
+  - synthetic repo with 135 uncovered events reports maintenance recommendation
+  - repeated groups are counted separately from raw event count and only maintainable groups drive group warnings
+  - old uncovered events can trigger warning even when raw count is low
+  - covered events are excluded from urgent warning
+  - hook/wrapper warning remains note-only and does not synthesize skills
+  Pass criteria:
+  - focused tests pass
+  - `npm run build` passes
 
 
 ## Service-Backed Shared Trace Plane
