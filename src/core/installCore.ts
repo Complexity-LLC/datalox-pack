@@ -9,7 +9,7 @@ import {
   type EnforcementLevel,
   type HostSurfaceId,
 } from "../adapters/capabilities.js";
-import { probeBootstrapCandidate } from "./packCore.js";
+import { getEventBacklogStatus, probeBootstrapCandidate } from "./packCore.js";
 
 export type InstallHost = "all" | "codex" | "claude";
 
@@ -109,6 +109,7 @@ export interface EnforcementStatusSnapshot {
     automaticReady: boolean;
     enforcementLevel: EnforcementLevel;
     reasons: string[];
+    maintenanceBacklog: Awaited<ReturnType<typeof getEventBacklogStatus>> | null;
   };
 }
 
@@ -1050,6 +1051,10 @@ export async function inspectEnforcementStatus(input: {
   const conditionalReady = repoReady && !automaticReady && Object.values(adapters).some((adapter) => (
     adapter.enforcementLevel === "conditional" && adapter.available
   ));
+  const canReadMaintenanceBacklog = repoProbe.detected.hasConfig && repoProbe.detected.hasAgentWiki;
+  const maintenanceBacklog = canReadMaintenanceBacklog
+    ? await getEventBacklogStatus({ repoPath })
+    : null;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -1066,6 +1071,7 @@ export async function inspectEnforcementStatus(input: {
       automaticReady,
       enforcementLevel: computeRepoEnforcementLevel(automaticReady, conditionalReady),
       reasons: repoProbe.reasons,
+      maintenanceBacklog,
     },
   };
 }

@@ -26,6 +26,40 @@ export const SOURCE_KINDS = [
 
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 
+export interface MaintenanceBacklogThreshold {
+  uncovered?: number;
+  oldestAgeDays?: number;
+  maintainableGroups?: number;
+}
+
+export interface MaintenanceConfig {
+  maxEvents: number;
+  minNoteOccurrences: number;
+  minSkillOccurrences: number;
+  backlog: {
+    warn: MaintenanceBacklogThreshold;
+    urgent: MaintenanceBacklogThreshold;
+  };
+}
+
+export const DEFAULT_MAINTENANCE_CONFIG: MaintenanceConfig = {
+  maxEvents: 12,
+  minNoteOccurrences: 2,
+  minSkillOccurrences: 3,
+  backlog: {
+    warn: {
+      uncovered: 50,
+      oldestAgeDays: 7,
+      maintainableGroups: 1,
+    },
+    urgent: {
+      uncovered: 100,
+      oldestAgeDays: 14,
+      maintainableGroups: 5,
+    },
+  },
+};
+
 export interface AgentConfig {
   version: number;
   mode: PackMode;
@@ -54,6 +88,7 @@ export interface AgentConfig {
     seedPatternsDir?: string | null;
     hostPatternsDir?: string | null;
   };
+  maintenance: MaintenanceConfig;
   runtime: {
     enabled: boolean;
     baseUrl: string;

@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { compileRecordedEvent, maintainKnowledge, patchKnowledge, promoteGap, recordTurnResult } from "../src/core/packCore.js";
+import { compileRecordedEvent, getEventBacklogStatus, maintainKnowledge, patchKnowledge, promoteGap, recordTurnResult } from "../src/core/packCore.js";
 
 const repoRoot = process.cwd();
 const builtCliPath = path.join(repoRoot, "dist", "src", "cli", "main.js");
@@ -564,6 +564,43 @@ async function createMinimalPack(tempDir: string) {
   );
 }
 
+async function writeSyntheticTraceEvent(
+  tempDir: string,
+  input: {
+    id: string;
+    timestamp?: string;
+    workflow?: string;
+    stabilityKey?: string;
+    maintenanceStatus?: string;
+    coveredByNotePath?: string;
+  },
+) {
+  await mkdir(path.join(tempDir, "agent-wiki/events"), { recursive: true });
+  const timestamp = input.timestamp ?? new Date().toISOString();
+  const payload = {
+    version: 1,
+    id: input.id,
+    timestamp,
+    eventKind: "wrapper:codex:success",
+    eventClass: "trace",
+    sourceKind: "trace",
+    workflow: input.workflow ?? "agent_adoption",
+    task: `Synthetic maintenance trace ${input.id}`,
+    summary: `Synthetic maintenance trace ${input.id}`,
+    signal: `Synthetic maintenance trace ${input.id}`,
+    interpretation: "synthetic backlog test event",
+    recommendedAction: "compact repeated synthetic traces into notes when maintenance runs",
+    stabilityKey: input.stabilityKey ?? `agent_adoption::${input.id}`,
+    ...(input.maintenanceStatus ? { maintenanceStatus: input.maintenanceStatus } : {}),
+    ...(input.coveredByNotePath ? { coveredByNotePath: input.coveredByNotePath } : {}),
+    ...(input.maintenanceStatus === "covered" ? { coveredAt: "2026-04-28T00:00:00.000Z" } : {}),
+  };
+  await writeFile(
+    path.join(tempDir, "agent-wiki/events", `${input.id}.json`),
+    `${JSON.stringify(payload, null, 2)}\n`,
+  );
+}
+
 async function addFlowStyleSkill(tempDir: string) {
   await mkdir(path.join(tempDir, "skills/github"), { recursive: true });
   await writeFile(
@@ -686,6 +723,65 @@ async function addCrlfSkill(tempDir: string) {
       "- agent-wiki/notes/maintain-datalox-pack.md",
       "",
     ].join("\r\n"),
+  );
+}
+
+async function addDesktopStreamSkill(tempDir: string) {
+  await mkdir(path.join(tempDir, "skills", "desktop-host-stream-chunking"), { recursive: true });
+  await writeFile(
+    path.join(tempDir, "agent-wiki", "notes", "desktop-host-stream-chunking.md"),
+    `---
+title: Use async chunk parsing for long-lived agent runtime SSE in the Tauri host
+workflow: desktop-agent-workspace
+status: active
+---
+
+# Use async chunk parsing for long-lived agent runtime SSE in the Tauri host
+
+## When to Use
+
+Use when long-lived desktop agent runtime streams fail because the host proxies SSE through a blocking reqwest body adapter.
+
+## Signal
+
+The desktop host stream decode path fails or stalls while reading long-lived SSE output.
+
+## Interpretation
+
+The runtime stream needs async chunk reads and incremental SSE parsing instead of a blocking body adapter.
+
+## Action
+
+Use async reqwest chunk parsing in the Tauri host and avoid the blocking body adapter for long-lived agent runtime streams.
+`,
+    "utf8",
+  );
+  await writeFile(
+    path.join(tempDir, "skills", "desktop-host-stream-chunking", "SKILL.md"),
+    `---
+name: desktop-host-stream-chunking
+description: For long-lived desktop agent runtime streams, avoid the blocking reqwest body adapter in the Tauri host and use async chunk parsing instead.
+metadata:
+  datalox:
+    id: desktop-agent-workspace.desktop-host-stream-chunking
+    display_name: Use async chunk parsing for long-lived agent runtime SSE in the Tauri host
+    workflow: desktop-agent-workspace
+    trigger: Use when the desktop host stream decode path fails on long-lived SSE output.
+    note_paths:
+      - agent-wiki/notes/desktop-host-stream-chunking.md
+    tags:
+      - desktop-agent-workspace
+      - tauri
+      - sse
+      - runtime
+    status: approved
+---
+
+# Use async chunk parsing for long-lived agent runtime SSE in the Tauri host
+
+For long-lived desktop agent runtime streams, avoid the blocking reqwest body adapter in the Tauri host and use async chunk parsing instead.
+`,
+    "utf8",
   );
 }
 
@@ -1552,6 +1648,61 @@ Use when handling repo readme helper tasks.
     );
   });
 
+  it("keeps a weak same-workflow PDF.js candidate suggestion from becoming an authoritative matched skill", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-wkwebview-candidate-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+    await addDesktopStreamSkill(tempDir);
+
+    const recorded = await recordTurnResult({
+      repoPath: tempDir,
+      task: "Fix the center-viewer PDF preview runtime error '#e.getOrInsertComputed is not a function' in the desktop app.",
+      workflow: "desktop-agent-workspace",
+      step: "fix_pdfjs_wkwebview_compat",
+      summary: "the PDF preview crashes in the desktop app because the installed pdf.js build calls getOrInsertComputed in the WKWebView runtime path",
+      observations: [
+        "node_modules/pdfjs-dist/build/pdf.mjs calls getOrInsertComputed in the non-legacy path",
+      ],
+      interpretation: "this is a pdf.js WKWebView compatibility issue, not a runtime SSE stream parsing issue",
+      recommendedAction: "switch the viewer to the legacy pdf.js build for the desktop app",
+      eventKind: "bugfix",
+      eventClass: "trace",
+    });
+
+    expect(recorded.event.payload.workflow).toBe("desktop-agent-workspace");
+    expect(recorded.event.payload.matchedSkillId).toBeNull();
+    expect(recorded.event.payload.matchedNotePaths).toEqual([]);
+    expect(recorded.event.payload.candidateSkills.map((candidate: { skillId: string }) => candidate.skillId)).toContain(
+      "desktop-agent-workspace.desktop-host-stream-chunking",
+    );
+  });
+
+  it("still authoritatively matches the desktop stream skill for the real SSE task", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-sse-authority-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+    await addDesktopStreamSkill(tempDir);
+
+    const recorded = await recordTurnResult({
+      repoPath: tempDir,
+      task: "Use async chunk parsing for long-lived agent runtime SSE in the Tauri host",
+      workflow: "desktop-agent-workspace",
+      step: "repair_stream_decode",
+      summary: "the desktop host stream decode path fails while proxying long-lived SSE output through the blocking reqwest body adapter",
+      observations: [
+        "the Tauri host still proxies long-lived SSE through the blocking reqwest body adapter",
+      ],
+      interpretation: "the same reusable runtime SSE chunk-parsing workflow applies here",
+      recommendedAction: "switch the Tauri host to async reqwest chunk parsing for long-lived SSE output",
+      eventKind: "bugfix",
+      eventClass: "trace",
+    });
+
+    expect(recorded.event.payload.workflow).toBe("desktop-agent-workspace");
+    expect(recorded.event.payload.matchedSkillId).toBe("desktop-agent-workspace.desktop-host-stream-chunking");
+    expect(recorded.event.payload.matchedNotePaths).toContain("agent-wiki/notes/desktop-host-stream-chunking.md");
+  });
+
   it("does not let an identical repeated run regress from note promotion back to trace-only", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-sticky-adjudication-"));
     tempDirs.push(tempDir);
@@ -1648,7 +1799,156 @@ Use when handling repo readme helper tasks.
     expect(noteFile).not.toContain("Add a wiki page path such as agent-wiki/notes/example.md");
   });
 
-  it("runs bounded maintenance over recent traces, compacts them into a note, marks coverage, and only synthesizes a skill on the next pass", async () => {
+  it("reports event backlog status from depth, age, and maintainable group signals", async () => {
+    const emptyDir = await mkdtemp(path.join(tmpdir(), "datalox-backlog-empty-"));
+    tempDirs.push(emptyDir);
+    await createMinimalPack(emptyDir);
+    const emptyStatus = await getEventBacklogStatus({ repoPath: emptyDir });
+    expect(emptyStatus.totalEvents).toBe(0);
+    expect(emptyStatus.uncoveredEvents).toBe(0);
+    expect(emptyStatus.coveredEvents).toBe(0);
+    expect(emptyStatus.policy.level).toBe("none");
+
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-backlog-status-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    for (let index = 0; index < 135; index += 1) {
+      await writeSyntheticTraceEvent(tempDir, {
+        id: `2026-04-28T00-00-00-000Z--depth-${index}`,
+        timestamp: "2026-04-28T00:00:00.000Z",
+        stabilityKey: `agent_adoption::depth-${index}`,
+      });
+    }
+
+    const depthStatus = await getEventBacklogStatus({ repoPath: tempDir });
+    expect(depthStatus.uncoveredEvents).toBe(135);
+    expect(depthStatus.policy.level).toBe("urgent");
+    expect(depthStatus.maintenanceRecommended).toBe(true);
+    expect(depthStatus.recommendedCommand).toBe("datalox maintain --max-events 12 --json");
+
+    const coveredDir = await mkdtemp(path.join(tmpdir(), "datalox-backlog-covered-"));
+    tempDirs.push(coveredDir);
+    await createMinimalPack(coveredDir);
+    for (let index = 0; index < 135; index += 1) {
+      await writeSyntheticTraceEvent(coveredDir, {
+        id: `2026-04-28T00-00-00-000Z--covered-${index}`,
+        timestamp: "2026-04-28T00:00:00.000Z",
+        stabilityKey: `agent_adoption::covered-${index}`,
+        maintenanceStatus: "covered",
+        coveredByNotePath: "agent-wiki/notes/covered.md",
+      });
+    }
+    const coveredStatus = await getEventBacklogStatus({ repoPath: coveredDir });
+    expect(coveredStatus.coveredEvents).toBe(135);
+    expect(coveredStatus.uncoveredEvents).toBe(0);
+    expect(coveredStatus.policy.level).toBe("none");
+
+    const repeatedDir = await mkdtemp(path.join(tmpdir(), "datalox-backlog-repeated-"));
+    tempDirs.push(repeatedDir);
+    await createMinimalPack(repeatedDir);
+    await writeSyntheticTraceEvent(repeatedDir, {
+      id: "2026-04-28T00-00-00-000Z--repeat-a",
+      stabilityKey: "agent_adoption::repeatable-gap",
+    });
+    await writeSyntheticTraceEvent(repeatedDir, {
+      id: "2026-04-28T00-01-00-000Z--repeat-b",
+      stabilityKey: "agent_adoption::repeatable-gap",
+    });
+    const repeatedStatus = await getEventBacklogStatus({ repoPath: repeatedDir });
+    expect(repeatedStatus.uncoveredEvents).toBe(2);
+    expect(repeatedStatus.repeatedUnresolvedTraceGroupCount).toBe(1);
+    expect(repeatedStatus.maintainableUnresolvedTraceGroupCount).toBe(1);
+    expect(repeatedStatus.policy.level).toBe("warn");
+
+    const ageDir = await mkdtemp(path.join(tmpdir(), "datalox-backlog-age-"));
+    tempDirs.push(ageDir);
+    await createMinimalPack(ageDir);
+    await writeSyntheticTraceEvent(ageDir, {
+      id: "2000-01-01T00-00-00-000Z--old",
+      timestamp: "2000-01-01T00:00:00.000Z",
+      stabilityKey: "agent_adoption::old-singleton",
+    });
+    const ageStatus = await getEventBacklogStatus({ repoPath: ageDir });
+    expect(ageStatus.uncoveredEvents).toBe(1);
+    expect(ageStatus.maintainableUnresolvedTraceGroupCount).toBe(0);
+    expect(ageStatus.policy.level).not.toBe("none");
+  });
+
+  it("lets repo config tune backlog policy and rejects empty warning policies", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-backlog-config-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+    await writeFile(path.join(tempDir, ".datalox/config.json"), JSON.stringify({
+      ...baseConfig,
+      maintenance: {
+        maxEvents: 12,
+        minNoteOccurrences: 2,
+        minSkillOccurrences: 3,
+        backlog: {
+          warn: {
+            uncovered: 200,
+            oldestAgeDays: 10000,
+            maintainableGroups: 10,
+          },
+          urgent: {
+            uncovered: 300,
+            oldestAgeDays: 20000,
+            maintainableGroups: 20,
+          },
+        },
+      },
+    }, null, 2));
+    for (let index = 0; index < 135; index += 1) {
+      await writeSyntheticTraceEvent(tempDir, {
+        id: `2026-04-28T00-00-00-000Z--tuned-${index}`,
+        timestamp: new Date().toISOString(),
+        stabilityKey: `agent_adoption::tuned-${index}`,
+      });
+    }
+
+    const tunedStatus = await getEventBacklogStatus({ repoPath: tempDir });
+    expect(tunedStatus.policy.level).toBe("none");
+
+    const invalidDir = await mkdtemp(path.join(tmpdir(), "datalox-backlog-invalid-"));
+    tempDirs.push(invalidDir);
+    await createMinimalPack(invalidDir);
+    await writeFile(
+      path.join(invalidDir, ".datalox/config.json"),
+      JSON.stringify({
+        ...baseConfig,
+        maintenance: {
+          backlog: {
+            warn: {},
+          },
+        },
+      }, null, 2),
+    );
+    await expect(getEventBacklogStatus({ repoPath: invalidDir })).rejects.toThrow("must enable at least one backlog signal");
+  });
+
+  it("uses the smaller default maintenance scan window", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-default-window-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    for (let index = 0; index < 13; index += 1) {
+      await writeSyntheticTraceEvent(tempDir, {
+        id: `2026-04-28T00-00-00-000Z--window-${index}`,
+        stabilityKey: `agent_adoption::window-${index}`,
+      });
+    }
+
+    const result = await maintainKnowledge({
+      repoPath: tempDir,
+    });
+    expect(result.maxEvents).toBe(12);
+    expect(result.scannedEvents).toBe(12);
+    expect(result.synthesizeSkills).toBe(false);
+    expect(result.skillActions).toEqual([]);
+  });
+
+  it("runs bounded maintenance over recent traces, compacts them into a note, marks coverage, and only synthesizes a skill when explicit", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-loop-"));
     tempDirs.push(tempDir);
     await createMinimalPack(tempDir);
@@ -1702,17 +2002,27 @@ Use when handling repo readme helper tasks.
     expect(secondPass.scannedEvents).toBe(1);
     expect(secondPass.noteActions[0].action).toBe("noop");
     expect(secondPass.noteActions[0].reason).toBe("insufficient_repeated_trace_evidence");
-    expect(secondPass.skillActions).toHaveLength(1);
-    expect(secondPass.skillActions[0].action).toBe("create_skill");
-    expect(secondPass.skillActions[0].reason).toBe("note_backed_skill_synthesis");
+    expect(secondPass.synthesizeSkills).toBe(false);
+    expect(secondPass.skillActions).toHaveLength(0);
 
-    const skillFile = await readFile(path.join(tempDir, secondPass.skillActions[0].skillPath), "utf8");
+    const synthesisPass = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 3,
+      synthesizeSkills: true,
+    });
+
+    expect(synthesisPass.synthesizeSkills).toBe(true);
+    expect(synthesisPass.skillActions).toHaveLength(1);
+    expect(synthesisPass.skillActions[0].action).toBe("create_skill");
+    expect(synthesisPass.skillActions[0].reason).toBe("note_backed_skill_synthesis");
+
+    const skillFile = await readFile(path.join(tempDir, synthesisPass.skillActions[0].skillPath), "utf8");
     expect(skillFile).toContain("name: use-the-committed-datalox-bootstrap-surfaces-first");
     expect(skillFile).toContain("display_name: Use the committed Datalox bootstrap surfaces first");
     expect(skillFile).not.toContain("capture-the-reusable-lesson");
 
-    const relinkedNote = await readFile(path.join(tempDir, secondPass.skillActions[0].notePath), "utf8");
-    expect(relinkedNote).toContain(`skill: ${secondPass.skillActions[0].skillId}`);
+    const relinkedNote = await readFile(path.join(tempDir, synthesisPass.skillActions[0].notePath), "utf8");
+    expect(relinkedNote).toContain(`skill: ${synthesisPass.skillActions[0].skillId}`);
   });
 
   it("prefers clean workflow-scoped notes over wrapper-polluted unknown notes during maintenance synthesis", async () => {
@@ -1772,6 +2082,7 @@ Use when handling repo readme helper tasks.
       repoPath: tempDir,
       maxEvents: 10,
       minSkillOccurrences: 2,
+      synthesizeSkills: true,
     });
 
     const createdSkill = secondPass.skillActions.find((action: { action: string }) => action.action === "create_skill");
@@ -1875,6 +2186,7 @@ Capture the reusable lesson from the desktop fix.
     const result = await maintainKnowledge({
       repoPath: tempDir,
       maxEvents: 10,
+      synthesizeSkills: true,
     });
 
     expect(result.skillActions.some((action: { action: string; reason: string }) =>

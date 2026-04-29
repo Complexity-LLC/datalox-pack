@@ -1092,11 +1092,13 @@ Use when the pack is broken.
     expect(result.status).toBe(0);
 
     const body = JSON.parse(result.stdout);
+    expect(body.maxEvents).toBe(2);
+    expect(body.synthesizeSkills).toBe(false);
     expect(body.scannedEvents).toBe(2);
     expect(body.candidateCount).toBe(1);
     expect(body.noteActions[0].action).toBe("create_note");
     expect(body.coverage[0].eventPaths).toHaveLength(2);
-    expect(Array.isArray(body.skillActions)).toBe(true);
+    expect(body.skillActions).toEqual([]);
   });
 
   it("creates a new skill when no existing skill matches the interaction", async () => {

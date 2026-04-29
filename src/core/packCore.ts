@@ -52,6 +52,7 @@ export interface RecordTurnResultInput {
   workflow?: string;
   step?: string;
   skillId?: string;
+  matchedSkillIdHint?: string;
   adjudicationDecision?: string;
   adjudicationSkillId?: string;
   candidateSkills?: Array<{
@@ -101,6 +102,11 @@ export interface MaintainKnowledgeInput {
   includeCovered?: boolean;
   minNoteOccurrences?: number;
   minSkillOccurrences?: number;
+  synthesizeSkills?: boolean;
+}
+
+export interface EventBacklogStatusInput {
+  repoPath?: string;
 }
 
 export interface RecordLoopApplicationInput {
@@ -1098,6 +1104,7 @@ export async function recordTurnResult(input: RecordTurnResultInput) {
       workflow: input.workflow,
       step: input.step,
       skillId: input.skillId,
+      matchedSkillIdHint: input.matchedSkillIdHint,
       adjudicationDecision: input.adjudicationDecision,
       adjudicationSkillId: input.adjudicationSkillId,
       candidateSkills: input.candidateSkills ?? [],
@@ -1131,16 +1138,16 @@ export async function recordTurnResult(input: RecordTurnResultInput) {
       signal: result.event.payload.signal ?? input.signal,
       interpretation: result.event.payload.interpretation ?? input.interpretation,
       action: result.event.payload.recommendedAction ?? input.recommendedAction,
-      matchedSkillId: result.event.payload.matchedSkillId ?? input.skillId,
+      matchedSkillId: result.event.payload.matchedSkillId ?? input.matchedSkillIdHint ?? input.skillId,
       changedFiles: result.event.payload.changedFiles ?? input.changedFiles ?? [],
       outcome: result.event.payload.outcome ?? input.outcome,
     }),
     event: {
       ...result.event,
       payload: await patchRecordedEvent(repoPath, result.event.relativePath, {
-        matchedNotePaths: input.matchedNotePaths ?? null,
-        sessionId: input.sessionId ?? null,
-        hostKind: input.hostKind ?? null,
+        ...(input.matchedNotePaths !== undefined ? { matchedNotePaths: input.matchedNotePaths } : {}),
+        ...(input.sessionId !== undefined ? { sessionId: input.sessionId ?? null } : {}),
+        ...(input.hostKind !== undefined ? { hostKind: input.hostKind ?? null } : {}),
       }) ?? result.event.payload,
     },
   };
@@ -1163,6 +1170,7 @@ export async function promoteGap(input: PromoteGapInput) {
       workflow: input.workflow,
       step: input.step,
       skillId: input.skillId,
+      matchedSkillIdHint: input.matchedSkillIdHint,
       adjudicationDecision: input.adjudicationDecision,
       adjudicationSkillId: input.adjudicationSkillId,
       candidateSkills: input.candidateSkills ?? [],
@@ -1231,16 +1239,16 @@ export async function promoteGap(input: PromoteGapInput) {
       signal: result.event.payload.signal ?? input.signal,
       interpretation: result.event.payload.interpretation ?? input.interpretation,
       action: result.event.payload.recommendedAction ?? input.recommendedAction,
-      matchedSkillId: result.event.payload.matchedSkillId ?? input.skillId,
+      matchedSkillId: result.event.payload.matchedSkillId ?? input.matchedSkillIdHint ?? input.skillId,
       changedFiles: result.event.payload.changedFiles ?? input.changedFiles ?? [],
       outcome: result.event.payload.outcome ?? input.outcome,
     }),
     event: {
       ...result.event,
       payload: await patchRecordedEvent(repoPath, result.event.relativePath, {
-        matchedNotePaths: input.matchedNotePaths ?? null,
-        sessionId: input.sessionId ?? null,
-        hostKind: input.hostKind ?? null,
+        ...(input.matchedNotePaths !== undefined ? { matchedNotePaths: input.matchedNotePaths } : {}),
+        ...(input.sessionId !== undefined ? { sessionId: input.sessionId ?? null } : {}),
+        ...(input.hostKind !== undefined ? { hostKind: input.hostKind ?? null } : {}),
       }) ?? result.event.payload,
     },
   };
@@ -1277,9 +1285,16 @@ export async function maintainKnowledge(input: MaintainKnowledgeInput = {}) {
       includeCovered: input.includeCovered,
       minNoteOccurrences: input.minNoteOccurrences,
       minSkillOccurrences: input.minSkillOccurrences,
+      synthesizeSkills: input.synthesizeSkills,
     },
     repoPath,
   );
+}
+
+export async function getEventBacklogStatus(input: EventBacklogStatusInput = {}) {
+  const repoPath = resolveRepoPath(input.repoPath);
+  const legacy = await loadLegacyPackModule();
+  return legacy.getEventBacklogStatus({}, repoPath);
 }
 
 export async function lintLocalPack(input: LintPackInput = {}) {

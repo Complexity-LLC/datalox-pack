@@ -28,6 +28,41 @@ describe("wrapper surfaces", () => {
     return hostDir;
   }
 
+  async function writeSyntheticTraceEvent(
+    hostDir: string,
+    input: {
+      id: string;
+      stabilityKey?: string;
+      timestamp?: string;
+      maintenanceStatus?: string;
+      coveredByNotePath?: string;
+    },
+  ): Promise<void> {
+    await mkdir(path.join(hostDir, "agent-wiki", "events"), { recursive: true });
+    const payload = {
+      version: 1,
+      id: input.id,
+      timestamp: input.timestamp ?? new Date().toISOString(),
+      eventKind: "wrapper:codex:success",
+      eventClass: "trace",
+      sourceKind: "trace",
+      workflow: "agent_adoption",
+      task: `Synthetic wrapper backlog trace ${input.id}`,
+      summary: `Synthetic wrapper backlog trace ${input.id}`,
+      signal: `Synthetic wrapper backlog trace ${input.id}`,
+      interpretation: "synthetic wrapper backlog test event",
+      recommendedAction: "run bounded note-only maintenance",
+      stabilityKey: input.stabilityKey ?? `agent_adoption::${input.id}`,
+      ...(input.maintenanceStatus ? { maintenanceStatus: input.maintenanceStatus } : {}),
+      ...(input.coveredByNotePath ? { coveredByNotePath: input.coveredByNotePath } : {}),
+      ...(input.maintenanceStatus === "covered" ? { coveredAt: "2026-04-28T00:00:00.000Z" } : {}),
+    };
+    await writeFile(
+      path.join(hostDir, "agent-wiki", "events", `${input.id}.json`),
+      `${JSON.stringify(payload, null, 2)}\n`,
+    );
+  }
+
   async function seedWrapperFixtureNotes(hostDir: string): Promise<void> {
     const viabilityNotePath = path.join(hostDir, "agent-wiki", "notes", "viability-gate-review.md");
     const viabilitySkillDir = path.join(hostDir, "skills", "review-ambiguous-viability-gate");
@@ -147,11 +182,9 @@ Use when live and dead populations are not cleanly separated during viability ga
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("# Datalox Loop Guidance");
-    expect(result.stdout).toContain("Matched skill: flow-cytometry.review-ambiguous-viability-gate");
-    expect(result.stdout).toContain("Watch for:");
-    expect(result.stdout).toContain("Live and dead populations are not cleanly separated during viability gate review.");
-    expect(result.stdout).toContain("What to do now:");
-    expect(result.stdout).toContain("Check the exception and escalation pattern docs before widening the gate");
+    expect(result.stdout).toContain("Matched skill: none");
+    expect(result.stdout).toContain("Candidate skills:");
+    expect(result.stdout).toContain("flow-cytometry.review-ambiguous-viability-gate");
     expect(result.stdout).toContain("# Original Prompt");
     expect(result.stdout).toContain("Review the current viability gate and tell me what to do.");
   });
@@ -187,7 +220,7 @@ Use when live and dead populations are not cleanly separated during viability ga
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed.skill).toBe("flow-cytometry.review-ambiguous-viability-gate");
+    expect(parsed.skill).toBe("");
     expect(parsed.workflow).toBe("flow_cytometry");
     expect(parsed.prompt).toContain("# Datalox Loop Guidance");
     expect(parsed.prompt).toContain("Need a gate recommendation");
@@ -200,11 +233,11 @@ Use when live and dead populations are not cleanly separated during viability ga
     );
     expect(eventPayload.hostKind).toBe("generic");
     expect(eventPayload.eventClass).toBe("trace");
-    expect(eventPayload.matchedSkillId).toBe("flow-cytometry.review-ambiguous-viability-gate");
-    expect(eventPayload.matchedNotePaths).toContain("agent-wiki/notes/viability-gate-review.md");
+    expect(eventPayload.matchedSkillId).toBeNull();
+    expect(eventPayload.matchedNotePaths).toEqual([]);
     const noteFile = await readFile(path.join(hostDir, "agent-wiki", "notes", "viability-gate-review.md"), "utf8");
     expect(noteFile).toContain("usage:");
-    expect(noteFile).toContain("apply_count: 1");
+    expect(noteFile).not.toContain("apply_count: 1");
     const readCountMatch = noteFile.match(/read_count:\s+(\d+)/);
     expect(readCountMatch).not.toBeNull();
     expect(Number.parseInt(readCountMatch?.[1] ?? "0", 10)).toBeGreaterThanOrEqual(1);
@@ -344,7 +377,30 @@ Use when live and dead populations are not cleanly separated during viability ga
 
   it("runs the Codex wrapper with a fake codex binary and preserves the resolved prompt envelope", async () => {
     const hostDir = await adoptHostRepo();
-    const script = "process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL, workflow: process.env.DATALOX_WORKFLOW}))";
+    const fakeCodexPath = path.join(hostDir, "fake-codex-review-envelope.sh");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env bash
+node - <<'EOF' "$@"
+if (process.env.DATALOX_MATCH_PASS === "1") {
+  process.stdout.write(JSON.stringify({
+    matchedSkillId: "repo-engineering.maintain-datalox-pack",
+    noMatch: false,
+    alternatives: ["repo-engineering.use-datalox-through-host-cli"],
+    reason: "The task is directly about changing the Datalox pack guidance.",
+  }));
+} else {
+  process.stdout.write(JSON.stringify({
+    args: process.argv.slice(2),
+    skill: process.env.DATALOX_MATCHED_SKILL,
+    workflow: process.env.DATALOX_WORKFLOW,
+  }));
+}
+EOF
+`,
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
     const result = spawnSync(
       "node",
       [
@@ -359,10 +415,10 @@ Use when live and dead populations are not cleanly separated during viability ga
         "--prompt",
         "Update the pack docs to mention wrappers.",
         "--codex-bin",
-        "node",
+        fakeCodexPath,
         "--",
-        "-e",
-        script,
+        "exec",
+        "--skip-git-repo-check",
         "__DATALOX_PROMPT__",
       ],
       {
@@ -375,10 +431,84 @@ Use when live and dead populations are not cleanly separated during viability ga
     const parsed = JSON.parse(result.stdout);
     expect(parsed.skill).toBe("repo-engineering.maintain-datalox-pack");
     expect(parsed.workflow).toBe("repo_engineering");
-    expect(parsed.args[0]).toContain("# Datalox Loop Guidance");
-    expect(parsed.args[0]).toContain("Update the pack docs to mention wrappers.");
+    expect(parsed.args[0]).toBe("exec");
+    expect(parsed.args[2]).toContain("# Datalox Loop Guidance");
+    expect(parsed.args[2]).toContain("Update the pack docs to mention wrappers.");
     expect(result.stderr).toContain("[datalox-codex] record");
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
+  }, 20000);
+
+  it("includes a machine-readable backlog warning in Codex wrapper JSON", async () => {
+    const hostDir = await adoptHostRepo();
+    await writeSyntheticTraceEvent(hostDir, {
+      id: "2026-04-28T00-00-00-000Z--codex-backlog-a",
+      stabilityKey: "agent_adoption::codex-wrapper-backlog",
+    });
+    await writeSyntheticTraceEvent(hostDir, {
+      id: "2026-04-28T00-01-00-000Z--codex-backlog-b",
+      stabilityKey: "agent_adoption::codex-wrapper-backlog",
+    });
+
+    const fakeCodexPath = path.join(hostDir, "fake-codex-backlog.sh");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env bash
+if [ "$DATALOX_MATCH_PASS" = "1" ]; then
+  cat <<'EOF'
+{"matchedSkillId":null,"noMatch":true,"alternatives":[],"reason":"No specific skill is needed for this backlog smoke test."}
+EOF
+  exit 0
+fi
+node -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL}))' "$@"
+`,
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--json",
+        "--repo",
+        hostDir,
+        "--codex-bin",
+        fakeCodexPath,
+        "--post-run-mode",
+        "record",
+        "--task",
+        "Run a small command while Datalox has a maintainable backlog.",
+        "--",
+        "exec",
+        "--skip-git-repo-check",
+        "__DATALOX_PROMPT__",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.postRun.backlog.maintenanceRecommended).toBe(true);
+    expect(parsed.postRun.backlog.policy.level).toBe("warn");
+    expect(parsed.postRun.backlog.maintainableUnresolvedTraceGroupCount).toBeGreaterThanOrEqual(1);
+    expect(parsed.postRun.backlog.recommendedCommand).toBe("datalox maintain --max-events 12 --json");
+
+    const hotFile = await readFile(path.join(hostDir, "agent-wiki", "hot.md"), "utf8");
+    expect(hotFile).toContain("## Maintenance Backlog");
+    expect(hotFile).toContain("Recommended command: datalox maintain --max-events 12 --json");
+
+    const status = spawnSync("node", [builtCliPath, "status", "--repo", hostDir, "--json"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    expect(status.status).toBe(0);
+    const statusBody = JSON.parse(status.stdout);
+    expect(statusBody.repo.maintenanceBacklog.maintenanceRecommended).toBe(true);
+    expect(statusBody.repo.maintenanceBacklog.maintainableUnresolvedTraceGroupCount).toBeGreaterThanOrEqual(1);
   }, 20000);
 
   it("does not recursively expand prompt placeholders that appear inside wrapped prompt prose", async () => {
@@ -591,7 +721,7 @@ EOF
     const fakeClaudePath = path.join(hostDir, "fake-claude.sh");
     await writeFile(
       fakeClaudePath,
-      "#!/usr/bin/env bash\nnode -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL, workflow: process.env.DATALOX_WORKFLOW}))' -- \"$@\"\n",
+      "#!/usr/bin/env bash\nnode -e 'if (process.env.DATALOX_MATCH_PASS === \"1\") { process.stdout.write(JSON.stringify({matchedSkillId:\"repo-engineering.maintain-datalox-pack\", noMatch:false, alternatives:[\"repo-engineering.use-datalox-through-host-cli\"], reason:\"The task is directly about changing the Datalox pack guidance.\"})); } else { process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL, workflow: process.env.DATALOX_WORKFLOW})); }' -- \"$@\"\n",
       "utf8",
     );
     await chmod(fakeClaudePath, 0o755);
@@ -635,7 +765,7 @@ EOF
     const fakeClaudePath = path.join(hostDir, "fake-claude-append.sh");
     await writeFile(
       fakeClaudePath,
-      "#!/usr/bin/env bash\nnode -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL}))' -- \"$@\"\n",
+      "#!/usr/bin/env bash\nnode -e 'if (process.env.DATALOX_MATCH_PASS === \"1\") { process.stdout.write(JSON.stringify({matchedSkillId:\"repo-engineering.maintain-datalox-pack\", noMatch:false, alternatives:[\"repo-engineering.use-datalox-through-host-cli\"], reason:\"The task is directly about changing the Datalox pack guidance.\"})); } else { process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL})); }' -- \"$@\"\n",
       "utf8",
     );
     await chmod(fakeClaudePath, 0o755);
@@ -679,7 +809,7 @@ EOF
     const fakeCodexPath = path.join(hostDir, "fake-codex.sh");
     await writeFile(
       fakeCodexPath,
-      "#!/usr/bin/env bash\nnode -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL}))' \"$@\"\n",
+      "#!/usr/bin/env bash\nnode -e 'if (process.env.DATALOX_MATCH_PASS === \"1\") { process.stdout.write(JSON.stringify({matchedSkillId:\"repo-engineering.maintain-datalox-pack\", noMatch:false, alternatives:[\"repo-engineering.use-datalox-through-host-cli\"], reason:\"The prompt directly asks for Datalox pack guidance changes.\"})); } else { process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL})); }' \"$@\"\n",
       "utf8",
     );
     await chmod(fakeCodexPath, 0o755);
@@ -705,10 +835,10 @@ EOF
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed.skill).toBe("");
+    expect(parsed.skill).toBe("repo-engineering.maintain-datalox-pack");
     expect(parsed.args[0]).toBe("exec");
     expect(parsed.args[2]).toContain("# Datalox Loop Guidance");
-    expect(parsed.args[2]).toContain("Matched skill: none");
+    expect(parsed.args[2]).toContain("Matched skill: repo-engineering.maintain-datalox-pack");
     expect(parsed.args[2]).toContain("Change Datalox pack agent guidance in this repo.");
     expect(parsed.args[2]).not.toContain("score:");
   }, 20000);
@@ -740,6 +870,112 @@ EOF
     expect(result.stdout).toContain("Maintain Datalox Pack");
     expect(result.stdout).not.toContain("Use Datalox Through Host CLI");
     expect(result.stdout).toContain("workflow_match");
+  }, 20000);
+
+  it("uses the bounded Codex match adjudicator for ambiguous same-workflow online cases without exposing a false matched skill", async () => {
+    const hostDir = await adoptHostRepo();
+    await mkdir(path.join(hostDir, "skills", "desktop-host-stream-chunking"), { recursive: true });
+    await writeFile(
+      path.join(hostDir, "agent-wiki", "notes", "desktop-host-stream-chunking.md"),
+      `---
+title: Use async chunk parsing for long-lived agent runtime SSE in the Tauri host
+workflow: desktop-agent-workspace
+status: active
+---
+
+# Use async chunk parsing for long-lived agent runtime SSE in the Tauri host
+
+## When to Use
+
+Use when long-lived desktop agent runtime streams fail because the host proxies SSE through a blocking reqwest body adapter.
+
+## Signal
+
+The desktop host stream decode path fails while reading long-lived SSE output.
+
+## Interpretation
+
+Use async reqwest chunk reads and incremental SSE parsing instead of the blocking body adapter.
+
+## Action
+
+Switch the Tauri host to async chunk parsing for long-lived SSE output.
+`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(hostDir, "skills", "desktop-host-stream-chunking", "SKILL.md"),
+      `---
+name: desktop-host-stream-chunking
+description: For long-lived desktop agent runtime streams, avoid the blocking reqwest body adapter in the Tauri host and use async chunk parsing instead.
+metadata:
+  datalox:
+    id: desktop-agent-workspace.desktop-host-stream-chunking
+    display_name: Use async chunk parsing for long-lived agent runtime SSE in the Tauri host
+    workflow: desktop-agent-workspace
+    trigger: Use when the desktop host stream decode path fails on long-lived SSE output.
+    note_paths:
+      - agent-wiki/notes/desktop-host-stream-chunking.md
+---
+
+# Use async chunk parsing for long-lived agent runtime SSE in the Tauri host
+
+For long-lived desktop agent runtime streams, avoid the blocking reqwest body adapter in the Tauri host and use async chunk parsing instead.
+`,
+      "utf8",
+    );
+
+    const fakeCodexPath = path.join(hostDir, "fake-codex-match-adjudicator.sh");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env bash
+if [ "$DATALOX_MATCH_PASS" = "1" ]; then
+  printf '%s' "$*" > "$DATALOX_REPO_PATH/match-pass.txt"
+  cat <<'EOF'
+{"matchedSkillId":null,"noMatch":true,"alternatives":["desktop-agent-workspace.desktop-host-stream-chunking"],"reason":"The candidate skill is about long-lived SSE stream parsing, not PDF.js WKWebView compatibility."}
+EOF
+  exit 0
+fi
+node -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL}))' "$@"
+`,
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "codex",
+        "--repo",
+        hostDir,
+        "--codex-bin",
+        fakeCodexPath,
+        "--task",
+        "desktop runtime tauri fix",
+        "--workflow",
+        "desktop-agent-workspace",
+        "--",
+        "exec",
+        "--skip-git-repo-check",
+        "Fix the center-viewer PDF preview runtime error '#e.getOrInsertComputed is not a function' in the desktop app.",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.skill).toBe("");
+    expect(parsed.args[2]).toContain("Matched skill: none");
+    expect(parsed.args[2]).toContain("Use async chunk parsing for long-lived agent runtime SSE in the Tauri host");
+
+    const matchPrompt = await readFile(path.join(hostDir, "match-pass.txt"), "utf8");
+    expect(matchPrompt).toContain("\"matchedSkillId\": string | null");
+    expect(matchPrompt).toContain("\"desktop-agent-workspace.desktop-host-stream-chunking\"");
+    expect(matchPrompt.length).toBeLessThan(5000);
   }, 20000);
 
   it("routes concrete PDF paths through repo-local PDF capture before generic skill resolution", async () => {
@@ -1009,6 +1245,12 @@ EOF
     await writeFile(
       fakeCodexPath,
       `#!/usr/bin/env bash
+if [ "$DATALOX_MATCH_PASS" = "1" ]; then
+  cat <<'EOF'
+{"matchedSkillId":null,"noMatch":true,"alternatives":["repo-engineering.maintain-datalox-pack"],"reason":"This onboarding correction should stay note-first during the online loop."}
+EOF
+  exit 0
+fi
 count=0
 if [ -f "${statePath}" ]; then
   count=$(cat "${statePath}")
@@ -1074,6 +1316,12 @@ fi
     await writeFile(
       fakeCodexPath,
       `#!/usr/bin/env bash
+if [ "$DATALOX_MATCH_PASS" = "1" ]; then
+  cat <<'EOF'
+{"matchedSkillId":null,"noMatch":true,"alternatives":["repo-engineering.maintain-datalox-pack"],"reason":"This onboarding correction should stay note-first during the online loop."}
+EOF
+  exit 0
+fi
 count=0
 if [ -f "${statePath}" ]; then
   count=$(cat "${statePath}")

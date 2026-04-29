@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   autoBootstrapIfSafe,
   compileRecordedEvent,
+  getEventBacklogStatus,
   patchKnowledge,
   recordLoopApplication,
   recordTurnResult,
@@ -17,6 +18,7 @@ import { resolveSourceRoute } from "./sourceRoutes.js";
 export interface LoopEnvelopeInput extends ResolveLoopInput {
   prompt?: string;
   sessionId?: string;
+  matcher?: WrapperMatchRunner | null;
 }
 
 export interface LoopEnvelope {
@@ -92,6 +94,19 @@ export interface WrapperReviewDecision {
   tags: string[];
 }
 
+export interface WrapperMatchDecision {
+  matchedSkillId: string | null;
+  noMatch: boolean;
+  alternatives: string[];
+  reason: string;
+}
+
+export interface WrapperMatchRunner {
+  kind: string;
+  model: string | null;
+  run(prompt: string, envelope: LoopEnvelope): WrappedCommandResult;
+}
+
 export interface WrapperReviewResult {
   status: "skipped" | "completed" | "failed";
   model: string | null;
@@ -105,6 +120,7 @@ export interface WrapperPostRunResult {
   trigger: "disabled" | "record_only" | "explicit_signal" | "failure_exit";
   result: Awaited<ReturnType<typeof recordTurnResult>> | Awaited<ReturnType<typeof compileRecordedEvent>> | null;
   review: WrapperReviewResult | null;
+  backlog: Awaited<ReturnType<typeof getEventBacklogStatus>> | null;
 }
 
 export interface WrappedLoopResult {
@@ -121,6 +137,7 @@ export interface ObservedTurnInput {
   workflow?: string;
   step?: string;
   skillId?: string | null;
+  matchedSkillIdHint?: string | null;
   adjudicationDecision?: string;
   adjudicationSkillId?: string | null;
   summary?: string;
@@ -290,6 +307,117 @@ function toPrompt(input: LoopEnvelopeInput): string {
   return "";
 }
 
+function toSupportingNotes(noteDocs: Array<{
+  path: string;
+  title: string;
+  whenToUse?: string | null;
+  signal?: string | null;
+  interpretation?: string | null;
+  action?: string | null;
+  examples?: string[] | null;
+}> = []): LoopEnvelope["guidance"]["supportingNotes"] {
+  return noteDocs.map((noteDoc) => ({
+    path: noteDoc.path,
+    title: noteDoc.title,
+    whenToUse: noteDoc.whenToUse ?? null,
+    signal: noteDoc.signal ?? null,
+    interpretation: noteDoc.interpretation ?? null,
+    action: noteDoc.action ?? null,
+    examples: Array.isArray(noteDoc.examples) ? noteDoc.examples.filter(Boolean) : [],
+  }));
+}
+
+function toCandidateSkills(
+  matches: Array<{
+    skill: {
+      id: string;
+      displayName?: string | null;
+      name?: string | null;
+      workflow?: string | null;
+    };
+    linkedNotes?: Array<{
+      path: string;
+      title: string;
+    }>;
+    loopGuidance?: {
+      whyMatched?: string[];
+    } | null;
+  }> = [],
+): LoopEnvelope["guidance"]["candidateSkills"] {
+  return matches.slice(0, 3).map((match) => ({
+    skillId: match.skill.id,
+    displayName: match.skill.displayName ?? match.skill.name ?? match.skill.id,
+    workflow: match.skill.workflow ?? null,
+    supportingNotes: (match.linkedNotes ?? []).slice(0, 2).map((noteDoc) => ({
+      path: noteDoc.path,
+      title: noteDoc.title,
+    })),
+    whyMatched: match.loopGuidance?.whyMatched ?? [],
+  }));
+}
+
+function toGuidanceFromSelectedMatch(
+  resolution: Awaited<ReturnType<typeof resolveLoop>>,
+  match: {
+    skill: {
+      id: string;
+    };
+    linkedNotes?: Array<{
+      path: string;
+      title: string;
+      whenToUse?: string | null;
+      signal?: string | null;
+      interpretation?: string | null;
+      action?: string | null;
+      examples?: string[] | null;
+    }>;
+    loopGuidance?: {
+      whyMatched?: string[];
+      whatToDoNow?: string[];
+      watchFor?: string[];
+      nextReads?: string[];
+    } | null;
+  },
+  reason: string[] = [],
+): LoopEnvelope["guidance"] {
+  const supportingNotes = toSupportingNotes(match.linkedNotes ?? []);
+  const whyMatched = [...new Set([...(match.loopGuidance?.whyMatched ?? []), ...reason].filter(Boolean))];
+
+  return {
+    workflow: resolution.workflow,
+    selectionBasis: resolution.selectionBasis,
+    matchedSkillId: match.skill.id,
+    candidateSkills: toCandidateSkills((resolution.matches ?? []) as Array<{
+      skill: {
+        id: string;
+        displayName?: string | null;
+        name?: string | null;
+        workflow?: string | null;
+      };
+      linkedNotes?: Array<{
+        path: string;
+        title: string;
+      }>;
+      loopGuidance?: {
+        whyMatched?: string[];
+      } | null;
+    }>),
+    whyMatched,
+    whatToDoNow: (match.loopGuidance?.whatToDoNow?.length ?? 0) > 0
+      ? (match.loopGuidance?.whatToDoNow ?? [])
+      : supportingNotes
+        .map((note) => note.action)
+        .filter((value: string | null): value is string => Boolean(value)),
+    watchFor: (match.loopGuidance?.watchFor?.length ?? 0) > 0
+      ? (match.loopGuidance?.watchFor ?? [])
+      : supportingNotes
+        .map((note) => note.signal)
+        .filter((value: string | null): value is string => Boolean(value)),
+    nextReads: match.loopGuidance?.nextReads ?? [],
+    supportingNotes,
+  };
+}
+
 function summarizeResolution(
   resolution: Awaited<ReturnType<typeof resolveLoop>> | null,
   workflowHint?: string,
@@ -307,7 +435,6 @@ function summarizeResolution(
       supportingNotes: [],
     };
   }
-  const topMatch = resolution.matches[0];
   const directNotes = Array.isArray((resolution as { directNoteMatches?: Array<{ note?: unknown }> }).directNoteMatches)
     ? ((resolution as { directNoteMatches?: Array<{ note?: {
       path: string;
@@ -319,8 +446,40 @@ function summarizeResolution(
       examples?: string[] | null;
     } }> }).directNoteMatches ?? []).map((entry) => entry.note).filter(Boolean)
     : [];
-  const noteDocs = topMatch?.linkedNotes ?? directNotes;
-  const supportingNotes = noteDocs.map((noteDoc: {
+  const matchedSkillId = typeof (resolution as { matchedSkillId?: unknown }).matchedSkillId === "string"
+    ? (resolution as { matchedSkillId: string }).matchedSkillId
+    : null;
+  const authoritativeMatch = matchedSkillId
+    ? resolution.matches.find((match: { skill: { id: string } }) => match.skill.id === matchedSkillId) ?? null
+    : null;
+
+  if (authoritativeMatch) {
+    return toGuidanceFromSelectedMatch(
+      resolution,
+      authoritativeMatch as {
+        skill: {
+          id: string;
+        };
+        linkedNotes?: Array<{
+          path: string;
+          title: string;
+          whenToUse?: string | null;
+          signal?: string | null;
+          interpretation?: string | null;
+          action?: string | null;
+          examples?: string[] | null;
+        }>;
+        loopGuidance?: {
+          whyMatched?: string[];
+          whatToDoNow?: string[];
+          watchFor?: string[];
+          nextReads?: string[];
+        } | null;
+      },
+    );
+  }
+
+  const supportingNotes = toSupportingNotes(directNotes as Array<{
     path: string;
     title: string;
     whenToUse?: string | null;
@@ -328,16 +487,8 @@ function summarizeResolution(
     interpretation?: string | null;
     action?: string | null;
     examples?: string[] | null;
-  }) => ({
-    path: noteDoc.path,
-    title: noteDoc.title,
-    whenToUse: noteDoc.whenToUse ?? null,
-    signal: noteDoc.signal ?? null,
-    interpretation: noteDoc.interpretation ?? null,
-    action: noteDoc.action ?? null,
-    examples: Array.isArray(noteDoc.examples) ? noteDoc.examples.filter(Boolean) : [],
-  }));
-  const candidateSkills = resolution.matches.slice(0, 3).map((match: {
+  }>);
+  const candidateSkills = toCandidateSkills((resolution.matches ?? []) as Array<{
     skill: {
       id: string;
       displayName?: string | null;
@@ -351,17 +502,8 @@ function summarizeResolution(
     loopGuidance?: {
       whyMatched?: string[];
     } | null;
-  }) => ({
-    skillId: match.skill.id,
-    displayName: match.skill.displayName ?? match.skill.name ?? match.skill.id,
-    workflow: match.skill.workflow ?? null,
-    supportingNotes: (match.linkedNotes ?? []).slice(0, 2).map((noteDoc) => ({
-      path: noteDoc.path,
-      title: noteDoc.title,
-    })),
-    whyMatched: match.loopGuidance?.whyMatched ?? [],
-  }));
-  const loopGuidance = topMatch?.loopGuidance ?? (resolution as { loopGuidance?: {
+  }>);
+  const loopGuidance = (resolution as { loopGuidance?: {
     whyMatched?: string[];
     whatToDoNow?: string[];
     watchFor?: string[];
@@ -370,7 +512,7 @@ function summarizeResolution(
   return {
     workflow: resolution.workflow,
     selectionBasis: resolution.selectionBasis,
-    matchedSkillId: topMatch?.skill.id ?? null,
+    matchedSkillId: null,
     candidateSkills,
     whyMatched: loopGuidance?.whyMatched ?? [],
     whatToDoNow: (loopGuidance?.whatToDoNow?.length ?? 0) > 0
@@ -386,6 +528,190 @@ function summarizeResolution(
     nextReads: loopGuidance?.nextReads ?? [],
     supportingNotes,
   };
+}
+
+function buildMatchCandidateCards(
+  resolution: Awaited<ReturnType<typeof resolveLoop>>,
+) {
+  return resolution.matches.slice(0, 5).map((match: {
+    skill: {
+      id: string;
+      displayName?: string | null;
+      name?: string | null;
+      workflow?: string | null;
+      trigger?: string | null;
+      description?: string | null;
+    };
+    linkedNotes?: Array<{
+      title: string;
+      whenToUse?: string | null;
+      signal?: string | null;
+      action?: string | null;
+    }>;
+    loopGuidance?: {
+      whyMatched?: string[];
+    } | null;
+  }) => ({
+    skillId: match.skill.id,
+    displayName: match.skill.displayName ?? match.skill.name ?? match.skill.id,
+    workflow: match.skill.workflow ?? null,
+    trigger: match.skill.trigger ?? null,
+    description: match.skill.description ?? null,
+    whyMatched: match.loopGuidance?.whyMatched ?? [],
+    supportingNotes: (match.linkedNotes ?? []).slice(0, 2).map((note) => ({
+      title: note.title,
+      whenToUse: note.whenToUse ?? null,
+      signal: note.signal ?? null,
+      action: note.action ?? null,
+    })),
+  }));
+}
+
+function shouldRunMatchAdjudicator(
+  resolution: Awaited<ReturnType<typeof resolveLoop>> | null,
+  input: LoopEnvelopeInput,
+): boolean {
+  if (!resolution || !input.matcher) {
+    return false;
+  }
+  if (input.skill) {
+    return false;
+  }
+  if (resolution.selectionBasis !== "task_query") {
+    return false;
+  }
+  if (resolution.matchedSkillId) {
+    return false;
+  }
+  if (!(input.task || input.step || input.prompt)) {
+    return false;
+  }
+  return (resolution.matches?.length ?? 0) > 0;
+}
+
+function buildMatchAdjudicationPrompt(
+  input: LoopEnvelopeInput,
+  resolution: Awaited<ReturnType<typeof resolveLoop>>,
+): string {
+  const candidateCards = buildMatchCandidateCards(resolution);
+  const payload = {
+    task: input.task ?? input.prompt ?? null,
+    workflow: input.workflow ?? resolution.workflow ?? null,
+    step: input.step ?? null,
+    candidates: candidateCards,
+  };
+
+  return [
+    "Decide whether the current task semantically matches one of the provided skills.",
+    "Token overlap alone is not enough.",
+    "Only select a skill if it is the same reusable workflow boundary.",
+    "Return JSON only with this shape:",
+    "{\"matchedSkillId\": string | null, \"noMatch\": boolean, \"alternatives\": string[], \"reason\": string}",
+    "Rules:",
+    "- choose only from the provided candidates",
+    "- set noMatch=true when none of the candidates is actually the right workflow",
+    "- keep alternatives short and limited to provided candidate ids",
+    "",
+    JSON.stringify(payload, null, 2),
+  ].join("\n");
+}
+
+function parseMatchDecision(
+  raw: unknown,
+  candidateSkillIds: string[],
+): WrapperMatchDecision {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Match adjudicator JSON must be an object.");
+  }
+
+  const reason = maybeNonEmptyString((raw as { reason?: unknown }).reason);
+  if (!reason) {
+    throw new Error("Match adjudicator reason is required.");
+  }
+
+  const matchedSkillId = maybeNonEmptyString((raw as { matchedSkillId?: unknown }).matchedSkillId) ?? null;
+  const noMatch = Boolean((raw as { noMatch?: unknown }).noMatch);
+  const alternatives = maybeStringArray((raw as { alternatives?: unknown }).alternatives)
+    .filter((skillId) => candidateSkillIds.includes(skillId))
+    .slice(0, 5);
+
+  if (matchedSkillId && !candidateSkillIds.includes(matchedSkillId)) {
+    throw new Error("Match adjudicator selected a skill outside the provided candidate set.");
+  }
+  if (noMatch && matchedSkillId) {
+    throw new Error("Match adjudicator cannot set both noMatch=true and matchedSkillId.");
+  }
+
+  return {
+    matchedSkillId,
+    noMatch: noMatch || !matchedSkillId,
+    alternatives,
+    reason,
+  };
+}
+
+async function maybeAdjudicateGuidance(
+  resolution: Awaited<ReturnType<typeof resolveLoop>>,
+  input: LoopEnvelopeInput,
+  guidance: LoopEnvelope["guidance"],
+  baseEnvelope: Pick<LoopEnvelope, "repoPath" | "sessionId" | "active" | "originalPrompt" | "wrappedPrompt" | "resolution" | "bootstrap" | "guidance">,
+): Promise<LoopEnvelope["guidance"]> {
+  if (!shouldRunMatchAdjudicator(resolution, input)) {
+    return guidance;
+  }
+
+  const candidateSkillIds = guidance.candidateSkills.map((candidate) => candidate.skillId);
+  if (candidateSkillIds.length === 0) {
+    return guidance;
+  }
+
+  const prompt = buildMatchAdjudicationPrompt(input, resolution);
+  const reviewEnvelope = {
+    ...baseEnvelope,
+    guidance,
+    wrappedPrompt: prompt,
+  } as LoopEnvelope;
+  const run = input.matcher?.run(prompt, reviewEnvelope);
+  if (!run || run.exitCode !== 0) {
+    return guidance;
+  }
+
+  try {
+    const decision = parseMatchDecision(tryParseJsonBlock(run.stdout), candidateSkillIds);
+    if (!decision.matchedSkillId || decision.noMatch) {
+      return guidance;
+    }
+    const selected = resolution.matches.find((match: { skill: { id: string } }) => match.skill.id === decision.matchedSkillId);
+    if (!selected) {
+      return guidance;
+    }
+    return toGuidanceFromSelectedMatch(
+      resolution,
+      selected as {
+        skill: {
+          id: string;
+        };
+        linkedNotes?: Array<{
+          path: string;
+          title: string;
+          whenToUse?: string | null;
+          signal?: string | null;
+          interpretation?: string | null;
+          action?: string | null;
+          examples?: string[] | null;
+        }>;
+        loopGuidance?: {
+          whyMatched?: string[];
+          whatToDoNow?: string[];
+          watchFor?: string[];
+          nextReads?: string[];
+        } | null;
+      },
+      ["agent_adjudicated_match"],
+    );
+  } catch {
+    return guidance;
+  }
 }
 
 function renderBulletSection(title: string, lines: string[]): string[] {
@@ -505,6 +831,7 @@ export function renderWrappedPrompt(envelope: LoopEnvelope): string {
 export async function buildLoopEnvelope(input: LoopEnvelopeInput): Promise<LoopEnvelope> {
   const repoPath = path.resolve(input.repoPath ?? process.cwd());
   const originalPrompt = toPrompt(input);
+  const retrievalTask = input.task ?? (originalPrompt.trim().length > 0 ? originalPrompt : undefined);
   const bootstrap = await autoBootstrapIfSafe({ repoPath });
   const sourceRoute = bootstrap.probeAfter.status === "ready"
     && !input.skill
@@ -518,7 +845,7 @@ export async function buildLoopEnvelope(input: LoopEnvelopeInput): Promise<LoopE
     && !sourceRoute
     ? await resolveLoop({
       repoPath,
-      task: input.task,
+      task: retrievalTask,
       workflow: input.workflow,
       step: input.step,
       skill: input.skill,
@@ -526,7 +853,7 @@ export async function buildLoopEnvelope(input: LoopEnvelopeInput): Promise<LoopE
       includeContent: input.includeContent,
     })
     : null;
-  const guidance = sourceRoute?.guidance ?? summarizeResolution(resolution, input.workflow);
+  let guidance = sourceRoute?.guidance ?? summarizeResolution(resolution, input.workflow);
   const baseEnvelope = {
     repoPath,
     sessionId: input.sessionId ?? null,
@@ -537,6 +864,11 @@ export async function buildLoopEnvelope(input: LoopEnvelopeInput): Promise<LoopE
     guidance,
     wrappedPrompt: "",
   };
+
+  if (resolution && !sourceRoute) {
+    guidance = await maybeAdjudicateGuidance(resolution, input, guidance, baseEnvelope);
+    baseEnvelope.guidance = guidance;
+  }
 
   return {
     ...baseEnvelope,
@@ -835,6 +1167,10 @@ export function buildObservedTurnPayload(
   const changedFiles = Array.isArray(input.changedFiles)
     ? input.changedFiles.filter(Boolean).slice(0, 25)
     : [];
+  const inheritedWorkflow = envelope.guidance.workflow !== UNKNOWN_WORKFLOW
+    && (Boolean(envelope.guidance.matchedSkillId) || envelope.guidance.selectionBasis !== "task_query")
+      ? envelope.guidance.workflow
+      : undefined;
   const matchedNotePaths = Array.isArray(input.matchedNotePaths) && input.matchedNotePaths.length > 0
     ? input.matchedNotePaths.filter(Boolean)
     : envelope.guidance.supportingNotes.map((note) => note.path);
@@ -844,9 +1180,10 @@ export function buildObservedTurnPayload(
     sourceKind: input.sourceKind ?? "trace",
     eventClass: input.eventClass,
     task: input.task ?? (envelope.originalPrompt || undefined),
-    workflow: input.workflow ?? (envelope.guidance.workflow === UNKNOWN_WORKFLOW ? undefined : envelope.guidance.workflow),
+    workflow: input.workflow ?? inheritedWorkflow,
     step: input.step,
     skillId: input.skillId ?? undefined,
+    matchedSkillIdHint: input.matchedSkillIdHint ?? (input.skillId ? undefined : (envelope.guidance.matchedSkillId ?? undefined)),
     adjudicationDecision: input.adjudicationDecision,
     adjudicationSkillId: input.adjudicationSkillId ?? undefined,
     candidateSkills: envelope.guidance.candidateSkills,
@@ -1130,6 +1467,7 @@ export async function finalizeWrappedRun(
       trigger: "disabled",
       result: null,
       review: null,
+      backlog: null,
     };
   }
 
@@ -1154,7 +1492,7 @@ export async function finalizeWrappedRun(
     sourceKind: "trace",
     eventClass,
     task: input.task ?? (envelope.originalPrompt || undefined),
-    workflow: input.workflow ?? (envelope.guidance.workflow === UNKNOWN_WORKFLOW ? undefined : envelope.guidance.workflow),
+    workflow: input.workflow,
     step: input.step,
     skillId: input.skillId,
     adjudicationDecision: markers.adjudicationDecision,
@@ -1187,18 +1525,20 @@ export async function finalizeWrappedRun(
   }
 
   if (postRunMode === "review") {
+    const review = await runSecondPassReview(
+      envelope,
+      sanitized.child,
+      payloadBase,
+      input.reviewer,
+      changedFiles,
+      recorded.event.relativePath,
+    );
     return {
       mode: "review",
       trigger,
       result: recorded,
-      review: await runSecondPassReview(
-        envelope,
-        sanitized.child,
-        payloadBase,
-        input.reviewer,
-        changedFiles,
-        recorded.event.relativePath,
-      ),
+      review,
+      backlog: await getEventBacklogStatus({ repoPath: envelope.repoPath }),
     };
   }
 
@@ -1217,5 +1557,6 @@ export async function finalizeWrappedRun(
     trigger,
     result,
     review: null,
+    backlog: await getEventBacklogStatus({ repoPath: envelope.repoPath }),
   };
 }

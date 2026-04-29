@@ -10,6 +10,7 @@ import {
   sanitizeWrappedCommandResult,
   type LoopEnvelopeInput,
   type LoopEnvelope,
+  type WrapperMatchRunner,
   type WrapperReviewRunner,
   type WrapperPostRunInput,
 } from "../shared.js";
@@ -144,18 +145,45 @@ function buildCodexReviewer(
   };
 }
 
+function buildCodexMatcher(
+  codexBin: string,
+  matchModel: string,
+): WrapperMatchRunner {
+  return {
+    kind: "codex",
+    model: matchModel,
+    run(prompt: string, envelope: LoopEnvelope) {
+      const matchArgs = [
+        "exec",
+        "--skip-git-repo-check",
+        "-m",
+        matchModel,
+        prompt,
+      ];
+      return runWrappedCommand(codexBin, matchArgs, envelope, {
+        cwd: envelope.repoPath,
+        env: {
+          DATALOX_MATCH_PASS: "1",
+        },
+      });
+    },
+  };
+}
+
 export async function runCodexWrapper(input: CodexWrapperInput) {
   const codexBin = input.codexBin ?? process.env.DATALOX_CODEX_BIN ?? "codex";
+  const matchModel = process.env.DATALOX_MATCH_MODEL ?? input.reviewModel ?? "gpt-5.4-mini";
   const codexArgs = input.codexArgs && input.codexArgs.length > 0
     ? [...input.codexArgs]
     : ["exec", "--skip-git-repo-check"];
   const inferredPromptIndex = findCodexPromptIndex(codexArgs);
-  const inferredPrompt = input.prompt ?? input.task ?? (
+  const inferredPrompt = input.prompt ?? (
     inferredPromptIndex === -1 ? undefined : codexArgs[inferredPromptIndex]
-  );
+  ) ?? input.task;
   const envelope = await buildLoopEnvelope({
     ...input,
     prompt: inferredPrompt,
+    matcher: buildCodexMatcher(codexBin, matchModel),
   });
 
   const hasPromptPlaceholder = codexArgs.some((arg) => hasExplicitPromptPlaceholder(arg));

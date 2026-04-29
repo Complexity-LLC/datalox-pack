@@ -177,7 +177,7 @@ Completed:
 - wrote explicit trace coverage back to the recorded event JSON
 - exposed the maintenance loop through a manual command:
   - `datalox maintain`
-- synthesized new skills only from note-backed evidence in a later pass
+- synthesized new skills only from note-backed evidence in an explicit later pass
 - prevented notes created in the same maintenance pass from immediately creating a skill
 - kept `unknown` wrapper-generated notes as note-only during new-skill synthesis
 - added review/demotion for low-evidence or incident-shaped generated draft skills
@@ -190,7 +190,7 @@ Implemented shape:
   - scan recent unresolved traces
   - compact repeated traces into notes
   - mark those traces covered
-- later pass:
+- explicit later pass with `--synthesize-skills`:
   - scan existing note-backed evidence
   - keep note only, patch skill, create skill, or demote generated draft skill
 - new skill synthesis requires note-backed evidence and a real workflow boundary
@@ -201,7 +201,7 @@ Passed:
 2. maintenance explicitly marks covered traces with durable metadata
 3. the first durable compaction boundary is `trace -> note`
 4. no skill is created in the same pass that first creates the note
-5. a later maintenance pass can synthesize a new skill only from note-backed evidence
+5. an explicit later maintenance pass can synthesize a new skill only from note-backed evidence
 6. generated skill ids and names are reusable workflow names instead of incident-capture wording
 7. low-quality generated draft skills can be demoted by the same maintenance path
 8. wrapper-generated `unknown` notes stay note-only instead of creating a second unscoped skill
@@ -247,7 +247,129 @@ Grounded proof:
 
 Live machine state (2026-04-27):
 
-- `~/.claude/skills/` now contains direct per-skill symlinks for all current pack skills
+- `~/.claude/skills/` now contains direct per-skill symlinks for all 4 current pack skills
 - `~/.claude/hooks/datalox-auto-promote.sh` present
 - `status.adapters.claude.nativeSkillLinks.canonical: true`
 - host limitation recorded: `claude` CLI not in shell PATH (IDE extension mode); canonical skill links are installed and will surface in a CLI-launched session
+
+## Online Retrieval And Note Capture
+
+Completed:
+
+- removed lexical workflow-overlap from authoritative skill matching
+- kept weak lexical retrieval candidate-only
+- stopped wrapper/shared surfaces from silently upgrading the top candidate into `matchedSkillId`
+- added a bounded online match adjudicator for ambiguous Codex/Claude cases
+- kept generic wrapper paths candidate-only when no adjudicator-backed host path exists
+- prevented candidate-only wrapper guidance from leaking `matchedNotePaths` or workflow into durable event capture
+- preserved the narrow compatibility path for online skill creation without making it the default product path
+- added focused bridge/wrapper/agent-script proofs
+
+Implemented shape:
+
+- deterministic accept:
+  - `explicit_skill_match`
+  - `field_phrase_match`
+- deterministic reject:
+  - no candidate set
+- ambiguous online case:
+  - bounded agent adjudication over `2-5` compact skill cards
+- candidate-only retrieval:
+  - weak candidates still surface
+  - `matchedSkillId` stays `null`
+  - top-level supporting notes stay empty
+
+Passed:
+
+1. weak workflow-bound lexical overlap no longer sets `matchedSkillId`
+2. weak candidates can still surface without being treated as authoritative
+3. ambiguous same-workflow online cases use a cheap structured adjudicator instead of lexical authority
+4. durable event capture no longer inherits workflow or matched notes from weak online candidates
+5. online note-safe behavior remains intact while new-skill creation stays a narrow compatibility path
+
+Grounded proof:
+
+- [docs/online-retrieval-live-2026-04-26.md](/Users/yifanjin/datalox-pack/docs/online-retrieval-live-2026-04-26.md)
+
+## Maintenance Defaults And Skill Synthesis Boundary
+
+Completed:
+
+- lowered default maintenance scope from `50` events to `12`
+- made default `datalox maintain` trace-to-note only
+- kept trace coverage marking unchanged
+- added explicit note-backed skill synthesis through `--synthesize-skills`
+- exposed the same flag through the shared CLI/MCP command surface
+- kept skill synthesis note-backed and excluded notes created in the same maintenance pass
+
+Implemented shape:
+
+- default command:
+  - `datalox maintain --max-events 12 --json`
+- default behavior:
+  - scan bounded trace events
+  - compact repeated trace groups into `agent-wiki/notes/`
+  - mark covered events
+  - do not create or patch skills
+- explicit skill synthesis:
+  - `datalox maintain --synthesize-skills`
+  - can create, patch, keep-note-only, or demote generated draft skills from existing note-backed evidence
+
+Passed:
+
+1. default maintenance scans the smaller default window
+2. explicit `--max-events` still overrides the scan window
+3. repeated traces create or update a note without skill actions by default
+4. existing note-backed evidence creates a skill only when `--synthesize-skills` is set
+5. low-evidence generated draft skill review remains available only on explicit synthesis
+
+## Event Backlog Visibility And Maintenance Nudges
+
+Completed:
+
+- added shared event backlog stats and policy evaluation
+- added maintenance backlog data to `status --json`
+- added Claude hook stderr warnings for hot backlogs
+- added next-turn-readable backlog visibility in `agent-wiki/hot.md`
+- added machine-readable Codex wrapper backlog warnings in wrapper JSON
+- added a composite backlog policy in `.datalox/config.json` and `.datalox/config.schema.json`
+- kept hook/wrapper warnings note-only; they recommend bounded maintenance and do not synthesize skills
+
+Implemented shape:
+
+- shared status fields include:
+  - total event count
+  - trace / non-trace count
+  - uncovered trace count
+  - covered trace count
+  - unresolved trace group count
+  - repeated unresolved trace group count
+  - maintainable unresolved trace group count
+  - oldest uncovered event timestamp/path
+  - policy level: `none`, `warn`, or `urgent`
+  - recommended command
+- default backlog policy:
+  - warn at `50` uncovered events, `7` days oldest age, or `1` maintainable group
+  - urgent at `100` uncovered events, `14` days oldest age, or `5` maintainable groups
+- policy uses OR semantics across:
+  - uncovered event depth
+  - oldest uncovered event age
+  - maintainable unresolved group count
+
+Passed:
+
+1. synthetic repo with `135` uncovered events reports urgent by depth
+2. covered events are excluded from urgent warnings
+3. old uncovered events can warn even when raw count is low
+4. one repeated maintainable group warns even when raw count is low
+5. config can tune backlog policy
+6. invalid empty warning policies fail clearly
+7. Codex wrapper JSON includes machine-readable backlog warning data
+8. Claude hook writes a compact stderr warning and updates `agent-wiki/hot.md`
+9. `status --json` exposes the same shared backlog status
+10. warnings do not trigger skill synthesis
+
+Focused verification:
+
+- `npm run build`
+- `npx vitest run tests/bridgeSurfaces.test.ts tests/wrapperSurfaces.test.ts tests/agentScripts.test.ts tests/hookIntegration.test.ts`

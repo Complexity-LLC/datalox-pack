@@ -6,6 +6,7 @@ import {
   sanitizeWrappedCommandResult,
   type LoopEnvelopeInput,
   type LoopEnvelope,
+  type WrapperMatchRunner,
   type WrapperReviewRunner,
   type WrapperPostRunInput,
 } from "../shared.js";
@@ -112,8 +113,33 @@ function buildClaudeReviewer(
   };
 }
 
+function buildClaudeMatcher(
+  claudeBin: string,
+  matchModel: string,
+): WrapperMatchRunner {
+  return {
+    kind: "claude",
+    model: matchModel,
+    run(prompt: string, envelope: LoopEnvelope) {
+      const matchArgs = [
+        "--model",
+        matchModel,
+        "--print",
+        prompt,
+      ];
+      return runWrappedCommand(claudeBin, matchArgs, envelope, {
+        cwd: envelope.repoPath,
+        env: {
+          DATALOX_MATCH_PASS: "1",
+        },
+      });
+    },
+  };
+}
+
 export async function runClaudeWrapper(input: ClaudeWrapperInput) {
   const claudeBin = input.claudeBin ?? process.env.DATALOX_CLAUDE_BIN ?? "claude";
+  const matchModel = process.env.DATALOX_MATCH_MODEL ?? input.reviewModel ?? "gpt-5.4-mini";
   const claudeArgs = input.claudeArgs && input.claudeArgs.length > 0
     ? [...input.claudeArgs]
     : [];
@@ -121,6 +147,7 @@ export async function runClaudeWrapper(input: ClaudeWrapperInput) {
   const envelope = await buildLoopEnvelope({
     ...input,
     prompt: inferredPrompt,
+    matcher: buildClaudeMatcher(claudeBin, matchModel),
   });
 
   const promptIndex = findClaudePromptIndex(claudeArgs);

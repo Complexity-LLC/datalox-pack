@@ -22,6 +22,28 @@ describe("automatic host hooks", () => {
     expect(result.status).toBe(0);
   }
 
+  async function writeSyntheticTraceEvent(hostDir: string, id: string, stabilityKey: string): Promise<void> {
+    await mkdir(path.join(hostDir, "agent-wiki", "events"), { recursive: true });
+    await writeFile(
+      path.join(hostDir, "agent-wiki", "events", `${id}.json`),
+      `${JSON.stringify({
+        version: 1,
+        id,
+        timestamp: new Date().toISOString(),
+        eventKind: "wrapper:codex:success",
+        eventClass: "trace",
+        sourceKind: "trace",
+        workflow: "agent_adoption",
+        task: "Synthetic hook backlog trace",
+        summary: "Synthetic hook backlog trace",
+        signal: "Synthetic hook backlog trace",
+        interpretation: "synthetic hook backlog test event",
+        recommendedAction: "run bounded note-only maintenance",
+        stabilityKey,
+      }, null, 2)}\n`,
+    );
+  }
+
   it("patches a matched repo skill when the hook is explicitly told to record candidate events", async () => {
     const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-hook-host-"));
     tempDirs.push(hostDir);
@@ -229,7 +251,73 @@ describe("automatic host hooks", () => {
     expect(eventPayload.eventClass).toBe("trace");
     expect(eventPayload.hostKind).toBe("hook");
     expect(eventPayload.workflow).toBe("repo_engineering");
-    expect(eventPayload.matchedSkillId).toBe("repo-engineering.maintain-datalox-pack");
-    expect(eventPayload.matchedNotePaths).toContain("agent-wiki/notes/maintain-datalox-pack.md");
+    expect(eventPayload.matchedSkillId).toBeNull();
+    expect(eventPayload.matchedNotePaths).toEqual([]);
+    expect(eventPayload.candidateSkills.map((candidate: { skillId: string }) => candidate.skillId)).toContain(
+      "repo-engineering.maintain-datalox-pack",
+    );
+  }, 60000);
+
+  it("surfaces backlog warnings from the Claude hook in stderr and hot cache", async () => {
+    const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-hook-backlog-"));
+    tempDirs.push(hostDir);
+
+    const adopt = spawnSync("bash", [path.join(repoRoot, "bin", "adopt-host-repo.sh"), hostDir], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    expect(adopt.status).toBe(0);
+
+    await writeSyntheticTraceEvent(hostDir, "2026-04-28T00-00-00-000Z--hook-backlog-a", "agent_adoption::hook-backlog");
+    await writeSyntheticTraceEvent(hostDir, "2026-04-28T00-01-00-000Z--hook-backlog-b", "agent_adoption::hook-backlog");
+
+    const transcriptDir = path.join(hostDir, ".claude", "projects", "demo");
+    await mkdir(transcriptDir, { recursive: true });
+    const transcriptPath = path.join(transcriptDir, "session.jsonl");
+    await writeFile(
+      transcriptPath,
+      [
+        JSON.stringify({
+          type: "user",
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "record a small hook turn" }],
+          },
+        }),
+        JSON.stringify({
+          type: "assistant",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "Recorded the hook turn." }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const payload = JSON.stringify({
+      hook_event_name: "Stop",
+      cwd: hostDir,
+      workflow: "agent_adoption",
+      transcript_path: transcriptPath,
+    });
+
+    const result = spawnSync("node", [path.join(hostDir, "bin", "datalox-auto-promote.js"), "--repo", hostDir], {
+      cwd: hostDir,
+      env: {
+        ...process.env,
+        DATALOX_PACK_ROOT: repoRoot,
+      },
+      input: payload,
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("maintenance_backlog");
+    expect(result.stderr).toContain("datalox maintain --max-events 12 --json");
+
+    const hotFile = await readFile(path.join(hostDir, "agent-wiki", "hot.md"), "utf8");
+    expect(hotFile).toContain("## Maintenance Backlog");
+    expect(hotFile).toContain("Recommended command: datalox maintain --max-events 12 --json");
   }, 60000);
 });

@@ -14,6 +14,7 @@ const result = await maintainKnowledge(
     minSkillOccurrences: typeof args["min-skill-occurrences"] === "string"
       ? Number.parseInt(args["min-skill-occurrences"], 10)
       : undefined,
+    synthesizeSkills: args["synthesize-skills"] === true,
   },
   process.cwd(),
 );

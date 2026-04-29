@@ -38,6 +38,23 @@
   "retrieval": {
     "notesBackend": "native"
   },
+  "maintenance": {
+    "maxEvents": 12,
+    "minNoteOccurrences": 2,
+    "minSkillOccurrences": 3,
+    "backlog": {
+      "warn": {
+        "uncovered": 50,
+        "oldestAgeDays": 7,
+        "maintainableGroups": 1
+      },
+      "urgent": {
+        "uncovered": 100,
+        "oldestAgeDays": 14,
+        "maintainableGroups": 5
+      }
+    }
+  },
   "runtime": {
     "enabled": false,
     "baseUrl": "http://localhost:3000",

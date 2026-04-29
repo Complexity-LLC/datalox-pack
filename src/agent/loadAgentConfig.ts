@@ -4,9 +4,11 @@ import path from "node:path";
 import {
   AGENT_INTERFACES,
   AGENT_PROFILES,
+  DEFAULT_MAINTENANCE_CONFIG,
   PACK_MODES,
   SOURCE_KINDS,
   type AgentConfig,
+  type MaintenanceBacklogThreshold,
 } from "../domain/agentConfig.js";
 
 const CONFIG_PATH_ENV = "DATALOX_CONFIG_JSON";
@@ -84,6 +86,13 @@ function expectPositiveInteger(value: unknown, fieldName: string): number {
   return value as number;
 }
 
+function expectOptionalPositiveInteger(value: unknown, fieldName: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return expectPositiveInteger(value, fieldName);
+}
+
 function expectStringArray(value: unknown, fieldName: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
     throw new Error(`Agent config field ${fieldName} must be an array of strings`);
@@ -115,6 +124,80 @@ function expectEnumValue<T extends readonly string[]>(
     throw new Error(`Agent config field ${fieldName} must be one of ${allowedValues.join(", ")}`);
   }
   return resolved as T[number];
+}
+
+function cloneBacklogThreshold(threshold: MaintenanceBacklogThreshold): MaintenanceBacklogThreshold {
+  return Object.fromEntries(
+    Object.entries(threshold).filter(([, value]) => value !== undefined),
+  ) as MaintenanceBacklogThreshold;
+}
+
+function validateBacklogThreshold(
+  raw: unknown,
+  fieldName: string,
+  fallback: MaintenanceBacklogThreshold,
+): MaintenanceBacklogThreshold {
+  if (raw === undefined) {
+    return cloneBacklogThreshold(fallback);
+  }
+  if (!isRecord(raw)) {
+    throw new Error(`Agent config field ${fieldName} must be an object`);
+  }
+
+  const threshold: MaintenanceBacklogThreshold = {};
+  for (const key of ["uncovered", "oldestAgeDays", "maintainableGroups"] as const) {
+    const value = expectOptionalPositiveInteger(raw[key], `${fieldName}.${key}`);
+    if (value !== undefined) {
+      threshold[key] = value;
+    }
+  }
+
+  if (Object.keys(threshold).length === 0) {
+    throw new Error(`Agent config field ${fieldName} must enable at least one backlog signal`);
+  }
+
+  return threshold;
+}
+
+function validateBacklogPolicy(raw: unknown, fieldName = "maintenance.backlog") {
+  if (raw === undefined) {
+    return {
+      warn: cloneBacklogThreshold(DEFAULT_MAINTENANCE_CONFIG.backlog.warn),
+      urgent: cloneBacklogThreshold(DEFAULT_MAINTENANCE_CONFIG.backlog.urgent),
+    };
+  }
+  if (!isRecord(raw)) {
+    throw new Error(`Agent config field ${fieldName} must be an object`);
+  }
+
+  return {
+    warn: validateBacklogThreshold(raw.warn, `${fieldName}.warn`, DEFAULT_MAINTENANCE_CONFIG.backlog.warn),
+    urgent: validateBacklogThreshold(raw.urgent, `${fieldName}.urgent`, DEFAULT_MAINTENANCE_CONFIG.backlog.urgent),
+  };
+}
+
+function validateMaintenanceConfig(raw: unknown): AgentConfig["maintenance"] {
+  if (raw === undefined) {
+    return {
+      maxEvents: DEFAULT_MAINTENANCE_CONFIG.maxEvents,
+      minNoteOccurrences: DEFAULT_MAINTENANCE_CONFIG.minNoteOccurrences,
+      minSkillOccurrences: DEFAULT_MAINTENANCE_CONFIG.minSkillOccurrences,
+      backlog: validateBacklogPolicy(undefined),
+    };
+  }
+  if (!isRecord(raw)) {
+    throw new Error("Agent config field maintenance must be an object");
+  }
+
+  return {
+    maxEvents: expectOptionalPositiveInteger(raw.maxEvents, "maintenance.maxEvents")
+      ?? DEFAULT_MAINTENANCE_CONFIG.maxEvents,
+    minNoteOccurrences: expectOptionalPositiveInteger(raw.minNoteOccurrences, "maintenance.minNoteOccurrences")
+      ?? DEFAULT_MAINTENANCE_CONFIG.minNoteOccurrences,
+    minSkillOccurrences: expectOptionalPositiveInteger(raw.minSkillOccurrences, "maintenance.minSkillOccurrences")
+      ?? DEFAULT_MAINTENANCE_CONFIG.minSkillOccurrences,
+    backlog: validateBacklogPolicy(raw.backlog),
+  };
 }
 
 function validateAgentConfig(raw: JsonObject): AgentConfig {
@@ -196,6 +279,7 @@ function validateAgentConfig(raw: JsonObject): AgentConfig {
         ? null
         : expectString(paths.hostPatternsDir, "paths.hostPatternsDir"),
     },
+    maintenance: validateMaintenanceConfig(raw.maintenance),
     runtime: {
       enabled: expectBoolean(runtime.enabled, "runtime.enabled"),
       baseUrl: expectString(runtime.baseUrl, "runtime.baseUrl"),

@@ -59,7 +59,7 @@ function usage(): string {
     "  datalox record [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--changed-file <path>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--outcome <text>] [--tag <tag>] [--event-kind <kind>] [--json]",
     "  datalox patch [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--event-path <path>] [--session-id <id>] [--host-kind <kind>] [--admin-override] [--tag <tag>] [--json]",
     "  datalox promote [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--summary <summary>] [--observation <text>] [--changed-file <path>] [--transcript <text>] [--title <title>] [--signal <signal>] [--interpretation <text>] [--action <text>] [--outcome <text>] [--tag <tag>] [--event-kind <kind>] [--event-path <path>] [--session-id <id>] [--host-kind <kind>] [--admin-override] [--min-wiki-occurrences <n>] [--min-skill-occurrences <n>] [--json]",
-    "  datalox maintain [--repo <path>] [--max-events <n>] [--include-covered] [--min-note-occurrences <n>] [--min-skill-occurrences <n>] [--json]",
+    "  datalox maintain [--repo <path>] [--max-events <n>] [--include-covered] [--min-note-occurrences <n>] [--min-skill-occurrences <n>] [--synthesize-skills] [--json]",
     "  datalox lint [--repo <path>] [--json]",
     "  datalox wrap prompt [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--json]",
     "  datalox wrap command [--repo <path>] [--task <task>] [--workflow <workflow>] [--step <step>] [--skill <skill-id>] [--prompt <text>] [--summary <summary>] [--tag <tag>] [--event-kind <kind>] [--post-run-mode <off|record|auto|promote|review>] [--json] -- <command> [args with __DATALOX_PROMPT__ placeholders]",
@@ -168,6 +168,20 @@ function writePostRunSummary(prefix: string, postRun: unknown): void {
   const eventPath = typed.result?.event?.relativePath;
   const decision = typed.result?.decision;
   const review = typed.review;
+  const backlog = (typed as {
+    backlog?: {
+      maintenanceRecommended?: boolean;
+      policy?: { level?: string };
+      uncoveredEvents?: number;
+      maintainableUnresolvedTraceGroupCount?: number;
+      recommendedCommand?: string;
+    } | null;
+  }).backlog;
+  if (backlog?.maintenanceRecommended) {
+    process.stderr.write(
+      `[${prefix}] maintenance_backlog | ${backlog.policy?.level ?? "warn"} | uncovered=${backlog.uncoveredEvents ?? "?"} | maintainable_groups=${backlog.maintainableUnresolvedTraceGroupCount ?? "?"} | ${backlog.recommendedCommand ?? "datalox maintain --json"}\n`,
+    );
+  }
   if (typed.mode === "review") {
     if (review?.status === "completed" && review.decision) {
       process.stderr.write(

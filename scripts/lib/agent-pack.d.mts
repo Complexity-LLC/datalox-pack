@@ -2,6 +2,7 @@ export function attachNoteToSkill(...args: any[]): Promise<any>;
 export function attachPatternToSkill(...args: any[]): Promise<any>;
 export function compileRecordedEvent(...args: any[]): Promise<any>;
 export function countPackFiles(...args: any[]): Promise<any>;
+export function getEventBacklogStatus(...args: any[]): Promise<any>;
 export function getLocalSkillById(...args: any[]): Promise<any>;
 export function learnFromInteraction(...args: any[]): Promise<any>;
 export function lintPack(...args: any[]): Promise<any>;

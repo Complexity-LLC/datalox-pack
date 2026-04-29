@@ -312,6 +312,14 @@ const minNoteOccurrencesArg: SharedArgSpec = {
   positive: true,
 };
 
+const synthesizeSkillsArg: SharedArgSpec = {
+  key: "synthesizeSkills",
+  description: "Explicitly synthesize note-backed skills after note maintenance.",
+  kind: "boolean",
+  cliFlag: "synthesize-skills",
+  mcpKey: "synthesize_skills",
+};
+
 const packSourceArg: SharedArgSpec = {
   key: "packSource",
   description: "Optional local path or git URL for the source pack.",
@@ -796,13 +804,14 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
   {
     cliCommand: "maintain",
     mcpTool: "maintain_knowledge",
-    description: "Run a bounded maintenance pass over recent repo-local traces, compact them into notes, and synthesize note-backed skills.",
+    description: "Run a bounded maintenance pass over recent repo-local traces and compact repeated groups into notes.",
     args: [
       repoPathArg,
       maxEventsArg,
       includeCoveredArg,
       minNoteOccurrencesArg,
       minSkillOccurrencesArg,
+      synthesizeSkillsArg,
     ],
     async run(input) {
       return maintainKnowledge({
@@ -811,6 +820,7 @@ const sharedCommandsInternal: SharedCommandSpec[] = [
         includeCovered: maybeBoolean(input.includeCovered),
         minNoteOccurrences: maybeNumber(input.minNoteOccurrences),
         minSkillOccurrences: maybeNumber(input.minSkillOccurrences),
+        synthesizeSkills: maybeBoolean(input.synthesizeSkills),
       });
     },
   },

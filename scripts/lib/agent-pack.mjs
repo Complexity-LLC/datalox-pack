@@ -34,6 +34,23 @@ const DEFAULT_COMPARISON_DIR = `${DEFAULT_WIKI_DIR}/comparisons`;
 const DEFAULT_QUESTION_DIR = `${DEFAULT_WIKI_DIR}/questions`;
 const DEFAULT_EVENTS_DIR = `${DEFAULT_WIKI_DIR}/events`;
 const WIKI_PAGE_TYPES = ["note", "meta", "source", "concept", "comparison", "question"];
+const DEFAULT_MAINTENANCE_CONFIG = Object.freeze({
+  maxEvents: 12,
+  minNoteOccurrences: 2,
+  minSkillOccurrences: 3,
+  backlog: Object.freeze({
+    warn: Object.freeze({
+      uncovered: 50,
+      oldestAgeDays: 7,
+      maintainableGroups: 1,
+    }),
+    urgent: Object.freeze({
+      uncovered: 100,
+      oldestAgeDays: 14,
+      maintainableGroups: 5,
+    }),
+  }),
+});
 const KNOWLEDGE_MODEL = Object.freeze({
   primaryDurableEntry: "skill",
   supportingDurableEntry: "note",
@@ -94,6 +111,13 @@ function expectPositiveInteger(value, fieldName) {
   return value;
 }
 
+function expectOptionalPositiveInteger(value, fieldName) {
+  if (value === undefined) {
+    return undefined;
+  }
+  return expectPositiveInteger(value, fieldName);
+}
+
 function expectStringArray(value, fieldName) {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
     throw new Error(`Agent config field ${fieldName} must be an array of strings`);
@@ -117,6 +141,75 @@ function expectEnumValue(value, fieldName, allowedValues) {
     throw new Error(`Agent config field ${fieldName} must be one of ${allowedValues.join(", ")}`);
   }
   return resolved;
+}
+
+function cloneBacklogThreshold(threshold) {
+  return Object.fromEntries(
+    Object.entries(threshold).filter(([, value]) => value !== undefined),
+  );
+}
+
+function validateBacklogThreshold(raw, fieldName, fallback) {
+  if (raw === undefined) {
+    return cloneBacklogThreshold(fallback);
+  }
+  if (!isRecord(raw)) {
+    throw new Error(`Agent config field ${fieldName} must be an object`);
+  }
+
+  const threshold = {};
+  for (const key of ["uncovered", "oldestAgeDays", "maintainableGroups"]) {
+    const value = expectOptionalPositiveInteger(raw[key], `${fieldName}.${key}`);
+    if (value !== undefined) {
+      threshold[key] = value;
+    }
+  }
+
+  if (Object.keys(threshold).length === 0) {
+    throw new Error(`Agent config field ${fieldName} must enable at least one backlog signal`);
+  }
+
+  return threshold;
+}
+
+function validateBacklogPolicy(raw, fieldName = "maintenance.backlog") {
+  if (raw === undefined) {
+    return {
+      warn: cloneBacklogThreshold(DEFAULT_MAINTENANCE_CONFIG.backlog.warn),
+      urgent: cloneBacklogThreshold(DEFAULT_MAINTENANCE_CONFIG.backlog.urgent),
+    };
+  }
+  if (!isRecord(raw)) {
+    throw new Error(`Agent config field ${fieldName} must be an object`);
+  }
+
+  return {
+    warn: validateBacklogThreshold(raw.warn, `${fieldName}.warn`, DEFAULT_MAINTENANCE_CONFIG.backlog.warn),
+    urgent: validateBacklogThreshold(raw.urgent, `${fieldName}.urgent`, DEFAULT_MAINTENANCE_CONFIG.backlog.urgent),
+  };
+}
+
+function validateMaintenanceConfig(raw) {
+  if (raw === undefined) {
+    return {
+      maxEvents: DEFAULT_MAINTENANCE_CONFIG.maxEvents,
+      minNoteOccurrences: DEFAULT_MAINTENANCE_CONFIG.minNoteOccurrences,
+      minSkillOccurrences: DEFAULT_MAINTENANCE_CONFIG.minSkillOccurrences,
+      backlog: validateBacklogPolicy(undefined),
+    };
+  }
+  if (!isRecord(raw)) {
+    throw new Error("Agent config field maintenance must be an object");
+  }
+
+  return {
+    maxEvents: expectOptionalPositiveInteger(raw.maxEvents, "maintenance.maxEvents") ?? DEFAULT_MAINTENANCE_CONFIG.maxEvents,
+    minNoteOccurrences: expectOptionalPositiveInteger(raw.minNoteOccurrences, "maintenance.minNoteOccurrences")
+      ?? DEFAULT_MAINTENANCE_CONFIG.minNoteOccurrences,
+    minSkillOccurrences: expectOptionalPositiveInteger(raw.minSkillOccurrences, "maintenance.minSkillOccurrences")
+      ?? DEFAULT_MAINTENANCE_CONFIG.minSkillOccurrences,
+    backlog: validateBacklogPolicy(raw.backlog),
+  };
 }
 
 function validateAgentConfig(raw) {
@@ -197,6 +290,7 @@ function validateAgentConfig(raw) {
         ? "native"
         : expectEnumValue(retrieval.notesBackend, "retrieval.notesBackend", NOTE_RETRIEVAL_BACKENDS),
     },
+    maintenance: validateMaintenanceConfig(raw.maintenance),
     runtime: {
       enabled: expectBoolean(runtime.enabled, "runtime.enabled"),
       baseUrl: expectString(runtime.baseUrl, "runtime.baseUrl"),
@@ -897,6 +991,160 @@ async function loadMaintenancePlannerInput(
   };
 }
 
+function getMaintenanceConfig(config) {
+  return config?.maintenance ?? {
+    maxEvents: DEFAULT_MAINTENANCE_CONFIG.maxEvents,
+    minNoteOccurrences: DEFAULT_MAINTENANCE_CONFIG.minNoteOccurrences,
+    minSkillOccurrences: DEFAULT_MAINTENANCE_CONFIG.minSkillOccurrences,
+    backlog: validateBacklogPolicy(undefined),
+  };
+}
+
+function buildRecommendedMaintenanceCommand(config) {
+  const maintenance = getMaintenanceConfig(config);
+  return `datalox maintain --max-events ${maintenance.maxEvents} --json`;
+}
+
+function getOldestUncoveredEvent(uncoveredEvents) {
+  if (uncoveredEvents.length === 0) {
+    return null;
+  }
+  const oldest = [...uncoveredEvents]
+    .sort((left, right) => parseTimestamp(left.value?.timestamp) - parseTimestamp(right.value?.timestamp))[0];
+  return {
+    path: oldest.relativePath,
+    timestamp: oldest.value?.timestamp ?? null,
+  };
+}
+
+function calculateAgeDays(timestamp, now = new Date()) {
+  const parsed = parseTimestamp(timestamp);
+  if (!parsed) {
+    return null;
+  }
+  return Math.max(0, (now.getTime() - parsed) / (24 * 60 * 60 * 1000));
+}
+
+function comparePolicySignal(value, threshold) {
+  return threshold !== undefined && value !== null && value >= threshold;
+}
+
+function collectTriggeredBacklogSignals(level, threshold, values) {
+  const triggered = [];
+  for (const signal of ["uncovered", "oldestAgeDays", "maintainableGroups"]) {
+    if (comparePolicySignal(values[signal], threshold[signal])) {
+      triggered.push({
+        level,
+        signal,
+        value: values[signal],
+        threshold: threshold[signal],
+      });
+    }
+  }
+  return triggered;
+}
+
+function evaluateBacklogPolicy(stats, config) {
+  const policy = getMaintenanceConfig(config).backlog;
+  const values = {
+    uncovered: stats.uncoveredEvents,
+    oldestAgeDays: stats.oldestUncoveredAgeDays,
+    maintainableGroups: stats.maintainableUnresolvedTraceGroupCount,
+  };
+  const urgent = collectTriggeredBacklogSignals("urgent", policy.urgent, values);
+  if (urgent.length > 0) {
+    return {
+      level: "urgent",
+      triggered: urgent,
+    };
+  }
+
+  const warn = collectTriggeredBacklogSignals("warn", policy.warn, values);
+  if (warn.length > 0) {
+    return {
+      level: "warn",
+      triggered: warn,
+    };
+  }
+
+  return {
+    level: "none",
+    triggered: [],
+  };
+}
+
+function buildEventBacklogStats(recordedEvents, config, now = new Date()) {
+  const maintenance = getMaintenanceConfig(config);
+  const traceEvents = recordedEvents.filter((entry) => entry.value?.eventClass === "trace");
+  const coveredEvents = traceEvents.filter((entry) => isCoveredRecordedEvent(entry.value));
+  const uncoveredTraceEvents = traceEvents.filter((entry) => !isCoveredRecordedEvent(entry.value));
+  const grouped = new Map();
+
+  for (const entry of uncoveredTraceEvents) {
+    const key = [
+      entry.value?.workflow ?? UNKNOWN_WORKFLOW,
+      extractStabilityKeyFromPayload(entry.value),
+    ].join("::");
+    const existing = grouped.get(key) ?? [];
+    existing.push(entry);
+    grouped.set(key, existing);
+  }
+
+  const unresolvedGroups = Array.from(grouped.values())
+    .map((entries) => buildMaintenanceCandidate(entries))
+    .sort((left, right) => parseTimestamp(right.latestTimestamp) - parseTimestamp(left.latestTimestamp));
+  const repeatedGroups = unresolvedGroups.filter((candidate) => candidate.eventCount >= 2);
+  const maintainableGroups = unresolvedGroups.filter((candidate) =>
+    candidate.eventCount >= maintenance.minNoteOccurrences
+  );
+  const oldestUncoveredEvent = getOldestUncoveredEvent(uncoveredTraceEvents);
+  const oldestUncoveredAgeDays = oldestUncoveredEvent
+    ? calculateAgeDays(oldestUncoveredEvent.timestamp, now)
+    : null;
+
+  return {
+    totalEvents: recordedEvents.length,
+    traceEvents: traceEvents.length,
+    nonTraceEvents: recordedEvents.length - traceEvents.length,
+    uncoveredEvents: uncoveredTraceEvents.length,
+    coveredEvents: coveredEvents.length,
+    unresolvedTraceGroupCount: unresolvedGroups.length,
+    repeatedUnresolvedTraceGroupCount: repeatedGroups.length,
+    maintainableUnresolvedTraceGroupCount: maintainableGroups.length,
+    oldestUncoveredEvent,
+    oldestUncoveredAgeDays,
+    maintainableGroups: maintainableGroups.slice(0, 5).map((candidate) => ({
+      workflow: candidate.workflow,
+      stabilityKey: candidate.stabilityKey,
+      eventCount: candidate.eventCount,
+      latestTimestamp: candidate.latestTimestamp,
+      eventPaths: candidate.eventPaths,
+      eventSummaries: candidate.eventSummaries,
+    })),
+  };
+}
+
+export async function getEventBacklogStatus(
+  {
+    now,
+  } = {},
+  cwd = process.cwd(),
+) {
+  const { config, sourcePath } = await loadAgentConfig(cwd);
+  const recordedEvents = await listRecordedEvents(config, cwd, sourcePath);
+  const stats = buildEventBacklogStats(recordedEvents, config, now instanceof Date ? now : new Date());
+  const policy = evaluateBacklogPolicy(stats, config);
+  const recommendedCommand = buildRecommendedMaintenanceCommand(config);
+
+  return {
+    ...stats,
+    policy,
+    maintenanceRecommended: policy.level !== "none",
+    recommendedCommand,
+    recommendedCommands: policy.level === "none" ? [] : [recommendedCommand],
+  };
+}
+
 function formatTimestamp(value) {
   return value ?? new Date().toISOString();
 }
@@ -1136,7 +1384,7 @@ function renderIndexMarkdown({ config, skills, wikiEntries, wikiDocs }) {
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
-function renderHotMarkdown({ config, skills, wikiEntries, wikiDocs, recentLogLines }) {
+function renderHotMarkdown({ config, skills, wikiEntries, wikiDocs, recentLogLines, backlogStatus = null }) {
   const generatedAt = new Date().toISOString();
   const recentSkills = [...skills]
     .sort((left, right) => parseTimestamp(right.value.updatedAt) - parseTimestamp(left.value.updatedAt))
@@ -1162,6 +1410,21 @@ function renderHotMarkdown({ config, skills, wikiEntries, wikiDocs, recentLogLin
     lines.push("- No recent changes recorded.");
   } else {
     lines.push(...recentLogLines);
+  }
+
+  if (backlogStatus?.maintenanceRecommended) {
+    const oldest = backlogStatus.oldestUncoveredEvent?.timestamp
+      ? `${backlogStatus.oldestUncoveredEvent.timestamp} | ${backlogStatus.oldestUncoveredEvent.path}`
+      : "none";
+    lines.push("");
+    lines.push("## Maintenance Backlog");
+    lines.push("");
+    lines.push(`- Level: ${backlogStatus.policy.level}`);
+    lines.push(`- Uncovered trace events: ${backlogStatus.uncoveredEvents}`);
+    lines.push(`- Covered trace events: ${backlogStatus.coveredEvents}`);
+    lines.push(`- Maintainable unresolved groups: ${backlogStatus.maintainableUnresolvedTraceGroupCount}`);
+    lines.push(`- Oldest uncovered event: ${oldest}`);
+    lines.push(`- Recommended command: ${backlogStatus.recommendedCommand}`);
   }
 
   lines.push("");
@@ -1226,10 +1489,22 @@ async function appendPackLog(config, cwd, sourcePath, entry) {
 
 async function writeHotSnapshot(config, cwd, sourcePath) {
   const { hostWikiDir } = resolvePackPaths(config, { cwd, sourcePath });
-  const [skills, wikiEntries, logContent] = await Promise.all([
+  const [skills, wikiEntries, logContent, backlogStatus] = await Promise.all([
     listLocalSkills(config, cwd, sourcePath),
     listWikiEntries(config, cwd, sourcePath),
     readTextIfPresent(path.join(hostWikiDir, "log.md")),
+    listRecordedEvents(config, cwd, sourcePath).then((events) => {
+      const stats = buildEventBacklogStats(events, config);
+      const policy = evaluateBacklogPolicy(stats, config);
+      const recommendedCommand = buildRecommendedMaintenanceCommand(config);
+      return {
+        ...stats,
+        policy,
+        maintenanceRecommended: policy.level !== "none",
+        recommendedCommand,
+        recommendedCommands: policy.level === "none" ? [] : [recommendedCommand],
+      };
+    }),
   ]);
   const wikiDocs = new Map();
 
@@ -1246,7 +1521,7 @@ async function writeHotSnapshot(config, cwd, sourcePath) {
   await ensureDir(hostWikiDir);
   await writeFile(
     hotPath,
-    renderHotMarkdown({ config, skills, wikiEntries, wikiDocs, recentLogLines }),
+    renderHotMarkdown({ config, skills, wikiEntries, wikiDocs, recentLogLines, backlogStatus }),
     "utf8",
   );
   return hotPath;
@@ -1692,8 +1967,7 @@ function isAuthoritativeSkillMatch(match) {
 
   return Boolean(
     match.explicitSkillMatch
-      || match.fieldPhraseCount > 0
-      || (match.workflowMatch && match.primaryMatchCount >= 2),
+      || match.fieldPhraseCount > 0,
   );
 }
 
@@ -2350,6 +2624,9 @@ export async function resolveLocalKnowledge(
     note: entry.noteDoc ?? entry.note,
     whyMatched: entry.whyMatched,
   }));
+  const authoritativeMatch = matches.find((entry) => entry.authoritativeMatch) ?? null;
+  const matchedSkillId = authoritativeMatch?.skill.id ?? null;
+  const matchedNotePaths = authoritativeMatch?.linkedNotes?.map((entry) => entry.path) ?? [];
 
   return {
     mode: config.mode,
@@ -2364,6 +2641,8 @@ export async function resolveLocalKnowledge(
     knowledgeModel: KNOWLEDGE_MODEL,
     repoContext,
     matches,
+    matchedSkillId,
+    matchedNotePaths,
     directNoteMatches,
     loopGuidance: ranked.length === 0
       ? buildLoopGuidance(
@@ -3185,15 +3464,16 @@ async function synthesizeSkillsFromOperationalNotes(
 }
 
 export async function maintainKnowledge(
-  {
-    maxEvents = 50,
-    includeCovered = false,
-    minNoteOccurrences = 2,
-    minSkillOccurrences = 3,
-  } = {},
+  input = {},
   cwd = process.cwd(),
 ) {
   const { config, sourcePath } = await loadAgentConfig(cwd);
+  const maintenance = getMaintenanceConfig(config);
+  const maxEvents = input.maxEvents ?? maintenance.maxEvents;
+  const includeCovered = input.includeCovered ?? false;
+  const minNoteOccurrences = input.minNoteOccurrences ?? maintenance.minNoteOccurrences;
+  const minSkillOccurrences = input.minSkillOccurrences ?? maintenance.minSkillOccurrences;
+  const synthesizeSkills = input.synthesizeSkills === true;
   const planner = await loadMaintenancePlannerInput(config, cwd, sourcePath, {
     maxEvents,
     includeCovered,
@@ -3273,21 +3553,27 @@ export async function maintainKnowledge(
     });
   }
 
-  const skillActions = await synthesizeSkillsFromOperationalNotes(
-    Array.from(notesByPath.values()).filter((entry) => !touchedNotePaths.has(entry.relativePath)),
-    planner.skillEntries,
-    minSkillOccurrences,
-    cwd,
-  );
+  const skillActions = synthesizeSkills
+    ? await synthesizeSkillsFromOperationalNotes(
+      Array.from(notesByPath.values()).filter((entry) => !touchedNotePaths.has(entry.relativePath)),
+      planner.skillEntries,
+      minSkillOccurrences,
+      cwd,
+    )
+    : [];
 
   await updateControlArtifacts(config, cwd, sourcePath, {
     logEntry: {
       action: "maintain_knowledge",
-      detail: `${planner.selectedEvents.length} event(s) scanned | ${noteActions.filter((entry) => entry.action !== "noop").length} note action(s) | ${skillActions.length} skill action(s)`,
+      detail: `${planner.selectedEvents.length} event(s) scanned | ${noteActions.filter((entry) => entry.action !== "noop").length} note action(s) | ${synthesizeSkills ? skillActions.length : "0 skipped"} skill action(s)`,
     },
   });
 
   return {
+    maxEvents,
+    minNoteOccurrences,
+    minSkillOccurrences,
+    synthesizeSkills,
     scannedEvents: planner.selectedEvents.length,
     skippedCoveredEvents: planner.skippedCoveredEvents,
     candidateCount: planner.candidates.length,
@@ -3869,6 +4155,7 @@ export async function recordTurnResult(
     adjudicationDecision,
     adjudicationSkillId,
     candidateSkills = [],
+    matchedSkillIdHint = null,
     summary,
     observations = [],
     changedFiles = [],
@@ -3900,8 +4187,20 @@ export async function recordTurnResult(
   const reusableMatch = topMatch?.authoritativeMatch && (!workflow || topMatch.skill.workflow === workflow)
     ? topMatch
     : null;
+  const candidateSkillIds = new Set(
+    normalizeCandidateSkillSummaries(candidateSkills)
+      .filter((candidate) => !workflow || candidate.workflow === workflow)
+      .map((candidate) => candidate.skillId),
+  );
+  const hintedMatch = !reusableMatch
+    && typeof matchedSkillIdHint === "string"
+    && matchedSkillIdHint.trim().length > 0
+    && candidateSkillIds.has(matchedSkillIdHint.trim())
+      ? resolution.matches.find((match) => match.skill.id === matchedSkillIdHint.trim()) ?? null
+      : null;
+  const selectedMatch = reusableMatch ?? hintedMatch;
   const effectiveWorkflow = workflow
-    || reusableMatch?.skill.workflow
+    || selectedMatch?.skill.workflow
     || ((task || step || summary || title || signal) ? UNKNOWN_WORKFLOW : config.runtime.defaultWorkflow);
   const effectiveEventClass = eventClass === "candidate" ? "candidate" : "trace";
   const derived = effectiveEventClass === "candidate"
@@ -3942,7 +4241,7 @@ export async function recordTurnResult(
     : null;
   const stabilityKey = buildStabilityKey({
     workflow: effectiveWorkflow,
-    skillId: skillId ?? reusableMatch?.skill.id ?? adjudicationSkillId ?? null,
+    skillId: skillId ?? selectedMatch?.skill.id ?? adjudicationSkillId ?? null,
     task,
     step,
     title: derived.title,
@@ -3981,8 +4280,8 @@ export async function recordTurnResult(
         ? normalizeCandidateSkillSummaries(candidateSkills)
         : buildCandidateSkillSummariesFromResolution(resolution),
       explicitSkillId: skillId ?? null,
-      matchedSkillId: reusableMatch?.skill.id ?? null,
-      matchedNotePaths: reusableMatch?.linkedNotes?.map((doc) => doc.path) ?? [],
+      matchedSkillId: selectedMatch?.skill.id ?? null,
+      matchedNotePaths: selectedMatch?.linkedNotes?.map((doc) => doc.path) ?? [],
     },
     cwd,
     sourcePath,
@@ -4256,6 +4555,7 @@ export async function promoteGap(
     workflow,
     step,
     skillId,
+    matchedSkillIdHint = null,
     adjudicationDecision,
     adjudicationSkillId,
     summary,
@@ -4281,6 +4581,7 @@ export async function promoteGap(
       workflow,
       step,
       skillId,
+      matchedSkillIdHint,
       adjudicationDecision,
       adjudicationSkillId,
       summary,

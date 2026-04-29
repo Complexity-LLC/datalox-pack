@@ -353,7 +353,7 @@ async function main() {
     buildObservedTurnPayload,
     recordObservedTurnPayload,
   } = await import(sharedModuleUrl);
-  const { compileRecordedEvent } = await import(coreModuleUrl);
+  const { compileRecordedEvent, getEventBacklogStatus } = await import(coreModuleUrl);
 
   const normalizedTask = task ?? summary ?? "auto-promote-hook";
   const envelope = await buildLoopEnvelope({
@@ -414,6 +414,12 @@ async function main() {
   process.stderr.write(
     `[datalox-auto-promote] ${result.decision.action} | ${result.decision.reason} | occurrences=${result.decision.occurrenceCount}\n`,
   );
+  const backlog = await getEventBacklogStatus({ repoPath });
+  if (backlog.maintenanceRecommended) {
+    process.stderr.write(
+      `[datalox-auto-promote] maintenance_backlog | ${backlog.policy.level} | uncovered=${backlog.uncoveredEvents} | maintainable_groups=${backlog.maintainableUnresolvedTraceGroupCount} | ${backlog.recommendedCommand}\n`,
+    );
+  }
 }
 
 main().catch((error) => {

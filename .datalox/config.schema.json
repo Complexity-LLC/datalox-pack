@@ -186,6 +186,36 @@
       },
       "additionalProperties": false
     },
+    "maintenance": {
+      "type": "object",
+      "properties": {
+        "maxEvents": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minNoteOccurrences": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minSkillOccurrences": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "backlog": {
+          "type": "object",
+          "properties": {
+            "warn": {
+              "$ref": "#/$defs/backlogThreshold"
+            },
+            "urgent": {
+              "$ref": "#/$defs/backlogThreshold"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "runtime": {
       "type": "object",
       "required": [
@@ -266,6 +296,27 @@
           "minLength": 1
         }
       },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "backlogThreshold": {
+      "type": "object",
+      "properties": {
+        "uncovered": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "oldestAgeDays": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maintainableGroups": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "minProperties": 1,
       "additionalProperties": false
     }
   },
