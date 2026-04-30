@@ -79,6 +79,13 @@ function expectBoolean(value: unknown, fieldName: string): boolean {
   return value;
 }
 
+function expectOptionalBoolean(value: unknown, fieldName: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return expectBoolean(value, fieldName);
+}
+
 function expectPositiveInteger(value: unknown, fieldName: string): number {
   if (!Number.isInteger(value) || (value as number) <= 0) {
     throw new Error(`Agent config field ${fieldName} must be a positive integer`);
@@ -176,12 +183,33 @@ function validateBacklogPolicy(raw: unknown, fieldName = "maintenance.backlog") 
   };
 }
 
+function validateAutomaticMaintenanceConfig(raw: unknown): AgentConfig["maintenance"]["automatic"] {
+  if (raw === undefined) {
+    return {
+      ...DEFAULT_MAINTENANCE_CONFIG.automatic,
+    };
+  }
+  if (!isRecord(raw)) {
+    throw new Error("Agent config field maintenance.automatic must be an object");
+  }
+
+  return {
+    enabled: expectOptionalBoolean(raw.enabled, "maintenance.automatic.enabled")
+      ?? DEFAULT_MAINTENANCE_CONFIG.automatic.enabled,
+    write: expectOptionalBoolean(raw.write, "maintenance.automatic.write")
+      ?? DEFAULT_MAINTENANCE_CONFIG.automatic.write,
+    lockStaleMs: expectOptionalPositiveInteger(raw.lockStaleMs, "maintenance.automatic.lockStaleMs")
+      ?? DEFAULT_MAINTENANCE_CONFIG.automatic.lockStaleMs,
+  };
+}
+
 function validateMaintenanceConfig(raw: unknown): AgentConfig["maintenance"] {
   if (raw === undefined) {
     return {
       maxEvents: DEFAULT_MAINTENANCE_CONFIG.maxEvents,
       minNoteOccurrences: DEFAULT_MAINTENANCE_CONFIG.minNoteOccurrences,
       minSkillOccurrences: DEFAULT_MAINTENANCE_CONFIG.minSkillOccurrences,
+      automatic: validateAutomaticMaintenanceConfig(undefined),
       backlog: validateBacklogPolicy(undefined),
     };
   }
@@ -196,6 +224,7 @@ function validateMaintenanceConfig(raw: unknown): AgentConfig["maintenance"] {
       ?? DEFAULT_MAINTENANCE_CONFIG.minNoteOccurrences,
     minSkillOccurrences: expectOptionalPositiveInteger(raw.minSkillOccurrences, "maintenance.minSkillOccurrences")
       ?? DEFAULT_MAINTENANCE_CONFIG.minSkillOccurrences,
+    automatic: validateAutomaticMaintenanceConfig(raw.automatic),
     backlog: validateBacklogPolicy(raw.backlog),
   };
 }

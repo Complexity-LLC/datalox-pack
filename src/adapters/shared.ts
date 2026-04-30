@@ -9,6 +9,7 @@ import {
   recordLoopApplication,
   recordTurnResult,
   resolveLoop,
+  runAutomaticMaintenance,
   type AutoBootstrapResult,
   type RecordTurnResultInput,
   type ResolveLoopInput,
@@ -121,6 +122,7 @@ export interface WrapperPostRunResult {
   result: Awaited<ReturnType<typeof recordTurnResult>> | Awaited<ReturnType<typeof compileRecordedEvent>> | null;
   review: WrapperReviewResult | null;
   backlog: Awaited<ReturnType<typeof getEventBacklogStatus>> | null;
+  maintenance: Awaited<ReturnType<typeof runAutomaticMaintenance>> | null;
 }
 
 export interface WrappedLoopResult {
@@ -1468,6 +1470,7 @@ export async function finalizeWrappedRun(
       result: null,
       review: null,
       backlog: null,
+      maintenance: null,
     };
   }
 
@@ -1533,12 +1536,17 @@ export async function finalizeWrappedRun(
       changedFiles,
       recorded.event.relativePath,
     );
+    const maintenance = await runAutomaticMaintenance({
+      repoPath: envelope.repoPath,
+      reason: `wrapper:${input.hostKind}:review`,
+    });
     return {
       mode: "review",
       trigger,
       result: recorded,
       review,
-      backlog: await getEventBacklogStatus({ repoPath: envelope.repoPath }),
+      backlog: maintenance.afterBacklog ?? maintenance.beforeBacklog,
+      maintenance,
     };
   }
 
@@ -1552,11 +1560,17 @@ export async function finalizeWrappedRun(
     })
     : recorded;
 
+  const maintenance = await runAutomaticMaintenance({
+    repoPath: envelope.repoPath,
+    reason: `wrapper:${input.hostKind}:${shouldCompile ? "promote" : "record"}`,
+  });
+
   return {
     mode: shouldCompile ? "promote" : "record",
     trigger,
     result,
     review: null,
-    backlog: await getEventBacklogStatus({ repoPath: envelope.repoPath }),
+    backlog: maintenance.afterBacklog ?? maintenance.beforeBacklog,
+    maintenance,
   };
 }

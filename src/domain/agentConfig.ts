@@ -36,6 +36,11 @@ export interface MaintenanceConfig {
   maxEvents: number;
   minNoteOccurrences: number;
   minSkillOccurrences: number;
+  automatic: {
+    enabled: boolean;
+    write: boolean;
+    lockStaleMs: number;
+  };
   backlog: {
     warn: MaintenanceBacklogThreshold;
     urgent: MaintenanceBacklogThreshold;
@@ -46,6 +51,11 @@ export const DEFAULT_MAINTENANCE_CONFIG: MaintenanceConfig = {
   maxEvents: 12,
   minNoteOccurrences: 2,
   minSkillOccurrences: 3,
+  automatic: {
+    enabled: true,
+    write: true,
+    lockStaleMs: 5 * 60 * 1000,
+  },
   backlog: {
     warn: {
       uncovered: 50,

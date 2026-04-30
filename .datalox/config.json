@@ -42,6 +42,11 @@
     "maxEvents": 12,
     "minNoteOccurrences": 2,
     "minSkillOccurrences": 3,
+    "automatic": {
+      "enabled": true,
+      "write": true,
+      "lockStaleMs": 300000
+    },
     "backlog": {
       "warn": {
         "uncovered": 50,

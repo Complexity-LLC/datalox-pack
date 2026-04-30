@@ -201,6 +201,22 @@
           "type": "integer",
           "minimum": 1
         },
+        "automatic": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "write": {
+              "type": "boolean"
+            },
+            "lockStaleMs": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
         "backlog": {
           "type": "object",
           "properties": {

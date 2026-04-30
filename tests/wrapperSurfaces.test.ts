@@ -438,7 +438,7 @@ EOF
     expect(await readFile(path.join(hostDir, "agent-wiki", "log.md"), "utf8")).toContain("record_event");
   }, 20000);
 
-  it("includes a machine-readable backlog warning in Codex wrapper JSON", async () => {
+  it("runs automatic bounded maintenance from Codex wrapper JSON when backlog is hot", async () => {
     const hostDir = await adoptHostRepo();
     await writeSyntheticTraceEvent(hostDir, {
       id: "2026-04-28T00-00-00-000Z--codex-backlog-a",
@@ -492,14 +492,14 @@ node -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed.postRun.backlog.maintenanceRecommended).toBe(true);
-    expect(parsed.postRun.backlog.policy.level).toBe("warn");
-    expect(parsed.postRun.backlog.maintainableUnresolvedTraceGroupCount).toBeGreaterThanOrEqual(1);
-    expect(parsed.postRun.backlog.recommendedCommand).toBe("datalox maintain --max-events 12 --json");
+    expect(parsed.postRun.maintenance.status).toBe("ran");
+    expect(parsed.postRun.maintenance.beforeBacklog.maintenanceRecommended).toBe(true);
+    expect(parsed.postRun.maintenance.beforeBacklog.policy.level).toBe("warn");
+    expect(parsed.postRun.maintenance.maintenance.skillActions).toEqual([]);
+    expect(parsed.postRun.backlog.maintenanceRecommended).toBe(false);
 
     const hotFile = await readFile(path.join(hostDir, "agent-wiki", "hot.md"), "utf8");
-    expect(hotFile).toContain("## Maintenance Backlog");
-    expect(hotFile).toContain("Recommended command: datalox maintain --max-events 12 --json");
+    expect(hotFile).not.toContain("## Maintenance Backlog");
 
     const status = spawnSync("node", [builtCliPath, "status", "--repo", hostDir, "--json"], {
       cwd: repoRoot,
@@ -507,8 +507,51 @@ node -e 'process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill
     });
     expect(status.status).toBe(0);
     const statusBody = JSON.parse(status.stdout);
-    expect(statusBody.repo.maintenanceBacklog.maintenanceRecommended).toBe(true);
-    expect(statusBody.repo.maintenanceBacklog.maintainableUnresolvedTraceGroupCount).toBeGreaterThanOrEqual(1);
+    expect(statusBody.repo.maintenanceBacklog.maintenanceRecommended).toBe(false);
+    expect(statusBody.repo.maintenanceBacklog.uncoveredEvents).toBe(0);
+  }, 20000);
+
+  it("runs automatic bounded maintenance from generic wrapper command when backlog is hot", async () => {
+    const hostDir = await adoptHostRepo();
+    await writeSyntheticTraceEvent(hostDir, {
+      id: "2026-04-28T00-00-00-000Z--generic-backlog-a",
+      stabilityKey: "agent_adoption::generic-wrapper-backlog",
+    });
+    await writeSyntheticTraceEvent(hostDir, {
+      id: "2026-04-28T00-01-00-000Z--generic-backlog-b",
+      stabilityKey: "agent_adoption::generic-wrapper-backlog",
+    });
+
+    const result = spawnSync(
+      "node",
+      [
+        builtCliPath,
+        "wrap",
+        "command",
+        "--json",
+        "--repo",
+        hostDir,
+        "--task",
+        "Run a generic command while Datalox has a hot backlog.",
+        "--prompt",
+        "Run a generic command.",
+        "--",
+        "node",
+        "-e",
+        "process.stdout.write('ok')",
+        "__DATALOX_PROMPT__",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.postRun.maintenance.status).toBe("ran");
+    expect(parsed.postRun.maintenance.maintenance.skillActions).toEqual([]);
+    expect(parsed.postRun.backlog.maintenanceRecommended).toBe(false);
   }, 20000);
 
   it("does not recursively expand prompt placeholders that appear inside wrapped prompt prose", async () => {

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, mkdir, open, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -38,6 +38,11 @@ const DEFAULT_MAINTENANCE_CONFIG = Object.freeze({
   maxEvents: 12,
   minNoteOccurrences: 2,
   minSkillOccurrences: 3,
+  automatic: Object.freeze({
+    enabled: true,
+    write: true,
+    lockStaleMs: 5 * 60 * 1000,
+  }),
   backlog: Object.freeze({
     warn: Object.freeze({
       uncovered: 50,
@@ -118,6 +123,13 @@ function expectOptionalPositiveInteger(value, fieldName) {
   return expectPositiveInteger(value, fieldName);
 }
 
+function expectOptionalBoolean(value, fieldName) {
+  if (value === undefined) {
+    return undefined;
+  }
+  return expectBoolean(value, fieldName);
+}
+
 function expectStringArray(value, fieldName) {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
     throw new Error(`Agent config field ${fieldName} must be an array of strings`);
@@ -189,12 +201,33 @@ function validateBacklogPolicy(raw, fieldName = "maintenance.backlog") {
   };
 }
 
+function validateAutomaticMaintenanceConfig(raw) {
+  if (raw === undefined) {
+    return {
+      ...DEFAULT_MAINTENANCE_CONFIG.automatic,
+    };
+  }
+  if (!isRecord(raw)) {
+    throw new Error("Agent config field maintenance.automatic must be an object");
+  }
+
+  return {
+    enabled: expectOptionalBoolean(raw.enabled, "maintenance.automatic.enabled")
+      ?? DEFAULT_MAINTENANCE_CONFIG.automatic.enabled,
+    write: expectOptionalBoolean(raw.write, "maintenance.automatic.write")
+      ?? DEFAULT_MAINTENANCE_CONFIG.automatic.write,
+    lockStaleMs: expectOptionalPositiveInteger(raw.lockStaleMs, "maintenance.automatic.lockStaleMs")
+      ?? DEFAULT_MAINTENANCE_CONFIG.automatic.lockStaleMs,
+  };
+}
+
 function validateMaintenanceConfig(raw) {
   if (raw === undefined) {
     return {
       maxEvents: DEFAULT_MAINTENANCE_CONFIG.maxEvents,
       minNoteOccurrences: DEFAULT_MAINTENANCE_CONFIG.minNoteOccurrences,
       minSkillOccurrences: DEFAULT_MAINTENANCE_CONFIG.minSkillOccurrences,
+      automatic: validateAutomaticMaintenanceConfig(undefined),
       backlog: validateBacklogPolicy(undefined),
     };
   }
@@ -208,6 +241,7 @@ function validateMaintenanceConfig(raw) {
       ?? DEFAULT_MAINTENANCE_CONFIG.minNoteOccurrences,
     minSkillOccurrences: expectOptionalPositiveInteger(raw.minSkillOccurrences, "maintenance.minSkillOccurrences")
       ?? DEFAULT_MAINTENANCE_CONFIG.minSkillOccurrences,
+    automatic: validateAutomaticMaintenanceConfig(raw.automatic),
     backlog: validateBacklogPolicy(raw.backlog),
   };
 }
@@ -1045,6 +1079,7 @@ function getMaintenanceConfig(config) {
     maxEvents: DEFAULT_MAINTENANCE_CONFIG.maxEvents,
     minNoteOccurrences: DEFAULT_MAINTENANCE_CONFIG.minNoteOccurrences,
     minSkillOccurrences: DEFAULT_MAINTENANCE_CONFIG.minSkillOccurrences,
+    automatic: validateAutomaticMaintenanceConfig(undefined),
     backlog: validateBacklogPolicy(undefined),
   };
 }
@@ -1193,6 +1228,201 @@ export async function getEventBacklogStatus(
     recommendedCommand,
     recommendedCommands: policy.level === "none" ? [] : [recommendedCommand],
   };
+}
+
+function parseAutomaticMaintenanceEnv(value) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase().replace(/-/g, "_");
+  if (["0", "false", "off", "disabled", "disable"].includes(normalized)) {
+    return "off";
+  }
+  if (["warn", "warning", "warn_only", "warning_only", "dry_run"].includes(normalized)) {
+    return "warn_only";
+  }
+  if (["1", "true", "on", "enabled", "enable", "write", "run"].includes(normalized)) {
+    return "write";
+  }
+  throw new Error("Environment variable DATALOX_AUTO_MAINTENANCE must be one of off, warn_only, or write");
+}
+
+function resolveAutomaticMaintenanceMode(config) {
+  const envMode = parseAutomaticMaintenanceEnv(process.env.DATALOX_AUTO_MAINTENANCE);
+  if (envMode) {
+    return envMode;
+  }
+  const automatic = getMaintenanceConfig(config).automatic ?? DEFAULT_MAINTENANCE_CONFIG.automatic;
+  if (!automatic.enabled) {
+    return "off";
+  }
+  return automatic.write ? "write" : "warn_only";
+}
+
+function getMaintenanceLockPath(config, cwd, sourcePath) {
+  const { hostRoot } = resolvePackPaths(config, { cwd, sourcePath });
+  return path.join(hostRoot, ".datalox", "maintenance.lock.json");
+}
+
+async function readMaintenanceLock(lockPath) {
+  try {
+    return await readJson(lockPath);
+  } catch {
+    return null;
+  }
+}
+
+async function acquireMaintenanceLock(config, cwd, sourcePath, { staleMs }) {
+  const lockPath = getMaintenanceLockPath(config, cwd, sourcePath);
+  const ownerId = `${process.pid}-${Date.now()}`;
+  const payload = {
+    version: 1,
+    ownerId,
+    pid: process.pid,
+    acquiredAt: new Date().toISOString(),
+    staleMs,
+  };
+
+  await ensureDir(path.dirname(lockPath));
+
+  async function tryCreateLock() {
+    const handle = await open(lockPath, "wx");
+    try {
+      await handle.writeFile(`${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    } finally {
+      await handle.close();
+    }
+    return {
+      acquired: true,
+      lockPath,
+      relativePath: normalizePath(path.relative(cwd, lockPath)),
+      ownerId,
+      existing: null,
+    };
+  }
+
+  try {
+    return await tryCreateLock();
+  } catch (error) {
+    if (error?.code !== "EEXIST") {
+      throw error;
+    }
+  }
+
+  const existing = await readMaintenanceLock(lockPath);
+  const acquiredAt = parseTimestamp(existing?.acquiredAt);
+  const ageMs = acquiredAt ? Date.now() - acquiredAt : Number.POSITIVE_INFINITY;
+  if (ageMs > staleMs) {
+    await rm(lockPath, { force: true });
+    try {
+      return await tryCreateLock();
+    } catch (error) {
+      if (error?.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+
+  return {
+    acquired: false,
+    lockPath,
+    relativePath: normalizePath(path.relative(cwd, lockPath)),
+    ownerId: null,
+    existing,
+  };
+}
+
+async function releaseMaintenanceLock(lock) {
+  if (!lock?.acquired) {
+    return;
+  }
+  const current = await readMaintenanceLock(lock.lockPath);
+  if (current?.ownerId === lock.ownerId) {
+    await rm(lock.lockPath, { force: true });
+  }
+}
+
+export async function runAutomaticMaintenance(
+  {
+    reason = "post_run",
+  } = {},
+  cwd = process.cwd(),
+) {
+  const { config, sourcePath } = await loadAgentConfig(cwd);
+  const maintenance = getMaintenanceConfig(config);
+  const mode = resolveAutomaticMaintenanceMode(config);
+  const beforeBacklog = await getEventBacklogStatus({}, cwd);
+  const base = {
+    mode,
+    reason,
+    beforeBacklog,
+    afterBacklog: beforeBacklog,
+    maintenance: null,
+    skippedReason: null,
+    lockPath: null,
+  };
+
+  if (mode === "off") {
+    return {
+      ...base,
+      status: "skipped",
+      skippedReason: "automatic_maintenance_disabled",
+    };
+  }
+
+  if (!beforeBacklog.maintenanceRecommended) {
+    return {
+      ...base,
+      status: "skipped",
+      skippedReason: "no_maintenance_backlog",
+    };
+  }
+
+  if (mode === "warn_only") {
+    return {
+      ...base,
+      status: "skipped",
+      skippedReason: "automatic_maintenance_warn_only",
+    };
+  }
+
+  const lock = await acquireMaintenanceLock(config, cwd, sourcePath, {
+    staleMs: maintenance.automatic?.lockStaleMs ?? DEFAULT_MAINTENANCE_CONFIG.automatic.lockStaleMs,
+  });
+  if (!lock.acquired) {
+    return {
+      ...base,
+      status: "skipped",
+      skippedReason: "maintenance_lock_held",
+      lockPath: lock.relativePath,
+      lock: {
+        path: lock.relativePath,
+        existing: lock.existing,
+      },
+    };
+  }
+
+  try {
+    const result = await maintainKnowledge(
+      {
+        maxEvents: maintenance.maxEvents,
+        minNoteOccurrences: maintenance.minNoteOccurrences,
+        minSkillOccurrences: maintenance.minSkillOccurrences,
+        synthesizeSkills: false,
+      },
+      cwd,
+    );
+    const afterBacklog = await getEventBacklogStatus({}, cwd);
+    return {
+      ...base,
+      status: "ran",
+      afterBacklog,
+      maintenance: result,
+      lockPath: lock.relativePath,
+    };
+  } finally {
+    await releaseMaintenanceLock(lock);
+  }
 }
 
 function formatTimestamp(value) {

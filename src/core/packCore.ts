@@ -109,6 +109,11 @@ export interface EventBacklogStatusInput {
   repoPath?: string;
 }
 
+export interface AutomaticMaintenanceInput {
+  repoPath?: string;
+  reason?: string;
+}
+
 export interface RecordLoopApplicationInput {
   repoPath?: string;
   notePaths: string[];
@@ -1289,6 +1294,17 @@ export async function maintainKnowledge(input: MaintainKnowledgeInput = {}) {
       minNoteOccurrences: input.minNoteOccurrences,
       minSkillOccurrences: input.minSkillOccurrences,
       synthesizeSkills: input.synthesizeSkills,
+    },
+    repoPath,
+  );
+}
+
+export async function runAutomaticMaintenance(input: AutomaticMaintenanceInput = {}) {
+  const repoPath = resolveRepoPath(input.repoPath);
+  const legacy = await loadLegacyPackModule();
+  return legacy.runAutomaticMaintenance(
+    {
+      reason: input.reason,
     },
     repoPath,
   );

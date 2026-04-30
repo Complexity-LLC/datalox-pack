@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { compileRecordedEvent, getEventBacklogStatus, maintainKnowledge, patchKnowledge, promoteGap, recordTurnResult } from "../src/core/packCore.js";
+import { compileRecordedEvent, getEventBacklogStatus, maintainKnowledge, patchKnowledge, promoteGap, recordTurnResult, runAutomaticMaintenance } from "../src/core/packCore.js";
 
 const repoRoot = process.cwd();
 const builtCliPath = path.join(repoRoot, "dist", "src", "cli", "main.js");
@@ -1949,6 +1949,122 @@ Use when handling repo readme helper tasks.
       }, null, 2),
     );
     await expect(getEventBacklogStatus({ repoPath: invalidDir })).rejects.toThrow("must enable at least one backlog signal");
+  });
+
+  it("runs automatic bounded maintenance for hot backlogs and respects config/env/lock controls", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-auto-maintain-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+    await writeSyntheticTraceEvent(tempDir, {
+      id: "2026-04-28T00-00-00-000Z--auto-a",
+      stabilityKey: "agent_adoption::auto-maintain",
+    });
+    await writeSyntheticTraceEvent(tempDir, {
+      id: "2026-04-28T00-01-00-000Z--auto-b",
+      stabilityKey: "agent_adoption::auto-maintain",
+    });
+
+    const automatic = await runAutomaticMaintenance({
+      repoPath: tempDir,
+      reason: "test:auto",
+    });
+    expect(automatic.status).toBe("ran");
+    expect(automatic.beforeBacklog.maintenanceRecommended).toBe(true);
+    expect(automatic.maintenance.scannedEvents).toBeGreaterThanOrEqual(2);
+    expect(automatic.maintenance.noteActions.some((action: { action: string }) => action.action === "create_note")).toBe(true);
+    expect(automatic.maintenance.skillActions).toEqual([]);
+    expect(automatic.afterBacklog.maintenanceRecommended).toBe(false);
+
+    const disabledDir = await mkdtemp(path.join(tmpdir(), "datalox-auto-maintain-disabled-"));
+    tempDirs.push(disabledDir);
+    await createMinimalPack(disabledDir);
+    await writeFile(path.join(disabledDir, ".datalox/config.json"), JSON.stringify({
+      ...baseConfig,
+      maintenance: {
+        maxEvents: 12,
+        minNoteOccurrences: 2,
+        minSkillOccurrences: 3,
+        automatic: {
+          enabled: false,
+          write: true,
+          lockStaleMs: 300000,
+        },
+      },
+    }, null, 2));
+    await writeSyntheticTraceEvent(disabledDir, {
+      id: "2026-04-28T00-00-00-000Z--disabled-a",
+      stabilityKey: "agent_adoption::disabled-maintain",
+    });
+    await writeSyntheticTraceEvent(disabledDir, {
+      id: "2026-04-28T00-01-00-000Z--disabled-b",
+      stabilityKey: "agent_adoption::disabled-maintain",
+    });
+    const disabled = await runAutomaticMaintenance({
+      repoPath: disabledDir,
+      reason: "test:disabled",
+    });
+    expect(disabled.status).toBe("skipped");
+    expect(disabled.skippedReason).toBe("automatic_maintenance_disabled");
+    expect(disabled.beforeBacklog.maintenanceRecommended).toBe(true);
+
+    const previousEnv = process.env.DATALOX_AUTO_MAINTENANCE;
+    process.env.DATALOX_AUTO_MAINTENANCE = "warn_only";
+    try {
+      const warnOnly = await runAutomaticMaintenance({
+        repoPath: disabledDir,
+        reason: "test:warn-only",
+      });
+      expect(warnOnly.status).toBe("skipped");
+      expect(warnOnly.skippedReason).toBe("automatic_maintenance_warn_only");
+    } finally {
+      if (previousEnv === undefined) {
+        delete process.env.DATALOX_AUTO_MAINTENANCE;
+      } else {
+        process.env.DATALOX_AUTO_MAINTENANCE = previousEnv;
+      }
+    }
+
+    const lockedDir = await mkdtemp(path.join(tmpdir(), "datalox-auto-maintain-locked-"));
+    tempDirs.push(lockedDir);
+    await createMinimalPack(lockedDir);
+    await writeSyntheticTraceEvent(lockedDir, {
+      id: "2026-04-28T00-00-00-000Z--locked-a",
+      stabilityKey: "agent_adoption::locked-maintain",
+    });
+    await writeSyntheticTraceEvent(lockedDir, {
+      id: "2026-04-28T00-01-00-000Z--locked-b",
+      stabilityKey: "agent_adoption::locked-maintain",
+    });
+    await writeFile(
+      path.join(lockedDir, ".datalox/maintenance.lock.json"),
+      `${JSON.stringify({
+        version: 1,
+        ownerId: "active-test-lock",
+        acquiredAt: new Date().toISOString(),
+      }, null, 2)}\n`,
+    );
+    const locked = await runAutomaticMaintenance({
+      repoPath: lockedDir,
+      reason: "test:locked",
+    });
+    expect(locked.status).toBe("skipped");
+    expect(locked.skippedReason).toBe("maintenance_lock_held");
+
+    await writeFile(
+      path.join(lockedDir, ".datalox/maintenance.lock.json"),
+      `${JSON.stringify({
+        version: 1,
+        ownerId: "stale-test-lock",
+        acquiredAt: "2000-01-01T00:00:00.000Z",
+      }, null, 2)}\n`,
+    );
+    const afterStale = await runAutomaticMaintenance({
+      repoPath: lockedDir,
+      reason: "test:stale-lock",
+    });
+    expect(afterStale.status).toBe("ran");
+    expect(afterStale.maintenance.skillActions).toEqual([]);
+    await expect(readFile(path.join(lockedDir, ".datalox/maintenance.lock.json"), "utf8")).rejects.toThrow();
   });
 
   it("uses the smaller default maintenance scan window", async () => {

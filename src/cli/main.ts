@@ -164,10 +164,25 @@ function writePostRunSummary(prefix: string, postRun: unknown): void {
       decision?: { action?: string; reason?: string } | null;
       error?: string;
     } | null;
+    maintenance?: {
+      status?: string;
+      skippedReason?: string | null;
+      maintenance?: {
+        scannedEvents?: number;
+        noteActions?: unknown[];
+        rollupActions?: unknown[];
+        skillActions?: unknown[];
+      } | null;
+      afterBacklog?: {
+        uncoveredEvents?: number;
+        maintenanceRecommended?: boolean;
+      } | null;
+    } | null;
   };
   const eventPath = typed.result?.event?.relativePath;
   const decision = typed.result?.decision;
   const review = typed.review;
+  const maintenance = typed.maintenance;
   const backlog = (typed as {
     backlog?: {
       maintenanceRecommended?: boolean;
@@ -177,6 +192,15 @@ function writePostRunSummary(prefix: string, postRun: unknown): void {
       recommendedCommand?: string;
     } | null;
   }).backlog;
+  if (maintenance?.status === "ran") {
+    process.stderr.write(
+      `[${prefix}] maintenance | ran | scanned=${maintenance.maintenance?.scannedEvents ?? "?"} | notes=${maintenance.maintenance?.noteActions?.length ?? 0} | rollups=${maintenance.maintenance?.rollupActions?.length ?? 0} | skills=${maintenance.maintenance?.skillActions?.length ?? 0} | uncovered=${maintenance.afterBacklog?.uncoveredEvents ?? "?"}\n`,
+    );
+  } else if (maintenance?.status === "skipped" && maintenance.skippedReason && maintenance.skippedReason !== "no_maintenance_backlog") {
+    process.stderr.write(
+      `[${prefix}] maintenance | skipped | ${maintenance.skippedReason}\n`,
+    );
+  }
   if (backlog?.maintenanceRecommended) {
     process.stderr.write(
       `[${prefix}] maintenance_backlog | ${backlog.policy?.level ?? "warn"} | uncovered=${backlog.uncoveredEvents ?? "?"} | maintainable_groups=${backlog.maintainableUnresolvedTraceGroupCount ?? "?"} | ${backlog.recommendedCommand ?? "datalox maintain --json"}\n`,

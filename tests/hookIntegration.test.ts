@@ -258,7 +258,7 @@ describe("automatic host hooks", () => {
     );
   }, 60000);
 
-  it("surfaces backlog warnings from the Claude hook in stderr and hot cache", async () => {
+  it("runs automatic bounded maintenance from the Claude hook when backlog is hot", async () => {
     const hostDir = await mkdtemp(path.join(tmpdir(), "datalox-hook-backlog-"));
     tempDirs.push(hostDir);
 
@@ -313,11 +313,16 @@ describe("automatic host hooks", () => {
     });
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain("maintenance_backlog");
-    expect(result.stderr).toContain("datalox maintain --max-events 12 --json");
+    expect(result.stderr).toContain("maintenance | ran");
+    expect(result.stderr).toContain("skills=0");
 
     const hotFile = await readFile(path.join(hostDir, "agent-wiki", "hot.md"), "utf8");
-    expect(hotFile).toContain("## Maintenance Backlog");
-    expect(hotFile).toContain("Recommended command: datalox maintain --max-events 12 --json");
+    expect(hotFile).not.toContain("## Maintenance Backlog");
+
+    const eventFiles = await readdir(path.join(hostDir, "agent-wiki", "events"));
+    const payloads = await Promise.all(eventFiles.map(async (eventFile) =>
+      JSON.parse(await readFile(path.join(hostDir, "agent-wiki", "events", eventFile), "utf8"))
+    ));
+    expect(payloads.filter((payload) => payload.maintenanceStatus === "covered").length).toBeGreaterThanOrEqual(2);
   }, 60000);
 });

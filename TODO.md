@@ -285,6 +285,19 @@ That doc now holds:
   - traces from different hosts in the same repo remain distinguishable but share the same repo namespace
 
 
+## Cross-Host Automatic Bounded Maintenance Trigger
+
+- Completed work was moved to:
+  - [docs/completed-todo-items.md](/Users/yifanjin/datalox-pack/docs/completed-todo-items.md)
+  That includes:
+  - shared automatic note-only maintenance helper
+  - visible repo-local maintenance lock
+  - Codex/generic wrapper wiring
+  - Claude hook wiring
+  - config/env controls
+  - focused Codex and Claude proofs
+
+
 ## Service-Backed Shared Trace Plane
 
 - Current foundation already exists:

@@ -19,6 +19,7 @@ const legacyAgentPackExports = [
   "listRecordedEvents",
   "loadAgentConfig",
   "maintainKnowledge",
+  "runAutomaticMaintenance",
   "parseArgs",
   "promoteGap",
   "recordTurnResult",

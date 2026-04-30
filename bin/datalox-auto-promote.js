@@ -353,7 +353,7 @@ async function main() {
     buildObservedTurnPayload,
     recordObservedTurnPayload,
   } = await import(sharedModuleUrl);
-  const { compileRecordedEvent, getEventBacklogStatus } = await import(coreModuleUrl);
+  const { compileRecordedEvent, runAutomaticMaintenance } = await import(coreModuleUrl);
 
   const normalizedTask = task ?? summary ?? "auto-promote-hook";
   const envelope = await buildLoopEnvelope({
@@ -414,10 +414,17 @@ async function main() {
   process.stderr.write(
     `[datalox-auto-promote] ${result.decision.action} | ${result.decision.reason} | occurrences=${result.decision.occurrenceCount}\n`,
   );
-  const backlog = await getEventBacklogStatus({ repoPath });
-  if (backlog.maintenanceRecommended) {
+  const maintenance = await runAutomaticMaintenance({
+    repoPath,
+    reason: "hook:auto-promote",
+  });
+  if (maintenance.status === "ran") {
     process.stderr.write(
-      `[datalox-auto-promote] maintenance_backlog | ${backlog.policy.level} | uncovered=${backlog.uncoveredEvents} | maintainable_groups=${backlog.maintainableUnresolvedTraceGroupCount} | ${backlog.recommendedCommand}\n`,
+      `[datalox-auto-promote] maintenance | ran | scanned=${maintenance.maintenance?.scannedEvents ?? "?"} | notes=${maintenance.maintenance?.noteActions?.length ?? 0} | rollups=${maintenance.maintenance?.rollupActions?.length ?? 0} | skills=${maintenance.maintenance?.skillActions?.length ?? 0} | uncovered=${maintenance.afterBacklog?.uncoveredEvents ?? "?"}\n`,
+    );
+  } else if (maintenance.beforeBacklog?.maintenanceRecommended) {
+    process.stderr.write(
+      `[datalox-auto-promote] maintenance_backlog | ${maintenance.beforeBacklog.policy.level} | uncovered=${maintenance.beforeBacklog.uncoveredEvents} | maintainable_groups=${maintenance.beforeBacklog.maintainableUnresolvedTraceGroupCount} | ${maintenance.beforeBacklog.recommendedCommand} | skipped=${maintenance.skippedReason ?? "unknown"}\n`,
     );
   }
 }

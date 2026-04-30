@@ -422,3 +422,55 @@ Focused verification:
 - `npx vitest run tests/bridgeSurfaces.test.ts -t "backlog|maintenance|singleton"`
 - `npx vitest run tests/bridgeSurfaces.test.ts tests/hookIntegration.test.ts tests/agentScripts.test.ts`
 - `npx vitest run tests/wrapperSurfaces.test.ts`
+
+## Cross-Host Automatic Bounded Maintenance Trigger
+
+Completed:
+
+- added a shared automatic maintenance helper after event recording / compile / review
+- kept automatic maintenance note-only with `synthesizeSkills: false`
+- added config controls under `maintenance.automatic`
+- added `DATALOX_AUTO_MAINTENANCE=off|warn_only|write` as an emergency override
+- added a visible repo-local lock at `.datalox/maintenance.lock.json`
+- wired Codex, generic wrapper, and Claude hook paths through the shared helper
+- kept existing backlog output while adding a machine-readable `maintenance` object to wrapper post-run JSON
+
+Implemented shape:
+
+- automatic maintenance modes:
+  - `write`: run bounded note-only maintenance when backlog policy is hot
+  - `warn_only`: report the backlog and skip writes
+  - `off`: skip automatic maintenance entirely
+- default config:
+  - `maintenance.automatic.enabled: true`
+  - `maintenance.automatic.write: true`
+  - `maintenance.automatic.lockStaleMs: 300000`
+- automatic run behavior:
+  - checks `getEventBacklogStatus`
+  - skips when backlog policy is `none`
+  - runs `maintainKnowledge` with configured `maxEvents`
+  - forces `synthesizeSkills: false`
+  - returns before/after backlog status plus maintenance result
+- lock behavior:
+  - active lock skips with `maintenance_lock_held`
+  - stale lock is replaced deterministically
+
+Passed:
+
+1. core helper runs note-only maintenance for a hot backlog
+2. core helper never produces automatic skill actions
+3. config can disable automatic maintenance
+4. env override can force warning-only behavior
+5. active lock skips without failing the turn
+6. stale lock is recovered deterministically
+7. Codex wrapper drains a hot backlog without manual `datalox maintain`
+8. generic wrapper drains a hot backlog when prompt injection is active
+9. Claude hook drains a hot backlog after recording/compiling the current event
+10. after-maintenance `agent-wiki/hot.md` no longer keeps a stale backlog warning
+
+Focused verification:
+
+- `npm run build`
+- `npx vitest run tests/bridgeSurfaces.test.ts -t "automatic bounded maintenance|backlog|maintenance"`
+- `npx vitest run tests/wrapperSurfaces.test.ts -t "automatic bounded maintenance|backlog"`
+- `npx vitest run tests/hookIntegration.test.ts -t "automatic bounded maintenance"`
