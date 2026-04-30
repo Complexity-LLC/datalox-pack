@@ -201,6 +201,90 @@ That doc now holds:
   - focused proofs
 
 
+## Singleton Trace Rollup And Non-Repeated Event Drainage
+
+- Completed work was moved to:
+  - [docs/completed-todo-items.md](/Users/yifanjin/datalox-pack/docs/completed-todo-items.md)
+  That includes:
+  - `summarized` trace drainage status
+  - bounded singleton rollup notes under `agent-wiki/notes/`
+  - explicit singleton note preservation when structured evidence exists
+  - rollup exclusion from skill synthesis
+  - 100+ singleton backlog proof
+
+
+## Host Adapter Capability Profiles
+
+- [ ] Goal: stop treating every non-Codex / non-Claude host as one generic adapter when the host has native instruction, skill, MCP, CLI, or hook surfaces.
+  `generic_cli` should remain a fallback for unknown command-line agents, not the model for known hosts.
+
+- [ ] Step 1: split host identity from execution mechanism.
+  Target files:
+  - `src/adapters/capabilities.ts`
+  - `src/adapters/shared.ts`
+  - `src/adapters/generic/run.ts`
+  Requirements:
+  - keep `generic_cli` for unknown placeholder-based wrapping
+  - allow known hosts to reuse the generic wrapper internally while preserving their real `hostKind`
+  - record provenance as `opencode`, `gemini`, `cursor`, etc. instead of collapsing to `generic`
+  - status and post-run payloads expose the real host id
+  Pass criteria:
+  - a known-host wrapper can call shared/generic execution without producing `hostKind: "generic"`
+  - existing generic CLI behavior remains unchanged for unknown hosts
+
+- [ ] Step 2: add a host capability registry for known agents.
+  Target files:
+  - `src/adapters/capabilities.ts`
+  - `src/core/installCore.ts`
+  - `.datalox/manifest.json`
+  Requirements:
+  - define host profiles for at least:
+    - `opencode`
+    - `gemini`
+    - `cursor`
+    - `windsurf`
+    - `copilot`
+  - each profile declares:
+    - instruction files / rule files it reads
+    - native skill directory shape
+    - MCP config shape when known
+    - CLI command shape when known
+    - hook/plugin support when known
+    - enforcement level and whether prompt injection is actually enforceable
+  - do not claim enforcement where the host only provides guidance surfaces
+  Pass criteria:
+  - `status --json` can explain what Datalox can and cannot enforce for each known host
+  - missing or unsupported host surfaces produce agent-readable reasons
+
+- [ ] Step 3: implement OpenCode first.
+  Target files:
+  - `src/adapters/capabilities.ts`
+  - `src/core/installCore.ts`
+  - `src/cli/main.ts`
+  - tests for install/status
+  Requirements:
+  - support OpenCode project/global skills at documented paths:
+    - `.opencode/skills/<name>/SKILL.md`
+    - `~/.config/opencode/skills/<name>/SKILL.md`
+  - preserve `AGENTS.md` as the committed project instruction baseline
+  - support `opencode run` as the first CLI wrapper target if a wrapper is needed
+  - inspect or configure OpenCode MCP/plugin surfaces only when the shape is explicit
+  - fix or remove stale assumptions such as `~/.opencode/skills/datalox-pack` if current OpenCode docs do not support them
+  Pass criteria:
+  - OpenCode install/status can be tested without hiding under `generic_cli`
+  - OpenCode provenance records as `hostKind: "opencode"`
+  - docs say whether OpenCode setup is enforced, conditional, or guidance-only
+
+- [ ] Step 4: keep service-backed mode dependent on accurate host identity.
+  Requirements:
+  - service-backed trace writes include real `hostKind` and stable `agentId` when available
+  - host profile data feeds the service namespace / provenance contract
+  - do not use service-backed mode to paper over weak host integration
+  Pass criteria:
+  - service-backed TODO steps can rely on known host identity instead of `generic`
+  - traces from different hosts in the same repo remain distinguishable but share the same repo namespace
+
+
 ## Service-Backed Shared Trace Plane
 
 - Current foundation already exists:

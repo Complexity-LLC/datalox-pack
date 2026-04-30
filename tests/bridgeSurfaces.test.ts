@@ -573,6 +573,7 @@ async function writeSyntheticTraceEvent(
     stabilityKey?: string;
     maintenanceStatus?: string;
     coveredByNotePath?: string;
+    summarizedByNotePath?: string;
   },
 ) {
   await mkdir(path.join(tempDir, "agent-wiki/events"), { recursive: true });
@@ -594,6 +595,8 @@ async function writeSyntheticTraceEvent(
     ...(input.maintenanceStatus ? { maintenanceStatus: input.maintenanceStatus } : {}),
     ...(input.coveredByNotePath ? { coveredByNotePath: input.coveredByNotePath } : {}),
     ...(input.maintenanceStatus === "covered" ? { coveredAt: "2026-04-28T00:00:00.000Z" } : {}),
+    ...(input.summarizedByNotePath ? { summarizedByNotePath: input.summarizedByNotePath } : {}),
+    ...(input.maintenanceStatus === "summarized" ? { summarizedAt: "2026-04-28T00:00:00.000Z" } : {}),
   };
   await writeFile(
     path.join(tempDir, "agent-wiki/events", `${input.id}.json`),
@@ -1841,8 +1844,29 @@ Use when handling repo readme helper tasks.
     }
     const coveredStatus = await getEventBacklogStatus({ repoPath: coveredDir });
     expect(coveredStatus.coveredEvents).toBe(135);
+    expect(coveredStatus.summarizedEvents).toBe(0);
+    expect(coveredStatus.drainedEvents).toBe(135);
     expect(coveredStatus.uncoveredEvents).toBe(0);
     expect(coveredStatus.policy.level).toBe("none");
+
+    const summarizedDir = await mkdtemp(path.join(tmpdir(), "datalox-backlog-summarized-"));
+    tempDirs.push(summarizedDir);
+    await createMinimalPack(summarizedDir);
+    for (let index = 0; index < 135; index += 1) {
+      await writeSyntheticTraceEvent(summarizedDir, {
+        id: `2026-04-28T00-00-00-000Z--summarized-${index}`,
+        timestamp: "2026-04-28T00:00:00.000Z",
+        stabilityKey: `agent_adoption::summarized-${index}`,
+        maintenanceStatus: "summarized",
+        summarizedByNotePath: "agent-wiki/notes/trace-rollup.md",
+      });
+    }
+    const summarizedStatus = await getEventBacklogStatus({ repoPath: summarizedDir });
+    expect(summarizedStatus.coveredEvents).toBe(0);
+    expect(summarizedStatus.summarizedEvents).toBe(135);
+    expect(summarizedStatus.drainedEvents).toBe(135);
+    expect(summarizedStatus.uncoveredEvents).toBe(0);
+    expect(summarizedStatus.policy.level).toBe("none");
 
     const repeatedDir = await mkdtemp(path.join(tmpdir(), "datalox-backlog-repeated-"));
     tempDirs.push(repeatedDir);
@@ -2024,6 +2048,191 @@ Use when handling repo readme helper tasks.
     const relinkedNote = await readFile(path.join(tempDir, synthesisPass.skillActions[0].notePath), "utf8");
     expect(relinkedNote).toContain(`skill: ${synthesisPass.skillActions[0].skillId}`);
   });
+
+  it("summarizes low-signal singleton traces without promoting them into operational guidance", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-singleton-rollup-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    await writeSyntheticTraceEvent(tempDir, {
+      id: "2026-04-28T00-00-00-000Z--singleton-a",
+      stabilityKey: "agent_adoption::singleton-a",
+    });
+    await writeSyntheticTraceEvent(tempDir, {
+      id: "2026-04-28T00-01-00-000Z--singleton-b",
+      stabilityKey: "agent_adoption::singleton-b",
+    });
+
+    const result = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 12,
+    });
+
+    expect(result.noteActions).toHaveLength(2);
+    expect(result.noteActions.every((action: { action: string; reason: string }) =>
+      action.action === "noop" && action.reason === "insufficient_repeated_trace_evidence"
+    )).toBe(true);
+    expect(result.rollupActions).toHaveLength(1);
+    expect(result.rollupActions[0].reason).toBe("singleton_trace_rollup");
+    expect(result.rollupActions[0].eventPaths).toHaveLength(2);
+    expect(result.coverage).toHaveLength(0);
+
+    const rollupPath = result.rollupActions[0].notePath;
+    const rollupNote = await readFile(path.join(tempDir, rollupPath), "utf8");
+    expect(rollupNote).toContain("kind: trace_rollup");
+    expect(rollupNote).toContain("history only");
+    expect(rollupNote).toContain("do not treat this rollup as reusable workflow guidance");
+
+    for (const eventPath of result.rollupActions[0].eventPaths) {
+      const eventPayload = JSON.parse(await readFile(path.join(tempDir, eventPath), "utf8"));
+      expect(eventPayload.maintenanceStatus).toBe("summarized");
+      expect(eventPayload.summarizedByNotePath).toBe(rollupPath);
+      expect(typeof eventPayload.summarizedAt).toBe("string");
+      expect(eventPayload.coveredByNotePath).toBeUndefined();
+    }
+
+    const status = await getEventBacklogStatus({ repoPath: tempDir });
+    expect(status.uncoveredEvents).toBe(0);
+    expect(status.summarizedEvents).toBe(2);
+    expect(status.drainedEvents).toBe(2);
+    expect(status.policy.level).toBe("none");
+
+    const synthesisPass = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 12,
+      synthesizeSkills: true,
+    });
+    expect(synthesisPass.scannedEvents).toBe(0);
+    expect(synthesisPass.skillActions).toEqual([]);
+  });
+
+  it("preserves explicitly adjudicated singleton traces as operational notes", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-singleton-explicit-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    await recordTurnResult({
+      repoPath: tempDir,
+      task: "Remember that OpenCode setup should use documented skill directories.",
+      workflow: "agent_adoption",
+      summary: "OpenCode setup uses documented .opencode and config skill directories.",
+      observations: ["The user explicitly asked to preserve this setup boundary."],
+      interpretation: "The host adapter path should not collapse OpenCode into generic CLI provenance.",
+      recommendedAction: "Use documented OpenCode skill directories before falling back to generic CLI wrapping.",
+      adjudicationDecision: "create_operational_note",
+      eventKind: "manual:explicit-memory",
+      eventClass: "trace",
+    });
+
+    const result = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 12,
+    });
+
+    expect(result.noteActions).toHaveLength(1);
+    expect(result.noteActions[0].action).toBe("create_note");
+    expect(result.noteActions[0].reason).toBe("explicit_singleton_trace_compaction");
+    expect(result.rollupActions).toHaveLength(0);
+    expect(result.coverage).toHaveLength(1);
+
+    const notePath = result.noteActions[0].notePath;
+    const noteFile = await readFile(path.join(tempDir, notePath), "utf8");
+    expect(noteFile).toContain("OpenCode setup");
+    expect(noteFile).toContain("documented OpenCode skill directories");
+
+    const eventPayload = JSON.parse(await readFile(path.join(tempDir, result.coverage[0].eventPaths[0]), "utf8"));
+    expect(eventPayload.maintenanceStatus).toBe("covered");
+    expect(eventPayload.coveredByNotePath).toBe(notePath);
+    expect(eventPayload.summarizedByNotePath).toBeUndefined();
+  });
+
+  it("uses summarized singleton traces as prior evidence when the same trace repeats later", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-singleton-repeat-after-rollup-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    await writeSyntheticTraceEvent(tempDir, {
+      id: "2026-04-28T00-00-00-000Z--singleton-first",
+      stabilityKey: "agent_adoption::eventual-repeat",
+    });
+
+    const rollupPass = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 12,
+    });
+    expect(rollupPass.rollupActions).toHaveLength(1);
+    const summarizedEventPath = rollupPass.rollupActions[0].eventPaths[0];
+    const summarizedEvent = JSON.parse(await readFile(path.join(tempDir, summarizedEventPath), "utf8"));
+    expect(summarizedEvent.maintenanceStatus).toBe("summarized");
+
+    await writeSyntheticTraceEvent(tempDir, {
+      id: "2026-04-28T00-01-00-000Z--singleton-repeat",
+      stabilityKey: "agent_adoption::eventual-repeat",
+    });
+
+    const repeatedPass = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 12,
+    });
+
+    expect(repeatedPass.noteActions).toHaveLength(1);
+    expect(repeatedPass.noteActions[0].action).toBe("create_note");
+    expect(repeatedPass.noteActions[0].reason).toBe("repeated_trace_compaction");
+    expect(repeatedPass.noteActions[0].eventPaths).toHaveLength(2);
+    expect(repeatedPass.rollupActions).toHaveLength(0);
+
+    const notePath = repeatedPass.noteActions[0].notePath;
+    for (const eventPath of repeatedPass.coverage[0].eventPaths) {
+      const eventPayload = JSON.parse(await readFile(path.join(tempDir, eventPath), "utf8"));
+      expect(eventPayload.maintenanceStatus).toBe("covered");
+      expect(eventPayload.coveredByNotePath).toBe(notePath);
+    }
+  });
+
+  it("drains a large non-repeated trace backlog through bounded rollups", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-singleton-backlog-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    for (let index = 0; index < 135; index += 1) {
+      await writeSyntheticTraceEvent(tempDir, {
+        id: `2000-01-01T00-00-00-000Z--singleton-depth-${index}`,
+        timestamp: "2000-01-01T00:00:00.000Z",
+        stabilityKey: `agent_adoption::singleton-depth-${index}`,
+      });
+    }
+
+    const initialStatus = await getEventBacklogStatus({ repoPath: tempDir });
+    expect(initialStatus.uncoveredEvents).toBe(135);
+    expect(initialStatus.policy.level).toBe("urgent");
+
+    let passCount = 0;
+    let status = initialStatus;
+    while (status.maintenanceRecommended && passCount < 20) {
+      const pass = await maintainKnowledge({
+        repoPath: tempDir,
+        maxEvents: 12,
+      });
+      expect(pass.rollupActions.length).toBeGreaterThan(0);
+      expect(pass.rollupActions[0].eventPaths.length).toBeLessThanOrEqual(12);
+      passCount += 1;
+      status = await getEventBacklogStatus({ repoPath: tempDir });
+    }
+
+    expect(passCount).toBeGreaterThan(1);
+    expect(status.maintenanceRecommended).toBe(false);
+    expect(status.uncoveredEvents).toBe(0);
+    expect(status.summarizedEvents).toBe(135);
+    expect(status.drainedEvents).toBe(135);
+
+    const notes = await readdir(path.join(tempDir, "agent-wiki/notes"));
+    const rollupNotes = notes.filter((name) => name.includes("trace-rollup"));
+    expect(rollupNotes.length).toBeGreaterThan(1);
+    const firstRollup = await readFile(path.join(tempDir, "agent-wiki/notes", rollupNotes[0]), "utf8");
+    expect(firstRollup).toContain("kind: trace_rollup");
+    expect(firstRollup).toContain("history only");
+    expect(firstRollup.split("agent-wiki/events/").length - 1).toBeLessThanOrEqual(24);
+  }, 20000);
 
   it("prefers clean workflow-scoped notes over wrapper-polluted unknown notes during maintenance synthesis", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-quality-"));

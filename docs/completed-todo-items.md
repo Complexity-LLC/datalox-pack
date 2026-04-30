@@ -373,3 +373,52 @@ Focused verification:
 
 - `npm run build`
 - `npx vitest run tests/bridgeSurfaces.test.ts tests/wrapperSurfaces.test.ts tests/agentScripts.test.ts tests/hookIntegration.test.ts`
+
+## Singleton Trace Rollup And Non-Repeated Event Drainage
+
+Completed:
+
+- added `summarized` as a drained maintenance status for singleton trace rollups
+- kept `covered` reserved for traces compacted into real operational notes
+- updated backlog status so `covered` and `summarized` traces no longer keep depth/age warnings hot
+- added bounded singleton rollup generation to default `datalox maintain`
+- kept low-signal singleton traces out of operational-note promotion and skill synthesis
+- kept summarized singleton traces available as prior evidence when the same stability key appears again
+- allowed explicitly adjudicated singleton traces to become operational notes
+- excluded `trace_rollup` notes from note-backed skill synthesis
+
+Implemented shape:
+
+- repeated trace groups:
+  - compact into operational notes
+  - events are marked `maintenanceStatus: "covered"`
+  - events receive `coveredByNotePath`
+- low-signal singleton traces:
+  - compact into bounded `trace_rollup` notes under `agent-wiki/notes/`
+  - events are marked `maintenanceStatus: "summarized"`
+  - events receive `summarizedByNotePath`
+- explicitly adjudicated singleton traces:
+  - may become operational notes when the event carries a structured decision such as `create_operational_note`
+  - still do not create skills during default maintenance
+- skill synthesis:
+  - remains explicit through `--synthesize-skills`
+  - ignores `trace_rollup` notes
+
+Passed:
+
+1. `status --json` reports covered, summarized, drained, and uncovered trace counts separately
+2. summarized traces are excluded from backlog warning depth and age
+3. repeated traces still compact into operational notes and mark coverage
+4. low-signal singleton traces produce rollup coverage, not operational guidance
+5. explicitly adjudicated singleton traces can still become operational notes
+6. a fresh trace with the same stability key can promote together with a previously summarized singleton
+7. rollup notes do not synthesize skills on a later explicit synthesis pass
+8. a synthetic repo with `135` old singleton traces drains through bounded `12` event maintenance passes
+9. generated rollup notes stay bounded and agent-readable
+
+Focused verification:
+
+- `npm run build`
+- `npx vitest run tests/bridgeSurfaces.test.ts -t "backlog|maintenance|singleton"`
+- `npx vitest run tests/bridgeSurfaces.test.ts tests/hookIntegration.test.ts tests/agentScripts.test.ts`
+- `npx vitest run tests/wrapperSurfaces.test.ts`

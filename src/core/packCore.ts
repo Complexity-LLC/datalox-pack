@@ -340,6 +340,9 @@ interface RecordedEventPayload {
   hostKind?: string | null;
   coveredByNotePath?: string | null;
   coveredAt?: string | null;
+  summarizedByNotePath?: string | null;
+  summarizedAt?: string | null;
+  maintenanceRollupKind?: string | null;
   maintenanceStatus?: string | null;
 }
 

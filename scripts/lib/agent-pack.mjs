@@ -868,6 +868,16 @@ function isCoveredRecordedEvent(payload) {
     && payload.coveredByNotePath.trim().length > 0;
 }
 
+function isSummarizedRecordedEvent(payload) {
+  return normalizeMaintenanceStatus(payload?.maintenanceStatus) === "summarized"
+    && typeof payload?.summarizedByNotePath === "string"
+    && payload.summarizedByNotePath.trim().length > 0;
+}
+
+function isDrainedRecordedEvent(payload) {
+  return isCoveredRecordedEvent(payload) || isSummarizedRecordedEvent(payload);
+}
+
 function selectPreferredText(values, maxLength = 140) {
   const normalized = values
     .filter((value) => typeof value === "string")
@@ -915,9 +925,18 @@ function buildMaintenanceCandidate(entries) {
       [payload.matchedSkillId, payload.explicitSkillId].filter(Boolean)
     )),
     covered: sorted.every((entry) => isCoveredRecordedEvent(entry.value)),
+    summarized: sorted.every((entry) => isSummarizedRecordedEvent(entry.value)),
+    drained: sorted.every((entry) => isDrainedRecordedEvent(entry.value)),
     entries: sorted,
     latestPayload,
   };
+}
+
+function buildMaintenanceGroupKey(payload) {
+  return [
+    payload?.workflow ?? UNKNOWN_WORKFLOW,
+    extractStabilityKeyFromPayload(payload),
+  ].join("::");
 }
 
 async function listParsedOperationalNotes(config, cwd, sourcePath, includeContent = false) {
@@ -951,7 +970,10 @@ async function loadMaintenancePlannerInput(
   ]);
 
   const selectedEvents = [];
+  const selectedUncoveredGroupKeys = new Set();
   let skippedCoveredEvents = 0;
+  let skippedSummarizedEvents = 0;
+  let skippedDrainedEvents = 0;
 
   for (const entry of recordedEvents) {
     if (entry.value?.eventClass !== "trace") {
@@ -959,20 +981,45 @@ async function loadMaintenancePlannerInput(
     }
     if (!includeCovered && isCoveredRecordedEvent(entry.value)) {
       skippedCoveredEvents += 1;
+      skippedDrainedEvents += 1;
+      continue;
+    }
+    if (!includeCovered && isSummarizedRecordedEvent(entry.value)) {
       continue;
     }
     selectedEvents.push(entry);
+    if (!isDrainedRecordedEvent(entry.value)) {
+      selectedUncoveredGroupKeys.add(buildMaintenanceGroupKey(entry.value));
+    }
     if (selectedEvents.length >= maxEvents) {
       break;
     }
   }
 
+  const summarizedSupportEvents = [];
+  const summarizedTraceEvents = includeCovered
+    ? []
+    : recordedEvents.filter((entry) =>
+        entry.value?.eventClass === "trace" && isSummarizedRecordedEvent(entry.value)
+      );
+  if (!includeCovered && selectedUncoveredGroupKeys.size > 0) {
+    for (const entry of summarizedTraceEvents) {
+      if (!selectedUncoveredGroupKeys.has(buildMaintenanceGroupKey(entry.value))) {
+        continue;
+      }
+      summarizedSupportEvents.push(entry);
+      if (summarizedSupportEvents.length >= maxEvents) {
+        break;
+      }
+    }
+  }
+  selectedEvents.push(...summarizedSupportEvents);
+  skippedSummarizedEvents = summarizedTraceEvents.length - summarizedSupportEvents.length;
+  skippedDrainedEvents += skippedSummarizedEvents;
+
   const grouped = new Map();
   for (const entry of selectedEvents) {
-    const key = [
-      entry.value?.workflow ?? UNKNOWN_WORKFLOW,
-      extractStabilityKeyFromPayload(entry.value),
-    ].join("::");
+    const key = buildMaintenanceGroupKey(entry.value);
     const existing = grouped.get(key) ?? [];
     existing.push(entry);
     grouped.set(key, existing);
@@ -985,6 +1032,8 @@ async function loadMaintenancePlannerInput(
   return {
     selectedEvents,
     skippedCoveredEvents,
+    skippedSummarizedEvents,
+    skippedDrainedEvents,
     candidates,
     noteEntries,
     skillEntries,
@@ -1077,14 +1126,13 @@ function buildEventBacklogStats(recordedEvents, config, now = new Date()) {
   const maintenance = getMaintenanceConfig(config);
   const traceEvents = recordedEvents.filter((entry) => entry.value?.eventClass === "trace");
   const coveredEvents = traceEvents.filter((entry) => isCoveredRecordedEvent(entry.value));
-  const uncoveredTraceEvents = traceEvents.filter((entry) => !isCoveredRecordedEvent(entry.value));
+  const summarizedEvents = traceEvents.filter((entry) => isSummarizedRecordedEvent(entry.value));
+  const drainedEvents = traceEvents.filter((entry) => isDrainedRecordedEvent(entry.value));
+  const uncoveredTraceEvents = traceEvents.filter((entry) => !isDrainedRecordedEvent(entry.value));
   const grouped = new Map();
 
   for (const entry of uncoveredTraceEvents) {
-    const key = [
-      entry.value?.workflow ?? UNKNOWN_WORKFLOW,
-      extractStabilityKeyFromPayload(entry.value),
-    ].join("::");
+    const key = buildMaintenanceGroupKey(entry.value);
     const existing = grouped.get(key) ?? [];
     existing.push(entry);
     grouped.set(key, existing);
@@ -1108,6 +1156,8 @@ function buildEventBacklogStats(recordedEvents, config, now = new Date()) {
     nonTraceEvents: recordedEvents.length - traceEvents.length,
     uncoveredEvents: uncoveredTraceEvents.length,
     coveredEvents: coveredEvents.length,
+    summarizedEvents: summarizedEvents.length,
+    drainedEvents: drainedEvents.length,
     unresolvedTraceGroupCount: unresolvedGroups.length,
     repeatedUnresolvedTraceGroupCount: repeatedGroups.length,
     maintainableUnresolvedTraceGroupCount: maintainableGroups.length,
@@ -1422,6 +1472,8 @@ function renderHotMarkdown({ config, skills, wikiEntries, wikiDocs, recentLogLin
     lines.push(`- Level: ${backlogStatus.policy.level}`);
     lines.push(`- Uncovered trace events: ${backlogStatus.uncoveredEvents}`);
     lines.push(`- Covered trace events: ${backlogStatus.coveredEvents}`);
+    lines.push(`- Summarized trace events: ${backlogStatus.summarizedEvents}`);
+    lines.push(`- Drained trace events: ${backlogStatus.drainedEvents}`);
     lines.push(`- Maintainable unresolved groups: ${backlogStatus.maintainableUnresolvedTraceGroupCount}`);
     lines.push(`- Oldest uncovered event: ${oldest}`);
     lines.push(`- Recommended command: ${backlogStatus.recommendedCommand}`);
@@ -3104,6 +3156,71 @@ function buildMaintenanceNoteSeed(candidate, existingNote = null) {
   };
 }
 
+const EXPLICIT_SINGLETON_KNOWLEDGE_DECISIONS = new Set([
+  "create_operational_note",
+  "patch_existing_skill",
+  "create_new_skill",
+]);
+
+function getExplicitSingletonKnowledgeDecision(candidate) {
+  if (candidate.eventCount !== 1) {
+    return null;
+  }
+  const decision = normalizeAdjudicationDecision(candidate.latestPayload?.adjudicationDecision);
+  return EXPLICIT_SINGLETON_KNOWLEDGE_DECISIONS.has(decision) ? decision : null;
+}
+
+function buildSingletonTraceRollupSeed(candidates, summarizedAt = new Date().toISOString()) {
+  const entries = candidates
+    .flatMap((candidate) => candidate.entries)
+    .sort((left, right) => parseTimestamp(right.value?.timestamp) - parseTimestamp(left.value?.timestamp));
+  const payloads = entries.map((entry) => entry.value ?? {});
+  const eventPaths = entries.map((entry) => entry.relativePath);
+  const workflows = unique(payloads.map((payload) => payload.workflow ?? UNKNOWN_WORKFLOW));
+  const latestEventStem = slugify(path.basename(entries[0]?.relativePath ?? `trace-rollup-${summarizedAt}`, ".json"));
+  const eventCount = entries.length;
+  const date = summarizedAt.slice(0, 10);
+  const eventSummaries = unique(
+    payloads
+      .map((payload) => normalizeMaintenanceTextCandidate(
+        firstNonEmpty([payload.summary, payload.signal, payload.title, payload.task]),
+        160,
+      ))
+      .filter(Boolean),
+  ).slice(0, 4);
+
+  return {
+    id: `maintenance.trace-rollup.${date}.${latestEventStem}.${eventCount}`,
+    title: `Trace rollup ${date} (${eventCount} event${eventCount === 1 ? "" : "s"})`,
+    workflow: "maintenance",
+    signal: `${eventCount} non-repeated trace event${eventCount === 1 ? "" : "s"} were summarized during maintenance.`,
+    interpretation: "These traces were drained from the raw maintenance backlog without being promoted into reusable operational guidance because they did not repeat and did not carry an explicit knowledge adjudication.",
+    recommendedAction: "Use the linked event sources as history only; do not treat this rollup as reusable workflow guidance.",
+    summary: `Maintenance summarized ${eventCount} singleton trace event${eventCount === 1 ? "" : "s"} across ${workflows.length} workflow${workflows.length === 1 ? "" : "s"}.`,
+    task: "Drain non-repeated trace backlog",
+    step: "singleton_trace_rollup",
+    related: [],
+    sources: eventPaths,
+    examples: eventSummaries,
+    evidence: unique([
+      `Summarized ${eventCount} singleton trace event${eventCount === 1 ? "" : "s"}.`,
+      `Workflows: ${workflows.join(", ")}`,
+      ...eventSummaries,
+    ]).slice(0, 6),
+    tags: unique([
+      "maintenance",
+      "trace_rollup",
+      "singleton_trace",
+      ...workflows,
+    ]),
+    kind: "trace_rollup",
+  };
+}
+
+function isMaintenanceRollupNote(note) {
+  return String(note?.kind ?? "").trim().toLowerCase() === "trace_rollup";
+}
+
 async function patchRecordedEventFiles(entries, patch) {
   const updated = [];
   for (const entry of entries) {
@@ -3299,13 +3416,14 @@ async function synthesizeSkillsFromOperationalNotes(
   cwd,
 ) {
   const actions = [];
-  const notesByPath = new Map(noteEntries.map((entry) => [entry.relativePath, entry]));
+  const synthesisNoteEntries = noteEntries.filter((entry) => !isMaintenanceRollupNote(entry.note));
+  const notesByPath = new Map(synthesisNoteEntries.map((entry) => [entry.relativePath, entry]));
   const skillsById = new Map(skillEntries.map((entry) => [entry.value.id, entry]));
   const preferredDraftOwners = new Map();
 
   actions.push(...(await reviewGeneratedDraftSkills(skillEntries, notesByPath, minSkillOccurrences, cwd)));
 
-  for (const noteEntry of noteEntries) {
+  for (const noteEntry of synthesisNoteEntries) {
     const note = noteEntry.note;
     const noteEvidenceCount = countNoteBackedEventSources(note);
     if (noteEvidenceCount < minSkillOccurrences) {
@@ -3353,7 +3471,7 @@ async function synthesizeSkillsFromOperationalNotes(
     }
   }
 
-  for (const noteEntry of noteEntries) {
+  for (const noteEntry of synthesisNoteEntries) {
     const note = noteEntry.note;
     const noteEvidenceCount = countNoteBackedEventSources(note);
     if (noteEvidenceCount === 0) {
@@ -3486,17 +3604,61 @@ export async function maintainKnowledge(
   );
   const noteActions = [];
   const coverage = [];
+  const singletonRollupCandidates = [];
+  const rollupActions = [];
+  const rollupCoverage = [];
   const touchedNotePaths = new Set();
 
   for (const candidate of planner.candidates) {
-    if (candidate.covered) {
+    if (candidate.drained) {
       noteActions.push({
         action: "noop",
-        reason: "candidate_already_covered",
+        reason: candidate.covered ? "candidate_already_covered" : "candidate_already_summarized",
         stabilityKey: candidate.stabilityKey,
         workflow: candidate.workflow,
-        notePath: candidate.entries[0]?.value?.coveredByNotePath ?? null,
+        notePath: candidate.entries[0]?.value?.coveredByNotePath
+          ?? candidate.entries[0]?.value?.summarizedByNotePath
+          ?? null,
         eventPaths: candidate.eventPaths,
+      });
+      continue;
+    }
+
+    const explicitSingletonDecision = getExplicitSingletonKnowledgeDecision(candidate);
+    if (candidate.eventCount < minNoteOccurrences && explicitSingletonDecision) {
+      const noteSeed = buildMaintenanceNoteSeed(candidate, null);
+      const note = await writeNoteDoc(noteSeed, cwd);
+      const coveredAt = new Date().toISOString();
+      const updatedEvents = await patchRecordedEventFiles(candidate.entries, {
+        coveredByNotePath: note.relativePath,
+        coveredAt,
+        maintenanceStatus: "covered",
+      });
+      const reloadedNote = await loadNoteDoc(cwd, sourcePath, note.relativePath, false);
+      const reloadedEntry = {
+        filePath: note.filePath,
+        relativePath: note.relativePath,
+        origin: "host",
+        note: reloadedNote,
+      };
+      notesByPath.set(note.relativePath, reloadedEntry);
+      touchedNotePaths.add(note.relativePath);
+      if (reloadedNote.id) {
+        notesById.set(reloadedNote.id, reloadedEntry);
+      }
+      noteActions.push({
+        action: note.operation,
+        reason: "explicit_singleton_trace_compaction",
+        adjudicationDecision: explicitSingletonDecision,
+        stabilityKey: candidate.stabilityKey,
+        workflow: candidate.workflow,
+        notePath: note.relativePath,
+        eventPaths: candidate.eventPaths,
+      });
+      coverage.push({
+        notePath: note.relativePath,
+        coveredAt,
+        eventPaths: updatedEvents.map((entry) => entry.relativePath),
       });
       continue;
     }
@@ -3510,6 +3672,9 @@ export async function maintainKnowledge(
         notePath: null,
         eventPaths: candidate.eventPaths,
       });
+      if (candidate.eventCount === 1) {
+        singletonRollupCandidates.push(candidate);
+      }
       continue;
     }
 
@@ -3553,6 +3718,45 @@ export async function maintainKnowledge(
     });
   }
 
+  if (singletonRollupCandidates.length > 0) {
+    const summarizedAt = new Date().toISOString();
+    const noteSeed = buildSingletonTraceRollupSeed(singletonRollupCandidates, summarizedAt);
+    const note = await writeNoteDoc(noteSeed, cwd);
+    const updatedEvents = await patchRecordedEventFiles(
+      singletonRollupCandidates.flatMap((candidate) => candidate.entries),
+      {
+        summarizedByNotePath: note.relativePath,
+        summarizedAt,
+        maintenanceStatus: "summarized",
+        maintenanceRollupKind: "singleton_trace_rollup",
+      },
+    );
+    const reloadedNote = await loadNoteDoc(cwd, sourcePath, note.relativePath, false);
+    const reloadedEntry = {
+      filePath: note.filePath,
+      relativePath: note.relativePath,
+      origin: "host",
+      note: reloadedNote,
+    };
+    notesByPath.set(note.relativePath, reloadedEntry);
+    touchedNotePaths.add(note.relativePath);
+    if (reloadedNote.id) {
+      notesById.set(reloadedNote.id, reloadedEntry);
+    }
+    rollupActions.push({
+      action: note.operation,
+      reason: "singleton_trace_rollup",
+      notePath: note.relativePath,
+      eventPaths: updatedEvents.map((entry) => entry.relativePath),
+      eventCount: updatedEvents.length,
+    });
+    rollupCoverage.push({
+      notePath: note.relativePath,
+      summarizedAt,
+      eventPaths: updatedEvents.map((entry) => entry.relativePath),
+    });
+  }
+
   const skillActions = synthesizeSkills
     ? await synthesizeSkillsFromOperationalNotes(
       Array.from(notesByPath.values()).filter((entry) => !touchedNotePaths.has(entry.relativePath)),
@@ -3565,7 +3769,7 @@ export async function maintainKnowledge(
   await updateControlArtifacts(config, cwd, sourcePath, {
     logEntry: {
       action: "maintain_knowledge",
-      detail: `${planner.selectedEvents.length} event(s) scanned | ${noteActions.filter((entry) => entry.action !== "noop").length} note action(s) | ${synthesizeSkills ? skillActions.length : "0 skipped"} skill action(s)`,
+      detail: `${planner.selectedEvents.length} event(s) scanned | ${noteActions.filter((entry) => entry.action !== "noop").length} note action(s) | ${rollupActions.length} rollup action(s) | ${synthesizeSkills ? skillActions.length : "0 skipped"} skill action(s)`,
     },
   });
 
@@ -3576,6 +3780,8 @@ export async function maintainKnowledge(
     synthesizeSkills,
     scannedEvents: planner.selectedEvents.length,
     skippedCoveredEvents: planner.skippedCoveredEvents,
+    skippedSummarizedEvents: planner.skippedSummarizedEvents,
+    skippedDrainedEvents: planner.skippedDrainedEvents,
     candidateCount: planner.candidates.length,
     candidates: planner.candidates.map((candidate) => ({
       workflow: candidate.workflow,
@@ -3587,9 +3793,13 @@ export async function maintainKnowledge(
       matchedNotePaths: candidate.matchedNotePaths,
       matchedSkillIds: candidate.matchedSkillIds,
       covered: candidate.covered,
+      summarized: candidate.summarized,
+      drained: candidate.drained,
     })),
     noteActions,
+    rollupActions,
     coverage,
+    rollupCoverage,
     skillActions,
   };
 }
