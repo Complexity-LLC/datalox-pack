@@ -474,3 +474,38 @@ Focused verification:
 - `npx vitest run tests/bridgeSurfaces.test.ts -t "automatic bounded maintenance|backlog|maintenance"`
 - `npx vitest run tests/wrapperSurfaces.test.ts -t "automatic bounded maintenance|backlog"`
 - `npx vitest run tests/hookIntegration.test.ts -t "automatic bounded maintenance"`
+
+## Native Codex MCP Loop Enforcement
+
+Completed as active-session provenance plus guidance-only MCP clarity.
+
+The important boundary:
+
+- installed Codex shim / adapter capability can be enforceable
+- active wrapper enforcement must be proven by wrapper sentinels
+- native Codex chat with MCP is guidance-only unless the agent explicitly calls MCP tools
+
+Completed:
+
+- updated `AGENTS.md` so Datalox MCP-capable agents call `resolve_loop` before Datalox-pack work and `record_turn_result` after meaningful grounded outcomes
+- updated `skills/use-datalox-through-host-cli/SKILL.md` and its linked note to stop treating MCP availability as enforcement
+- added wrapper sentinels to Codex, Claude, and generic child process environments:
+  - `DATALOX_ACTIVE_WRAPPER`
+  - `DATALOX_HOST_KIND`
+  - `DATALOX_ENFORCEMENT=wrapper`
+- added `currentSession` to `datalox status --json`
+- kept adapter install status separate from active-session status
+- documented live proof in [docs/native-codex-session-provenance-live-2026-04-30.md](/Users/yifanjin/datalox-pack/docs/native-codex-session-provenance-live-2026-04-30.md)
+
+Passed:
+
+1. native Codex status reports `currentSession.enforcementLevel: "guidance_only"` when no wrapper sentinel is present
+2. wrapper-sentinel status reports `currentSession.enforcementLevel: "enforced"`
+3. installed Codex adapter status still reports the installed shim as enforceable
+4. `datalox codex` child processes receive Codex wrapper sentinels
+5. agent-facing guidance points native Codex to MCP calls without claiming automatic enforcement
+
+Focused verification:
+
+- `npm run build`
+- `npx vitest run tests/adoptionScripts.test.ts tests/wrapperSurfaces.test.ts -t "reports enforced host adapters as automatic in status output|Codex wrapper"`

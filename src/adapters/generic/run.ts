@@ -45,6 +45,7 @@ export async function runGenericWrapper(input: GenericWrapInput): Promise<Generi
 
   const executed = runWrappedCommand(input.command, input.args ?? [], envelope, {
     cwd: envelope.repoPath,
+    hostKind: "generic",
     env: input.env,
   });
   const sanitized = sanitizeWrappedCommandResult(executed);

@@ -394,6 +394,9 @@ if (process.env.DATALOX_MATCH_PASS === "1") {
     args: process.argv.slice(2),
     skill: process.env.DATALOX_MATCHED_SKILL,
     workflow: process.env.DATALOX_WORKFLOW,
+    activeWrapper: process.env.DATALOX_ACTIVE_WRAPPER,
+    hostKind: process.env.DATALOX_HOST_KIND,
+    enforcement: process.env.DATALOX_ENFORCEMENT,
   }));
 }
 EOF
@@ -431,6 +434,9 @@ EOF
     const parsed = JSON.parse(result.stdout);
     expect(parsed.skill).toBe("repo-engineering.maintain-datalox-pack");
     expect(parsed.workflow).toBe("repo_engineering");
+    expect(parsed.activeWrapper).toBe("codex");
+    expect(parsed.hostKind).toBe("codex");
+    expect(parsed.enforcement).toBe("wrapper");
     expect(parsed.args[0]).toBe("exec");
     expect(parsed.args[2]).toContain("# Datalox Loop Guidance");
     expect(parsed.args[2]).toContain("Update the pack docs to mention wrappers.");

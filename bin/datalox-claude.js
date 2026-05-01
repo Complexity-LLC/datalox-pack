@@ -45,6 +45,9 @@ const child = spawn(process.execPath, [entrypoint, "claude", ...process.argv.sli
   stdio: "inherit",
   env: {
     ...process.env,
+    DATALOX_ACTIVE_WRAPPER: "claude",
+    DATALOX_HOST_KIND: "claude",
+    DATALOX_ENFORCEMENT: "wrapper",
     DATALOX_DEFAULT_POST_RUN_MODE: process.env.DATALOX_DEFAULT_POST_RUN_MODE ?? "review",
     DATALOX_DEFAULT_REVIEW_MODEL: process.env.DATALOX_DEFAULT_REVIEW_MODEL ?? "gpt-5.4-mini",
   },

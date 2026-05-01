@@ -137,6 +137,7 @@ function buildCodexReviewer(
       ];
       return runWrappedCommand(codexBin, reviewArgs, envelope, {
         cwd: envelope.repoPath,
+        hostKind: "codex",
         env: {
           DATALOX_REVIEW_PASS: "1",
         },
@@ -162,6 +163,7 @@ function buildCodexMatcher(
       ];
       return runWrappedCommand(codexBin, matchArgs, envelope, {
         cwd: envelope.repoPath,
+        hostKind: "codex",
         env: {
           DATALOX_MATCH_PASS: "1",
         },
@@ -198,6 +200,7 @@ export async function runCodexWrapper(input: CodexWrapperInput) {
   }
   const executed = runWrappedCommand(codexBin, finalArgs, envelope, {
     cwd: envelope.repoPath,
+    hostKind: "codex",
   });
   await sanitizeCodexOutputFile(envelope.repoPath, findCodexOutputPath(finalArgs));
   const sanitized = sanitizeWrappedCommandResult(executed);

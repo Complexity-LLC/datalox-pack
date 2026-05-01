@@ -11,6 +11,7 @@ That doc now holds:
 - completed pass-criteria proofs
 - completed bootstrap-payload-shape work
 - completed setup and partial-adoption recovery work
+- completed native Codex active-session provenance work
 
 
 ## Refactor `agent-pack.mjs`
@@ -211,6 +212,19 @@ That doc now holds:
   - explicit singleton note preservation when structured evidence exists
   - rollup exclusion from skill synthesis
   - 100+ singleton backlog proof
+
+
+## Native Codex MCP Loop Enforcement
+
+- Completed work was moved to:
+  - [docs/completed-todo-items.md](/Users/yifanjin/datalox-pack/docs/completed-todo-items.md)
+  Grounded live proof:
+  - [docs/native-codex-session-provenance-live-2026-04-30.md](/Users/yifanjin/datalox-pack/docs/native-codex-session-provenance-live-2026-04-30.md)
+  That includes:
+  - explicit MCP-first guidance for native Codex
+  - active-session `currentSession` status output
+  - wrapper sentinel environment variables
+  - tests that distinguish installed Codex enforcement from active wrapper provenance
 
 
 ## Host Adapter Capability Profiles

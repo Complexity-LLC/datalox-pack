@@ -878,7 +878,7 @@ export async function buildLoopEnvelope(input: LoopEnvelopeInput): Promise<LoopE
   };
 }
 
-export function buildWrapperEnv(envelope: LoopEnvelope): NodeJS.ProcessEnv {
+export function buildWrapperEnv(envelope: LoopEnvelope, hostKind?: string): NodeJS.ProcessEnv {
   return {
     DATALOX_REPO_PATH: envelope.repoPath,
     DATALOX_SESSION_ID: envelope.sessionId ?? "",
@@ -888,6 +888,13 @@ export function buildWrapperEnv(envelope: LoopEnvelope): NodeJS.ProcessEnv {
     DATALOX_SELECTION_BASIS: envelope.guidance.selectionBasis,
     DATALOX_WORKFLOW: envelope.guidance.workflow === UNKNOWN_WORKFLOW ? "" : envelope.guidance.workflow,
     DATALOX_MATCHED_SKILL: envelope.guidance.matchedSkillId ?? "",
+    ...(hostKind
+      ? {
+          DATALOX_ACTIVE_WRAPPER: hostKind,
+          DATALOX_HOST_KIND: hostKind,
+          DATALOX_ENFORCEMENT: "wrapper",
+        }
+      : {}),
   };
 }
 
@@ -930,6 +937,7 @@ export function runWrappedCommand(
   options: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
+    hostKind?: string;
   } = {},
 ): WrappedCommandResult {
   const result = spawnSync(
@@ -939,7 +947,7 @@ export function runWrappedCommand(
       cwd: options.cwd ?? envelope.repoPath,
       env: {
         ...process.env,
-        ...buildWrapperEnv(envelope),
+        ...buildWrapperEnv(envelope, options.hostKind),
         ...options.env,
       },
       encoding: "utf8",

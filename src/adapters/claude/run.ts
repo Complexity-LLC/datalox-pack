@@ -105,6 +105,7 @@ function buildClaudeReviewer(
       ];
       return runWrappedCommand(claudeBin, reviewArgs, envelope, {
         cwd: envelope.repoPath,
+        hostKind: "claude",
         env: {
           DATALOX_REVIEW_PASS: "1",
         },
@@ -129,6 +130,7 @@ function buildClaudeMatcher(
       ];
       return runWrappedCommand(claudeBin, matchArgs, envelope, {
         cwd: envelope.repoPath,
+        hostKind: "claude",
         env: {
           DATALOX_MATCH_PASS: "1",
         },
@@ -166,6 +168,7 @@ export async function runClaudeWrapper(input: ClaudeWrapperInput) {
 
   const executed = runWrappedCommand(claudeBin, finalArgs, envelope, {
     cwd: envelope.repoPath,
+    hostKind: "claude",
   });
   const sanitized = sanitizeWrappedCommandResult(executed);
 

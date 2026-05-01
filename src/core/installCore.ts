@@ -102,6 +102,7 @@ export interface EnforcementStatusSnapshot {
     reviewModel: string;
   };
   adapters: Record<HostSurfaceId, HostSurfaceStatus>;
+  currentSession: CurrentSessionStatus;
   repo: {
     repoPath: string;
     bootstrapStatus: "ready" | "bootstrappable" | "repairable" | "blocked";
@@ -113,12 +114,59 @@ export interface EnforcementStatusSnapshot {
   };
 }
 
+export interface CurrentSessionStatus {
+  detectedHostKind: string | null;
+  activeWrapper: string | null;
+  wrapperEnforced: boolean;
+  enforcementLevel: EnforcementLevel;
+  sessionId: string | null;
+  codexThreadId: string | null;
+  notes: string[];
+}
+
 const STABLE_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin"];
 const PATH_EXPORT_LINE = 'export PATH="$HOME/.local/bin:$PATH"';
 const INSTALL_STATUS_RELATIVE_PATH = path.join(".datalox", "install.json");
 
 function normalizePath(value: string): string {
   return value.replaceAll("\\", "/");
+}
+
+function optionalEnv(name: string): string | null {
+  const value = process.env[name];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function inspectCurrentSession(): CurrentSessionStatus {
+  const activeWrapper = optionalEnv("DATALOX_ACTIVE_WRAPPER");
+  const hostKind = optionalEnv("DATALOX_HOST_KIND");
+  const enforcement = optionalEnv("DATALOX_ENFORCEMENT");
+  const sessionId = optionalEnv("DATALOX_SESSION_ID");
+  const codexThreadId = optionalEnv("CODEX_THREAD_ID");
+  const codexOrigin = optionalEnv("CODEX_INTERNAL_ORIGINATOR_OVERRIDE");
+  const detectedHostKind = hostKind
+    ?? activeWrapper
+    ?? (codexThreadId || codexOrigin ? "codex" : null);
+  const wrapperEnforced = activeWrapper !== null && enforcement === "wrapper";
+  const notes: string[] = [];
+
+  if (wrapperEnforced) {
+    notes.push(`Current process is inside the Datalox ${activeWrapper} wrapper.`);
+  } else if (detectedHostKind === "codex") {
+    notes.push("Native Codex session detected without a Datalox wrapper sentinel; MCP use depends on explicit tool calls.");
+  } else {
+    notes.push("No active Datalox wrapper sentinel detected; status describes installed capability, not active-session enforcement.");
+  }
+
+  return {
+    detectedHostKind,
+    activeWrapper,
+    wrapperEnforced,
+    enforcementLevel: wrapperEnforced ? "enforced" : "guidance_only",
+    sessionId,
+    codexThreadId,
+    notes,
+  };
 }
 
 function claudeSkillsDir(): string {
@@ -609,6 +657,9 @@ resolve_real_codex_bin() {
 REAL_CODEX_BIN="$(resolve_real_codex_bin)"
 repo="$(resolve_repo "$@")"
 if should_wrap "$@"; then
+  export DATALOX_ACTIVE_WRAPPER="codex"
+  export DATALOX_HOST_KIND="codex"
+  export DATALOX_ENFORCEMENT="wrapper"
   export DATALOX_CODEX_BIN="$REAL_CODEX_BIN"
   : "\${DATALOX_DEFAULT_POST_RUN_MODE:=review}"
   : "\${DATALOX_DEFAULT_REVIEW_MODEL:=gpt-5.4-mini}"
@@ -715,6 +766,9 @@ resolve_real_claude_bin() {
 REAL_CLAUDE_BIN="$(resolve_real_claude_bin)"
 repo="$(resolve_repo "$@")"
 if should_wrap "$@"; then
+  export DATALOX_ACTIVE_WRAPPER="claude"
+  export DATALOX_HOST_KIND="claude"
+  export DATALOX_ENFORCEMENT="wrapper"
   export DATALOX_CLAUDE_BIN="$REAL_CLAUDE_BIN"
   : "\${DATALOX_DEFAULT_POST_RUN_MODE:=review}"
   : "\${DATALOX_DEFAULT_REVIEW_MODEL:=gpt-5.4-mini}"
@@ -1064,6 +1118,7 @@ export async function inspectEnforcementStatus(input: {
       reviewModel: process.env.DATALOX_DEFAULT_REVIEW_MODEL ?? "gpt-5.4-mini",
     },
     adapters,
+    currentSession: inspectCurrentSession(),
     repo: {
       repoPath: normalizePath(repoPath),
       bootstrapStatus: repoProbe.status,

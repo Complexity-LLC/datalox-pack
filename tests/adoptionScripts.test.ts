@@ -400,6 +400,11 @@ describe("adoption scripts", () => {
       env: {
         ...process.env,
         HOME: homeDir,
+        DATALOX_ACTIVE_WRAPPER: "",
+        DATALOX_HOST_KIND: "",
+        DATALOX_ENFORCEMENT: "",
+        CODEX_THREAD_ID: "test-native-codex-thread",
+        CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "codex_vscode",
       },
     });
 
@@ -413,6 +418,37 @@ describe("adoption scripts", () => {
     expect(parsed.adapters.mcp_only.enforcementLevel).toBe("guidance_only");
     expect(parsed.repo.bootstrapStatus).toBe("bootstrappable");
     expect(parsed.repo.enforcementLevel).toBe("enforced");
+    expect(parsed.currentSession.detectedHostKind).toBe("codex");
+    expect(parsed.currentSession.activeWrapper).toBeNull();
+    expect(parsed.currentSession.wrapperEnforced).toBe(false);
+    expect(parsed.currentSession.enforcementLevel).toBe("guidance_only");
+    expect(parsed.currentSession.codexThreadId).toBe("test-native-codex-thread");
+    expect(parsed.currentSession.notes).toContain(
+      "Native Codex session detected without a Datalox wrapper sentinel; MCP use depends on explicit tool calls.",
+    );
+
+    const wrappedStatus = spawnSync("node", [path.join(packDir, "bin/datalox.js"), "status", "--repo", hostDir, "--json"], {
+      cwd: hostDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        DATALOX_ACTIVE_WRAPPER: "codex",
+        DATALOX_HOST_KIND: "codex",
+        DATALOX_ENFORCEMENT: "wrapper",
+        DATALOX_SESSION_ID: "wrapped-codex-session",
+      },
+    });
+    expect(wrappedStatus.status).toBe(0);
+    const parsedWrappedStatus = JSON.parse(wrappedStatus.stdout);
+    expect(parsedWrappedStatus.currentSession.detectedHostKind).toBe("codex");
+    expect(parsedWrappedStatus.currentSession.activeWrapper).toBe("codex");
+    expect(parsedWrappedStatus.currentSession.wrapperEnforced).toBe(true);
+    expect(parsedWrappedStatus.currentSession.enforcementLevel).toBe("enforced");
+    expect(parsedWrappedStatus.currentSession.sessionId).toBe("wrapped-codex-session");
+    expect(parsedWrappedStatus.currentSession.notes).toContain(
+      "Current process is inside the Datalox codex wrapper.",
+    );
 
     const installJson = JSON.parse(await readFile(path.join(packDir, ".datalox", "install.json"), "utf8"));
     expect(installJson.packRootPath).toBe(await realpath(packDir));

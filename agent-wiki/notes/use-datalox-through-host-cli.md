@@ -8,8 +8,8 @@ related:
 sources:
   - agent-wiki/sources/portable-pack-design-notes.md
 usage:
-  read_count: 4
-  last_read_at: 2026-04-22T14:17:30.061Z
+  read_count: 13
+  last_read_at: 2026-05-01T10:58:28.224Z
   apply_count: 0
   last_applied_at: 
   evidence_count: 0
@@ -20,23 +20,24 @@ review_after: 2026-07-13
 
 ## When to Use
 
-Use this page when an agent host cannot call Datalox through MCP and does not expose a post-turn hook API.
+Use this page when an agent host cannot call Datalox automatically through MCP, wrapper, or hook enforcement.
 
 ## Signal
 
-The host can run a CLI command, but cannot reliably auto-call `resolve_loop` or `promote_gap` on every turn.
+The host can run a CLI command or expose MCP tools, but the active session cannot prove it will call `resolve_loop` and `record_turn_result` on every loop.
 
 ## Interpretation
 
-The right fallback is a thin wrapper that injects resolved loop guidance into the host command instead of relying on passive repo discovery.
+MCP availability is not enforcement. The right fallback for enforceable Codex runs is a thin wrapper that injects resolved loop guidance into the host command instead of relying on passive repo discovery.
 
 ## Recommended Action
 
-Prefer `datalox codex` for Codex `exec` flows. Otherwise use `datalox wrap command` with `__DATALOX_PROMPT__` or the `DATALOX_PROMPT` environment variable.
+If MCP is available in the active session, call `resolve_loop` before acting and `record_turn_result` after meaningful grounded outcomes. Prefer `datalox codex` for enforceable Codex `exec` flows. Otherwise use `datalox wrap command` with `__DATALOX_PROMPT__` or the `DATALOX_PROMPT` environment variable.
 
 ## Examples
 
 - A Codex thread that has the MCP server installed but is not automatically calling it
+- A native Codex chat with MCP tools but no `DATALOX_ACTIVE_WRAPPER=codex` sentinel
 - A generic CLI agent that accepts a prompt argument but exposes no hook surface
 
 ## Evidence

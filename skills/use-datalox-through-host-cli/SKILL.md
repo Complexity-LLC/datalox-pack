@@ -25,23 +25,25 @@ Use this skill when the host agent cannot call Datalox automatically through MCP
 
 - The host has no MCP support
 - The host has no automatic pre-turn or post-turn hook API
+- The host has MCP tools, but the active session is not inside an enforced Datalox wrapper
 - The agent is launched from a CLI and accepts a prompt argument or environment variables
 - You need a deterministic fallback that still injects Datalox guidance
 
 ## When Not to Use
 
-- The host already supports MCP and can call `resolve_loop` directly
+- The active session is already inside an enforced Datalox wrapper such as `datalox codex`
 - The host already supports a post-turn hook and can call `bin/datalox-auto-promote.js`
 - The task is not agent-loop work and does not need pack guidance
 
 ## Workflow
 
-1. Prefer MCP if the host supports it.
-2. Otherwise, prefer native hooks if the host supports them.
-3. For Codex `exec`, use `datalox codex --repo <repo> --task "<task>" --prompt "<prompt>"`.
-4. For other CLI hosts, use `datalox wrap command --repo <repo> --task "<task>" --prompt "<prompt>" -- <host-command> __DATALOX_PROMPT__`.
-5. If the host cannot accept prompt placeholders, use `datalox wrap prompt` and pass the returned prompt to the host manually.
-6. When the host has no automatic post-turn hook, use `datalox record` or `datalox promote` explicitly after repeated corrections.
+1. If MCP tools are available in the active session, call `resolve_loop` before acting.
+2. Use `record_turn_result` after meaningful grounded outcomes.
+3. Treat native Codex chat with MCP as guidance-only unless a Datalox wrapper sentinel is present.
+4. For enforceable Codex `exec`, use `datalox codex --repo <repo> --task "<task>" --prompt "<prompt>"`.
+5. For other CLI hosts, use `datalox wrap command --repo <repo> --task "<task>" --prompt "<prompt>" -- <host-command> __DATALOX_PROMPT__`.
+6. If the host cannot accept prompt placeholders, use `datalox wrap prompt` and pass the returned prompt to the host manually.
+7. When the host has no automatic post-turn hook or wrapper, use `datalox record` or `datalox promote` explicitly after repeated corrections.
 
 ## Checks Before Editing
 
@@ -49,11 +51,13 @@ Use this skill when the host agent cannot call Datalox automatically through MCP
 - Preserve the host repo as the write target for generated skills and wiki pages.
 - Prefer placeholders and environment variables over shell-specific quoting tricks.
 - Keep Codex-specific behavior inside the Codex wrapper and everything else in the generic wrapper.
+- Do not describe MCP availability as enforcement. MCP-only sessions still depend on the agent choosing to call the tools.
 
 ## Expected Output
 
 - State which wrapper path is being used: MCP, hook, `datalox codex`, or `datalox wrap`.
 - State how the wrapped prompt is injected into the host.
+- State whether the active session is wrapper-enforced or guidance-only.
 - State whether promotion stays automatic or requires manual `record` / `promote`.
 
 ## Notes
