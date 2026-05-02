@@ -509,3 +509,35 @@ Focused verification:
 
 - `npm run build`
 - `npx vitest run tests/adoptionScripts.test.ts tests/wrapperSurfaces.test.ts -t "reports enforced host adapters as automatic in status output|Codex wrapper"`
+
+## Claude Code Surface Provenance And Status Clarity
+
+Completed as explicit four-surface status plus active-session provenance.
+
+The important boundary:
+
+- Claude shim wrapper / `datalox claude` is the enforceable pre-run guidance injection path
+- Claude Stop hook is post-turn sidecar automation
+- Claude native skills are model-chosen and restart-sensitive
+- Claude MCP tools are guidance-only unless Claude Code actually calls them
+
+Completed:
+
+- added `adapters.claude.surfaces.wrapper`, `stopHook`, `nativeSkills`, and `mcp` to `datalox status --json`
+- kept existing raw `adapters.claude` fields for compatibility
+- added Claude-specific active-session notes so wrapper enforcement only counts when `currentSession.activeWrapper` is `"claude"` and `currentSession.wrapperEnforced` is `true`
+- documented the boundary in `CLAUDE.md`, `skills/use-datalox-through-host-cli/SKILL.md`, and `agent-wiki/notes/use-datalox-through-host-cli.md`
+- documented live proof in [docs/claude-code-surface-provenance-live-2026-05-02.md](/Users/yifanjin/datalox-pack/docs/claude-code-surface-provenance-live-2026-05-02.md)
+
+Passed:
+
+1. status reports Claude wrapper, Stop hook, native skills, and MCP separately
+2. hook/native-skill availability does not imply pre-run wrapper enforcement
+3. simulated Claude wrapper sentinels report active wrapper enforcement
+4. `datalox claude` child processes receive wrapper sentinels
+5. Claude hook recording/maintenance stays post-turn and does not pretend to be pre-run enforcement
+
+Focused verification:
+
+- `npm run build`
+- `npx vitest run tests/adoptionScripts.test.ts tests/wrapperSurfaces.test.ts tests/hookIntegration.test.ts`

@@ -82,6 +82,7 @@ export interface HostSurfaceStatus {
   supportsSecondPassReview: boolean;
   requiresPromptPlaceholder: boolean;
   nativeSkillLinks?: NativeSkillLinkStatus;
+  surfaces?: ClaudeSurfaceSummary;
   notes: string[];
 }
 
@@ -92,6 +93,45 @@ export interface NativeSkillLinkStatus {
   linked: string[];
   missing: string[];
   legacyPackLink: string | null;
+}
+
+export interface ClaudeSurfaceSummary {
+  wrapper: {
+    installed: boolean;
+    automatic: boolean;
+    active: boolean;
+    preRunEnforced: boolean;
+    enforcementLevel: EnforcementLevel;
+    shimPath: string;
+    stableLinks: string[];
+    notes: string[];
+  };
+  stopHook: {
+    installed: boolean;
+    postTurnSidecar: true;
+    recordsAfterTurn: boolean;
+    preRunEnforced: false;
+    notes: string[];
+  };
+  nativeSkills: {
+    installed: boolean;
+    canonical: boolean;
+    restartSensitive: true;
+    modelChosen: true;
+    preRunEnforced: false;
+    root: string;
+    linked: string[];
+    missing: string[];
+    legacyPackLink: string | null;
+    notes: string[];
+  };
+  mcp: {
+    available: boolean;
+    guidanceOnly: true;
+    modelChosen: true;
+    preRunEnforced: false;
+    notes: string[];
+  };
 }
 
 export interface EnforcementStatusSnapshot {
@@ -137,7 +177,7 @@ function optionalEnv(name: string): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function inspectCurrentSession(): CurrentSessionStatus {
+function inspectCurrentSession(input: { claudeHookInstalled?: boolean } = {}): CurrentSessionStatus {
   const activeWrapper = optionalEnv("DATALOX_ACTIVE_WRAPPER");
   const hostKind = optionalEnv("DATALOX_HOST_KIND");
   const enforcement = optionalEnv("DATALOX_ENFORCEMENT");
@@ -154,6 +194,14 @@ function inspectCurrentSession(): CurrentSessionStatus {
     notes.push(`Current process is inside the Datalox ${activeWrapper} wrapper.`);
   } else if (detectedHostKind === "codex") {
     notes.push("Native Codex session detected without a Datalox wrapper sentinel; MCP use depends on explicit tool calls.");
+  } else if (detectedHostKind === "claude") {
+    notes.push("Claude host detected without a complete Datalox wrapper sentinel; pre-run guidance injection is not enforced.");
+    if (activeWrapper === "claude" && enforcement !== "wrapper") {
+      notes.push("DATALOX_ACTIVE_WRAPPER=claude is present without DATALOX_ENFORCEMENT=wrapper, so this is not counted as wrapper-enforced.");
+    }
+    if (input.claudeHookInstalled) {
+      notes.push("Claude Stop-hook automation is installed, but it runs after the model turn.");
+    }
   } else {
     notes.push("No active Datalox wrapper sentinel detected; status describes installed capability, not active-session enforcement.");
   }
@@ -166,6 +214,82 @@ function inspectCurrentSession(): CurrentSessionStatus {
     sessionId,
     codexThreadId,
     notes,
+  };
+}
+
+function buildClaudeSurfaceSummary(input: {
+  shimPath: string;
+  stableLinks: string[];
+  installed: boolean;
+  automatic: boolean;
+  hookInstalled: boolean;
+  nativeSkillLinks: NativeSkillLinkStatus;
+  currentSession: CurrentSessionStatus;
+}): ClaudeSurfaceSummary {
+  const wrapperPreRunEnforced = input.currentSession.activeWrapper === "claude"
+    && input.currentSession.wrapperEnforced === true;
+  const wrapperNotes = input.automatic
+    ? ["Claude shim wrapper is installed and reachable for prompt runs that route through the shim."]
+    : input.installed
+      ? ["Claude shim wrapper is installed, but no stable link or shell PATH export was detected yet."]
+      : ["Claude shim wrapper is not installed; Claude pre-run guidance injection is unavailable through the shim."];
+  if (wrapperPreRunEnforced) {
+    wrapperNotes.push("Current process is inside the Datalox Claude wrapper.");
+  }
+  if (!input.installed && input.hookInstalled) {
+    wrapperNotes.push("Claude Stop hook is installed, but it cannot enforce pre-run guidance injection.");
+  }
+
+  const stopHookNotes = input.hookInstalled
+    ? [
+        "Claude Stop hook is installed.",
+        "Stop-hook automation records, compiles, or maintains after Claude finishes a turn.",
+      ]
+    : ["Claude Stop hook is not installed."];
+  stopHookNotes.push("The Stop hook is post-turn sidecar automation, not pre-run enforcement.");
+
+  const nativeSkillNotes = input.nativeSkillLinks.canonical
+    ? ["Canonical Claude native skill links are installed at ~/.claude/skills/<skill-name>."]
+    : ["Claude native skill links are not fully canonical at ~/.claude/skills/<skill-name>."];
+  nativeSkillNotes.push("Claude native skill use is model-chosen and may require a Claude Code restart before newly linked skills appear.");
+
+  return {
+    wrapper: {
+      installed: input.installed,
+      automatic: input.automatic,
+      active: input.currentSession.activeWrapper === "claude",
+      preRunEnforced: wrapperPreRunEnforced,
+      enforcementLevel: wrapperPreRunEnforced ? "enforced" : input.automatic ? "enforced" : "guidance_only",
+      shimPath: normalizePath(input.shimPath),
+      stableLinks: input.stableLinks.map(normalizePath),
+      notes: wrapperNotes,
+    },
+    stopHook: {
+      installed: input.hookInstalled,
+      postTurnSidecar: true,
+      recordsAfterTurn: input.hookInstalled,
+      preRunEnforced: false,
+      notes: stopHookNotes,
+    },
+    nativeSkills: {
+      installed: input.nativeSkillLinks.installed,
+      canonical: input.nativeSkillLinks.canonical,
+      restartSensitive: true,
+      modelChosen: true,
+      preRunEnforced: false,
+      root: input.nativeSkillLinks.root,
+      linked: input.nativeSkillLinks.linked,
+      missing: input.nativeSkillLinks.missing,
+      legacyPackLink: input.nativeSkillLinks.legacyPackLink,
+      notes: nativeSkillNotes,
+    },
+    mcp: {
+      available: true,
+      guidanceOnly: true,
+      modelChosen: true,
+      preRunEnforced: false,
+      notes: ["Claude MCP tools are guidance-only unless Claude Code actually calls them."],
+    },
   };
 }
 
@@ -991,6 +1115,16 @@ export async function inspectEnforcementStatus(input: {
   const claudeHookInstalled = await isClaudeHookInstalled();
   const claudeNativeSkillLinks = await inspectClaudeNativeSkillLinks(packRootPath);
   const claudeAutomatic = claudeInstalled && (claudeStableLinks.length > 0 || pathActivationAvailable);
+  const currentSession = inspectCurrentSession({ claudeHookInstalled });
+  const claudeSurfaces = buildClaudeSurfaceSummary({
+    shimPath: claudeShimPath,
+    stableLinks: claudeStableLinks,
+    installed: claudeInstalled,
+    automatic: claudeAutomatic,
+    hookInstalled: claudeHookInstalled,
+    nativeSkillLinks: claudeNativeSkillLinks,
+    currentSession,
+  });
 
   const repoProbe = await probeBootstrapCandidate(repoPath);
   const repoReady = repoProbe.status === "ready"
@@ -1035,6 +1169,7 @@ export async function inspectEnforcementStatus(input: {
       supportsSecondPassReview: getHostCapability("claude").supportsSecondPassReview,
       requiresPromptPlaceholder: getHostCapability("claude").requiresPromptPlaceholder,
       nativeSkillLinks: claudeNativeSkillLinks,
+      surfaces: claudeSurfaces,
       notes: claudeAutomatic
         ? [
             ...(claudeHookInstalled ? [] : ["Claude shim is automatic; hook is optional sidecar automation and is not installed."]),
@@ -1043,10 +1178,12 @@ export async function inspectEnforcementStatus(input: {
         : claudeInstalled
           ? [
               "Claude shim is installed, but no stable link or shell PATH export was detected yet.",
+              ...(claudeHookInstalled ? ["Claude Stop hook is installed, but it is post-turn sidecar automation and cannot enforce pre-run guidance injection."] : []),
               ...(claudeNativeSkillLinks.canonical ? [] : ["Claude native skill links are not installed at canonical ~/.claude/skills/<skill-name> paths."]),
             ]
           : [
-              "Claude shim is not installed.",
+              "Claude shim wrapper is not installed, so pre-run Datalox guidance injection is unavailable for native Claude Code.",
+              ...(claudeHookInstalled ? ["Claude Stop hook is installed, but it runs after the model turn and cannot prove pre-turn skill use."] : []),
               ...(claudeNativeSkillLinks.canonical ? [] : ["Claude native skill links are not installed at canonical ~/.claude/skills/<skill-name> paths."]),
             ],
     },
@@ -1118,7 +1255,7 @@ export async function inspectEnforcementStatus(input: {
       reviewModel: process.env.DATALOX_DEFAULT_REVIEW_MODEL ?? "gpt-5.4-mini",
     },
     adapters,
-    currentSession: inspectCurrentSession(),
+    currentSession,
     repo: {
       repoPath: normalizePath(repoPath),
       bootstrapStatus: repoProbe.status,

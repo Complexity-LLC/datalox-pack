@@ -34,7 +34,7 @@ export const HOST_CAPABILITIES: Record<HostSurfaceId, HostCapability> = {
     supportsPostRunHook: true,
     supportsSecondPassReview: true,
     requiresPromptPlaceholder: false,
-    description: "Claude shim intercepts prompt runs and may also use a post-turn hook as sidecar automation.",
+    description: "Claude shim can enforce pre-run prompt injection; Stop hooks are post-turn sidecars, while native skills and MCP remain model-chosen guidance surfaces.",
   },
   generic_cli: {
     id: "generic_cli",

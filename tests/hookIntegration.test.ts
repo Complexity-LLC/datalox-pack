@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const repoRoot = process.cwd();
+const builtCliPath = path.join(repoRoot, "dist", "src", "cli", "main.js");
 
 describe("automatic host hooks", () => {
   const tempDirs: string[] = [];
@@ -324,5 +325,25 @@ describe("automatic host hooks", () => {
       JSON.parse(await readFile(path.join(hostDir, "agent-wiki", "events", eventFile), "utf8"))
     ));
     expect(payloads.filter((payload) => payload.maintenanceStatus === "covered").length).toBeGreaterThanOrEqual(2);
+
+    const status = spawnSync("node", [builtCliPath, "status", "--repo", hostDir, "--json"], {
+      cwd: hostDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DATALOX_ACTIVE_WRAPPER: "",
+        DATALOX_HOST_KIND: "claude",
+        DATALOX_ENFORCEMENT: "",
+      },
+    });
+    expect(status.status).toBe(0);
+    const statusPayload = JSON.parse(status.stdout);
+    expect(statusPayload.currentSession.detectedHostKind).toBe("claude");
+    expect(statusPayload.currentSession.wrapperEnforced).toBe(false);
+    expect(statusPayload.currentSession.enforcementLevel).toBe("guidance_only");
+    expect(statusPayload.currentSession.notes).toContain(
+      "Claude host detected without a complete Datalox wrapper sentinel; pre-run guidance injection is not enforced.",
+    );
+    expect(statusPayload.adapters.claude.surfaces.stopHook.preRunEnforced).toBe(false);
   }, 60000);
 });

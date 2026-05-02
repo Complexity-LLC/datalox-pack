@@ -770,7 +770,7 @@ EOF
     const fakeClaudePath = path.join(hostDir, "fake-claude.sh");
     await writeFile(
       fakeClaudePath,
-      "#!/usr/bin/env bash\nnode -e 'if (process.env.DATALOX_MATCH_PASS === \"1\") { process.stdout.write(JSON.stringify({matchedSkillId:\"repo-engineering.maintain-datalox-pack\", noMatch:false, alternatives:[\"repo-engineering.use-datalox-through-host-cli\"], reason:\"The task is directly about changing the Datalox pack guidance.\"})); } else { process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL, workflow: process.env.DATALOX_WORKFLOW})); }' -- \"$@\"\n",
+      "#!/usr/bin/env bash\nnode -e 'if (process.env.DATALOX_MATCH_PASS === \"1\") { process.stdout.write(JSON.stringify({matchedSkillId:\"repo-engineering.maintain-datalox-pack\", noMatch:false, alternatives:[\"repo-engineering.use-datalox-through-host-cli\"], reason:\"The task is directly about changing the Datalox pack guidance.\"})); } else { process.stdout.write(JSON.stringify({args: process.argv.slice(1), skill: process.env.DATALOX_MATCHED_SKILL, workflow: process.env.DATALOX_WORKFLOW, activeWrapper: process.env.DATALOX_ACTIVE_WRAPPER, hostKind: process.env.DATALOX_HOST_KIND, enforcement: process.env.DATALOX_ENFORCEMENT})); }' -- \"$@\"\n",
       "utf8",
     );
     await chmod(fakeClaudePath, 0o755);
@@ -802,6 +802,9 @@ EOF
     const parsed = JSON.parse(result.stdout);
     expect(parsed.skill).toBe("repo-engineering.maintain-datalox-pack");
     expect(parsed.workflow).toBe("repo_engineering");
+    expect(parsed.activeWrapper).toBe("claude");
+    expect(parsed.hostKind).toBe("claude");
+    expect(parsed.enforcement).toBe("wrapper");
     expect(parsed.args[0]).toBe("--print");
     expect(parsed.args[1]).toContain("# Datalox Loop Guidance");
     expect(parsed.args[1]).toContain("Update the pack docs to mention Claude shims.");

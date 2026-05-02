@@ -12,6 +12,7 @@ That doc now holds:
 - completed bootstrap-payload-shape work
 - completed setup and partial-adoption recovery work
 - completed native Codex active-session provenance work
+- completed Claude Code surface provenance work
 
 
 ## Refactor `agent-pack.mjs`
@@ -225,6 +226,103 @@ That doc now holds:
   - active-session `currentSession` status output
   - wrapper sentinel environment variables
   - tests that distinguish installed Codex enforcement from active wrapper provenance
+
+
+## Claude Code Surface Provenance And Status Clarity
+
+- [x] Goal: make Claude Code status and proof distinguish its four different Datalox surfaces instead of treating them as one enforcement story.
+  Current live status shows:
+  - Claude shim wrapper is not installed:
+    - `adapters.claude.installed: false`
+    - `adapters.claude.automatic: false`
+  - Claude Stop hook is installed:
+    - `adapters.claude.hookInstalled: true`
+  - Claude native skill links are installed and canonical:
+    - `~/.claude/skills/<skill-name>`
+  - simulated Claude wrapper sentinels work:
+    - `DATALOX_ACTIVE_WRAPPER=claude` makes `currentSession.wrapperEnforced: true`
+
+  Required boundary:
+  - `datalox claude` / Claude shim wrapper = enforceable pre-run guidance injection
+  - Claude Stop hook = post-turn sidecar automation; it can record, compile, and maintain after a response, but cannot force pre-turn `resolve_loop`
+  - Claude native skills = useful discovery surface, but still model-chosen and often restart-dependent
+  - Claude MCP = guidance-only unless Claude Code actually calls the tools
+
+- [x] Step 1: model Claude surfaces explicitly in status output.
+  Target files:
+  - `src/core/installCore.ts`
+  - `src/adapters/capabilities.ts`
+  - tests for install/status
+  Requirements:
+  - keep existing `adapters.claude` raw fields for compatibility
+  - add an agent-readable Claude surface summary, for example:
+    - `wrapper`: installed, automatic, active, pre-run enforced
+    - `stopHook`: installed, post-turn sidecar, not pre-run enforced
+    - `nativeSkills`: installed, canonical, restart-sensitive
+    - `mcp`: available when detectable, guidance-only
+  - do not mark Claude as active wrapper-enforced unless `currentSession.activeWrapper === "claude"` and `currentSession.wrapperEnforced === true`
+  - explain when the hook is installed but the shim wrapper is not installed
+  Pass criteria:
+  - `datalox status --json` lets an agent answer "what can Datalox enforce in Claude Code right now?" without reading docs
+  - live status no longer forces agents to infer behavior from `hookInstalled`, `nativeSkillLinks`, and `installed` separately
+
+- [x] Step 2: add Claude-specific active-session detection and notes.
+  Target files:
+  - `src/core/installCore.ts`
+  - `bin/datalox-claude.js`
+  - `src/adapters/claude/run.ts`
+  Requirements:
+  - preserve the current sentinel behavior:
+    - `DATALOX_ACTIVE_WRAPPER=claude`
+    - `DATALOX_HOST_KIND=claude`
+    - `DATALOX_ENFORCEMENT=wrapper`
+  - detect active Claude wrapper enforcement from those sentinels
+  - if no Claude wrapper sentinel is present, report native Claude Code as guidance-only or hook-backed, not wrapper-enforced
+  - include a clear note that Stop-hook automation happens after the model turn
+  Pass criteria:
+  - simulated `DATALOX_ACTIVE_WRAPPER=claude ... datalox status --json` reports wrapper-enforced Claude
+  - status without the wrapper sentinel can still report hook/native-skill availability without claiming pre-run enforcement
+
+- [x] Step 3: document the Claude Code boundary in agent-facing guidance.
+  Target files:
+  - `CLAUDE.md`
+  - `skills/use-datalox-through-host-cli/SKILL.md`
+  - `agent-wiki/notes/use-datalox-through-host-cli.md`
+  - optional live proof doc under `docs/`
+  Requirements:
+  - say that Claude Code has separate wrapper, hook, native skill, and MCP surfaces
+  - say that the Stop hook is post-turn sidecar automation
+  - say that native skills and MCP are model-chosen unless the wrapper is active
+  - keep Datalox additive to Claude native skills; do not shadow or replace them
+  Pass criteria:
+  - a fresh Claude Code session can read the guidance and know whether it is wrapper-enforced, hook-backed, native-skill available, or MCP guidance-only
+
+- [x] Step 4: add focused and live proofs.
+  Target files:
+  - `tests/adoptionScripts.test.ts`
+  - `tests/wrapperSurfaces.test.ts`
+  - `tests/hookIntegration.test.ts`
+  - optional `docs/claude-code-surface-provenance-live-<date>.md`
+  Requirements:
+  - test status for Claude shim installed vs not installed
+  - test hook installed but shim not installed
+  - test canonical native skill links
+  - test wrapper sentinel makes `currentSession.wrapperEnforced: true`
+  - test hook path still records/compiles/maintains without pretending to be pre-run enforcement
+  Pass criteria:
+  - `npm run build`
+  - focused status/install tests pass
+  - focused Claude wrapper tests pass
+  - focused Claude hook tests pass
+  - live proof shows the four-surface boundary with concrete `status --json` excerpts
+
+  Completed:
+  - added `adapters.claude.surfaces.wrapper`, `stopHook`, `nativeSkills`, and `mcp` to `status --json`
+  - kept raw `adapters.claude` fields for compatibility
+  - documented the boundary in `CLAUDE.md`, `skills/use-datalox-through-host-cli/SKILL.md`, and `agent-wiki/notes/use-datalox-through-host-cli.md`
+  - wrote live proof: [docs/claude-code-surface-provenance-live-2026-05-02.md](/Users/yifanjin/datalox-pack/docs/claude-code-surface-provenance-live-2026-05-02.md)
+  - passed `npm run build`
+  - passed `npx vitest run tests/adoptionScripts.test.ts tests/wrapperSurfaces.test.ts tests/hookIntegration.test.ts`
 
 
 ## Host Adapter Capability Profiles

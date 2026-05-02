@@ -268,6 +268,95 @@ describe("adoption scripts", () => {
     expect(await readFile(path.join(userSkillDir, "SKILL.md"), "utf8")).toContain("User-owned skill");
   }, 60000);
 
+  it("reports Claude wrapper, hook, native skill, and MCP surfaces separately", async () => {
+    const packDir = await mkdtemp(path.join(tmpdir(), "datalox-claude-surfaces-pack-"));
+    const homeDir = await mkdtemp(path.join(tmpdir(), "datalox-claude-surfaces-home-"));
+    const whichDir = await mkdtemp(path.join(tmpdir(), "datalox-no-claude-which-"));
+    tempDirs.push(packDir, homeDir, whichDir);
+
+    await copyPackSnapshot(repoRoot, packDir);
+    const fakeWhich = path.join(whichDir, "which");
+    await writeFile(fakeWhich, "#!/usr/bin/env bash\nexit 1\n", "utf8");
+    await chmod(fakeWhich, 0o755);
+
+    const install = spawnSync(process.execPath, [path.join(packDir, "bin/datalox.js"), "install", "claude", "--json"], {
+      cwd: packDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        PATH: `${whichDir}:${process.env.PATH ?? ""}`,
+        DATALOX_ACTIVE_WRAPPER: "",
+        DATALOX_HOST_KIND: "",
+        DATALOX_ENFORCEMENT: "",
+      },
+    });
+
+    expect(install.status).toBe(0);
+    const parsed = parseLastJsonObject(install.stdout);
+    const claude = parsed.status.adapters.claude;
+
+    expect(claude.installed).toBe(false);
+    expect(claude.automatic).toBe(false);
+    expect(claude.hookInstalled).toBe(true);
+    expect(claude.nativeSkillLinks.canonical).toBe(true);
+    expect(claude.notes).toContain(
+      "Claude Stop hook is installed, but it runs after the model turn and cannot prove pre-turn skill use.",
+    );
+
+    expect(claude.surfaces.wrapper.installed).toBe(false);
+    expect(claude.surfaces.wrapper.automatic).toBe(false);
+    expect(claude.surfaces.wrapper.active).toBe(false);
+    expect(claude.surfaces.wrapper.preRunEnforced).toBe(false);
+    expect(claude.surfaces.wrapper.notes).toContain(
+      "Claude Stop hook is installed, but it cannot enforce pre-run guidance injection.",
+    );
+
+    expect(claude.surfaces.stopHook.installed).toBe(true);
+    expect(claude.surfaces.stopHook.postTurnSidecar).toBe(true);
+    expect(claude.surfaces.stopHook.recordsAfterTurn).toBe(true);
+    expect(claude.surfaces.stopHook.preRunEnforced).toBe(false);
+    expect(claude.surfaces.stopHook.notes).toContain(
+      "The Stop hook is post-turn sidecar automation, not pre-run enforcement.",
+    );
+
+    expect(claude.surfaces.nativeSkills.installed).toBe(true);
+    expect(claude.surfaces.nativeSkills.canonical).toBe(true);
+    expect(claude.surfaces.nativeSkills.modelChosen).toBe(true);
+    expect(claude.surfaces.nativeSkills.restartSensitive).toBe(true);
+    expect(claude.surfaces.nativeSkills.preRunEnforced).toBe(false);
+
+    expect(claude.surfaces.mcp.available).toBe(true);
+    expect(claude.surfaces.mcp.guidanceOnly).toBe(true);
+    expect(claude.surfaces.mcp.modelChosen).toBe(true);
+    expect(claude.surfaces.mcp.preRunEnforced).toBe(false);
+
+    const wrappedStatus = spawnSync(process.execPath, [path.join(packDir, "bin/datalox.js"), "status", "--repo", packDir, "--json"], {
+      cwd: packDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        PATH: `${whichDir}:${process.env.PATH ?? ""}`,
+        DATALOX_ACTIVE_WRAPPER: "claude",
+        DATALOX_HOST_KIND: "claude",
+        DATALOX_ENFORCEMENT: "wrapper",
+        DATALOX_SESSION_ID: "wrapped-claude-session",
+      },
+    });
+
+    expect(wrappedStatus.status).toBe(0);
+    const parsedWrappedStatus = JSON.parse(wrappedStatus.stdout);
+    expect(parsedWrappedStatus.currentSession.detectedHostKind).toBe("claude");
+    expect(parsedWrappedStatus.currentSession.activeWrapper).toBe("claude");
+    expect(parsedWrappedStatus.currentSession.wrapperEnforced).toBe(true);
+    expect(parsedWrappedStatus.currentSession.enforcementLevel).toBe("enforced");
+    expect(parsedWrappedStatus.currentSession.sessionId).toBe("wrapped-claude-session");
+    expect(parsedWrappedStatus.adapters.claude.surfaces.wrapper.active).toBe(true);
+    expect(parsedWrappedStatus.adapters.claude.surfaces.wrapper.preRunEnforced).toBe(true);
+    expect(parsedWrappedStatus.adapters.claude.surfaces.stopHook.preRunEnforced).toBe(false);
+  }, 60000);
+
   it("runs the CLI-first setup flow from a fresh pack copy and bootstraps the current repo", async () => {
     const packDir = await mkdtemp(path.join(tmpdir(), "datalox-pack-cli-copy-"));
     const homeDir = await mkdtemp(path.join(tmpdir(), "datalox-cli-home-"));
