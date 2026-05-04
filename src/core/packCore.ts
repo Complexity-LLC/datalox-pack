@@ -348,6 +348,8 @@ interface RecordedEventPayload {
   summarizedByNotePath?: string | null;
   summarizedAt?: string | null;
   maintenanceRollupKind?: string | null;
+  maintenanceDrainReason?: string | null;
+  maintenanceDrainedAt?: string | null;
   maintenanceStatus?: string | null;
 }
 

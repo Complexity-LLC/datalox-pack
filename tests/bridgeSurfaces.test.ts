@@ -571,6 +571,11 @@ async function writeSyntheticTraceEvent(
     timestamp?: string;
     workflow?: string;
     stabilityKey?: string;
+    task?: string;
+    summary?: string;
+    signal?: string;
+    interpretation?: string;
+    recommendedAction?: string;
     maintenanceStatus?: string;
     coveredByNotePath?: string;
     summarizedByNotePath?: string;
@@ -586,11 +591,11 @@ async function writeSyntheticTraceEvent(
     eventClass: "trace",
     sourceKind: "trace",
     workflow: input.workflow ?? "agent_adoption",
-    task: `Synthetic maintenance trace ${input.id}`,
-    summary: `Synthetic maintenance trace ${input.id}`,
-    signal: `Synthetic maintenance trace ${input.id}`,
-    interpretation: "synthetic backlog test event",
-    recommendedAction: "compact repeated synthetic traces into notes when maintenance runs",
+    task: input.task ?? `Synthetic maintenance trace ${input.id}`,
+    summary: input.summary ?? `Synthetic maintenance trace ${input.id}`,
+    signal: input.signal ?? `Synthetic maintenance trace ${input.id}`,
+    interpretation: input.interpretation ?? "synthetic backlog test event",
+    recommendedAction: input.recommendedAction ?? "compact repeated synthetic traces into notes when maintenance runs",
     stabilityKey: input.stabilityKey ?? `agent_adoption::${input.id}`,
     ...(input.maintenanceStatus ? { maintenanceStatus: input.maintenanceStatus } : {}),
     ...(input.coveredByNotePath ? { coveredByNotePath: input.coveredByNotePath } : {}),
@@ -2196,8 +2201,9 @@ Use when handling repo readme helper tasks.
     const rollupPath = result.rollupActions[0].notePath;
     const rollupNote = await readFile(path.join(tempDir, rollupPath), "utf8");
     expect(rollupNote).toContain("kind: trace_rollup");
-    expect(rollupNote).toContain("history only");
-    expect(rollupNote).toContain("do not treat this rollup as reusable workflow guidance");
+    expect(rollupNote).toContain("status: archived");
+    expect(rollupNote).toContain("not reusable operational guidance");
+    expect(rollupNote).toContain("Inspect the linked event JSON only when reconstructing history");
 
     for (const eventPath of result.rollupActions[0].eventPaths) {
       const eventPayload = JSON.parse(await readFile(path.join(tempDir, eventPath), "utf8"));
@@ -2220,6 +2226,153 @@ Use when handling repo readme helper tasks.
     });
     expect(synthesisPass.scannedEvents).toBe(0);
     expect(synthesisPass.skillActions).toEqual([]);
+  });
+
+  it("drains low-information repeated traces without creating active notes", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-low-info-drain-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    const lowInformationInput = {
+      workflow: "unknown",
+      stabilityKey: "unknown::no-response-requested",
+      task: "No response requested.",
+      summary: "No response requested.",
+      signal: "changed files: agent-wiki/log.md agent-wiki/hot.md",
+      interpretation: "unknown",
+      recommendedAction: "No response requested.",
+    };
+    await writeSyntheticTraceEvent(tempDir, {
+      id: "2026-04-28T00-00-00-000Z--no-response-a",
+      ...lowInformationInput,
+    });
+    await writeSyntheticTraceEvent(tempDir, {
+      id: "2026-04-28T00-01-00-000Z--no-response-b",
+      ...lowInformationInput,
+    });
+
+    await mkdir(path.join(tempDir, "agent-wiki/notes"), { recursive: true });
+    const existingBadNotePath = path.join(
+      tempDir,
+      "agent-wiki/notes/unknown-no-response-requested.md",
+    );
+    await writeFile(
+      existingBadNotePath,
+      `---
+type: note
+id: unknown-no-response-requested
+title: No response requested.
+kind: workflow_note
+workflow: unknown
+tags:
+  - maintenance
+confidence: medium
+status: active
+related: []
+sources:
+  - agent-wiki/events/2026-04-28T00-00-00-000Z--no-response-a.json
+author: test
+updated: 2026-04-28T00:00:00.000Z
+---
+# No response requested.
+
+## When to Use
+
+When no response requested.
+
+## Signal
+
+No response requested.
+
+## Interpretation
+
+unknown
+
+## Action
+
+Check this note before repeating the same unknown loop.
+`,
+    );
+
+    const result = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 12,
+    });
+
+    expect(result.noteActions).toHaveLength(0);
+    expect(result.rollupActions).toHaveLength(0);
+    expect(result.drainActions).toHaveLength(1);
+    expect(result.drainActions[0].reason).toBe("low_information_trace_group");
+    expect(result.drainActions[0].eventPaths).toHaveLength(2);
+    expect(result.archiveActions).toEqual([
+      {
+        action: "archive_note",
+        reason: "existing_low_information_note",
+        notePath: "agent-wiki/notes/unknown-no-response-requested.md",
+      },
+    ]);
+
+    for (const eventPath of result.drainActions[0].eventPaths) {
+      const eventPayload = JSON.parse(await readFile(path.join(tempDir, eventPath), "utf8"));
+      expect(eventPayload.maintenanceStatus).toBe("drained_non_actionable");
+      expect(eventPayload.maintenanceDrainReason).toBe("low_information_trace_group");
+      expect(typeof eventPayload.maintenanceDrainedAt).toBe("string");
+      expect(eventPayload.coveredByNotePath).toBeUndefined();
+      expect(eventPayload.summarizedByNotePath).toBeUndefined();
+    }
+
+    const archivedBadNote = await readFile(existingBadNotePath, "utf8");
+    expect(archivedBadNote).toContain("status: archived");
+
+    const status = await getEventBacklogStatus({ repoPath: tempDir });
+    expect(status.uncoveredEvents).toBe(0);
+    expect(status.nonActionableDrainedEvents).toBe(2);
+    expect(status.drainedEvents).toBe(2);
+    expect(status.policy.level).toBe("none");
+
+    const secondPass = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 12,
+    });
+    expect(secondPass.scannedEvents).toBe(0);
+    expect(secondPass.drainActions).toEqual([]);
+  });
+
+  it("keeps concrete repeated traces eligible even when workflow is unknown", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "datalox-maintain-unknown-concrete-"));
+    tempDirs.push(tempDir);
+    await createMinimalPack(tempDir);
+
+    const concreteInput = {
+      workflow: "unknown",
+      stabilityKey: "unknown::document-bootstrap-boundary",
+      task: "Document bootstrap boundary for future agents.",
+      summary: "Future agents need a visible bootstrap boundary before autonomous edits.",
+      signal: "A repeated setup correction pointed at missing bootstrap guidance.",
+      interpretation: "The repo needs an operational note for the bootstrap boundary even when the workflow is unknown.",
+      recommendedAction: "Read AGENTS.md and .datalox/config.json before changing pack behavior.",
+    };
+    await writeSyntheticTraceEvent(tempDir, {
+      id: "2026-04-28T00-00-00-000Z--bootstrap-boundary-a",
+      ...concreteInput,
+    });
+    await writeSyntheticTraceEvent(tempDir, {
+      id: "2026-04-28T00-01-00-000Z--bootstrap-boundary-b",
+      ...concreteInput,
+    });
+
+    const result = await maintainKnowledge({
+      repoPath: tempDir,
+      maxEvents: 12,
+    });
+
+    expect(result.drainActions).toEqual([]);
+    expect(result.noteActions).toHaveLength(1);
+    expect(result.noteActions[0].action).toBe("create_note");
+    expect(result.noteActions[0].reason).toBe("repeated_trace_compaction");
+    const noteFile = await readFile(path.join(tempDir, result.noteActions[0].notePath), "utf8");
+    expect(noteFile).toContain("status: active");
+    expect(noteFile).toContain("Read AGENTS.md and .datalox/config.json before changing pack behavior");
   });
 
   it("preserves explicitly adjudicated singleton traces as operational notes", async () => {
@@ -2346,7 +2499,8 @@ Use when handling repo readme helper tasks.
     expect(rollupNotes.length).toBeGreaterThan(1);
     const firstRollup = await readFile(path.join(tempDir, "agent-wiki/notes", rollupNotes[0]), "utf8");
     expect(firstRollup).toContain("kind: trace_rollup");
-    expect(firstRollup).toContain("history only");
+    expect(firstRollup).toContain("status: archived");
+    expect(firstRollup).toContain("not reusable operational guidance");
     expect(firstRollup.split("agent-wiki/events/").length - 1).toBeLessThanOrEqual(24);
   }, 20000);
 

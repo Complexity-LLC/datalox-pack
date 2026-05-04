@@ -410,6 +410,76 @@ That doc now holds:
   - focused Codex and Claude proofs
 
 
+## Maintenance Low-Information Trace Quality Gate
+
+- [x] Goal: prevent bounded maintenance from turning low-information traces into active reusable notes.
+  Maintenance should drain trace backlog without polluting `agent-wiki/notes/` with non-actionable guidance.
+
+- [x] Problem confirmed on 2026-05-02:
+  - `agent-wiki/notes/unknown-what-s-ur-thoughts-on-event-backlog-visibility-and-maintenance-nudges-in.md` was created from repeated `No response requested.` hook traces
+  - the note has `workflow: unknown`, no matched skill, no matched note, no useful interpretation, no useful action, and evidence dominated by hook metadata / changed-file noise
+  - the note is marked `status: active`, so retrieval can treat it as reusable knowledge even though it gives an agent nothing useful to do
+  - this note is not evidence for the native MCP automatic trigger; it came from an earlier manual maintenance pass over existing repo events
+
+- [x] Step 1: add a semantic quality classifier for maintenance trace groups.
+  Target files:
+  - `scripts/lib/agent-pack.mjs`
+  - focused maintenance tests
+  Requirements:
+  - classify a trace group as non-actionable when its repeated content is only placeholders or operational noise
+  - include at least these non-actionable signals:
+    - `workflow: unknown`
+    - no `matchedSkillId`
+    - empty `matchedNotePaths`
+    - missing or placeholder `interpretation`
+    - missing or placeholder `recommendedAction`
+    - title/summary such as `No response requested.`
+    - signal dominated by changed-file listings or hook metadata
+  - keep this as a deterministic data-quality gate, not an LLM judgment step
+  - do not suppress traces that have a concrete reusable action even if the workflow is unknown
+  Pass criteria:
+  - the repeated `No response requested.` fixture is classified as non-actionable
+  - a repeated trace with a concrete interpretation and recommended action is still eligible for normal note creation
+
+- [x] Step 2: drain non-actionable repeated traces without creating active notes.
+  Requirements:
+  - mark affected events with a distinct maintenance status, for example `maintenanceStatus: "drained_non_actionable"`
+  - include a machine-readable reason such as `maintenanceDrainReason: "low_information_trace_group"`
+  - do not create an active note under `agent-wiki/notes/`
+  - do not include drained non-actionable groups in skill synthesis
+  - keep backlog status from repeatedly recommending maintenance for the same drained events
+  Pass criteria:
+  - running maintenance on repeated `No response requested.` traces reduces backlog
+  - no active note is created
+  - repeating maintenance does not resurface the same group
+
+- [x] Step 3: handle existing bad notes safely.
+  Requirements:
+  - identify existing active notes that match the non-actionable pattern
+  - do not delete user-visible files silently
+  - either mark them archived/deprecated with a clear frontmatter status, or add an explicit cleanup command/test path
+  Pass criteria:
+  - `unknown-what-s-ur-thoughts-on-event-backlog-visibility-and-maintenance-nudges-in.md` is no longer active reusable knowledge after the cleanup path runs
+  - retrieval no longer offers that note as actionable guidance
+
+- [x] Step 4: prove with a hermetic live test.
+  Target file:
+  - [docs/maintenance-low-information-trace-gate-live-2026-05-04.md](/Users/yifanjin/datalox-pack/docs/maintenance-low-information-trace-gate-live-2026-05-04.md)
+  Requirements:
+  - use a fresh temp repo and unique sentinel text
+  - create repeated low-information hook-like traces
+  - run maintenance through the same bounded maintenance path used by automatic triggers
+  - show backlog is drained
+  - show no active note is created
+  - show a concrete repeated trace still creates a normal note
+
+- [x] Final pass criteria:
+  1. Maintenance can drain noise without converting it into active knowledge.
+  2. Active notes contain reusable agent guidance, not repeated placeholders.
+  3. Low-information drainage is visible and machine-readable in event metadata.
+  4. Existing wrapper, hook, MCP automatic maintenance triggers keep working.
+
+
 ## Service-Backed Shared Trace Plane
 
 - Current foundation already exists:

@@ -171,6 +171,7 @@ function writePostRunSummary(prefix: string, postRun: unknown): void {
         scannedEvents?: number;
         noteActions?: unknown[];
         rollupActions?: unknown[];
+        drainActions?: unknown[];
         skillActions?: unknown[];
       } | null;
       afterBacklog?: {
@@ -194,7 +195,7 @@ function writePostRunSummary(prefix: string, postRun: unknown): void {
   }).backlog;
   if (maintenance?.status === "ran") {
     process.stderr.write(
-      `[${prefix}] maintenance | ran | scanned=${maintenance.maintenance?.scannedEvents ?? "?"} | notes=${maintenance.maintenance?.noteActions?.length ?? 0} | rollups=${maintenance.maintenance?.rollupActions?.length ?? 0} | skills=${maintenance.maintenance?.skillActions?.length ?? 0} | uncovered=${maintenance.afterBacklog?.uncoveredEvents ?? "?"}\n`,
+      `[${prefix}] maintenance | ran | scanned=${maintenance.maintenance?.scannedEvents ?? "?"} | notes=${maintenance.maintenance?.noteActions?.length ?? 0} | rollups=${maintenance.maintenance?.rollupActions?.length ?? 0} | drains=${maintenance.maintenance?.drainActions?.length ?? 0} | skills=${maintenance.maintenance?.skillActions?.length ?? 0} | uncovered=${maintenance.afterBacklog?.uncoveredEvents ?? "?"}\n`,
     );
   } else if (maintenance?.status === "skipped" && maintenance.skippedReason && maintenance.skippedReason !== "no_maintenance_backlog") {
     process.stderr.write(

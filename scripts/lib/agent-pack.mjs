@@ -908,8 +908,17 @@ function isSummarizedRecordedEvent(payload) {
     && payload.summarizedByNotePath.trim().length > 0;
 }
 
+const NON_ACTIONABLE_MAINTENANCE_STATUS = "drained_non_actionable";
+const LOW_INFORMATION_TRACE_GROUP_REASON = "low_information_trace_group";
+
+function isNonActionableDrainedRecordedEvent(payload) {
+  return normalizeMaintenanceStatus(payload?.maintenanceStatus) === NON_ACTIONABLE_MAINTENANCE_STATUS;
+}
+
 function isDrainedRecordedEvent(payload) {
-  return isCoveredRecordedEvent(payload) || isSummarizedRecordedEvent(payload);
+  return isCoveredRecordedEvent(payload)
+    || isSummarizedRecordedEvent(payload)
+    || isNonActionableDrainedRecordedEvent(payload);
 }
 
 function selectPreferredText(values, maxLength = 140) {
@@ -960,6 +969,7 @@ function buildMaintenanceCandidate(entries) {
     )),
     covered: sorted.every((entry) => isCoveredRecordedEvent(entry.value)),
     summarized: sorted.every((entry) => isSummarizedRecordedEvent(entry.value)),
+    nonActionableDrained: sorted.every((entry) => isNonActionableDrainedRecordedEvent(entry.value)),
     drained: sorted.every((entry) => isDrainedRecordedEvent(entry.value)),
     entries: sorted,
     latestPayload,
@@ -1019,6 +1029,10 @@ async function loadMaintenancePlannerInput(
       continue;
     }
     if (!includeCovered && isSummarizedRecordedEvent(entry.value)) {
+      continue;
+    }
+    if (!includeCovered && isNonActionableDrainedRecordedEvent(entry.value)) {
+      skippedDrainedEvents += 1;
       continue;
     }
     selectedEvents.push(entry);
@@ -1162,6 +1176,9 @@ function buildEventBacklogStats(recordedEvents, config, now = new Date()) {
   const traceEvents = recordedEvents.filter((entry) => entry.value?.eventClass === "trace");
   const coveredEvents = traceEvents.filter((entry) => isCoveredRecordedEvent(entry.value));
   const summarizedEvents = traceEvents.filter((entry) => isSummarizedRecordedEvent(entry.value));
+  const nonActionableDrainedEvents = traceEvents.filter((entry) =>
+    isNonActionableDrainedRecordedEvent(entry.value)
+  );
   const drainedEvents = traceEvents.filter((entry) => isDrainedRecordedEvent(entry.value));
   const uncoveredTraceEvents = traceEvents.filter((entry) => !isDrainedRecordedEvent(entry.value));
   const grouped = new Map();
@@ -1192,6 +1209,7 @@ function buildEventBacklogStats(recordedEvents, config, now = new Date()) {
     uncoveredEvents: uncoveredTraceEvents.length,
     coveredEvents: coveredEvents.length,
     summarizedEvents: summarizedEvents.length,
+    nonActionableDrainedEvents: nonActionableDrainedEvents.length,
     drainedEvents: drainedEvents.length,
     unresolvedTraceGroupCount: unresolvedGroups.length,
     repeatedUnresolvedTraceGroupCount: repeatedGroups.length,
@@ -1703,6 +1721,7 @@ function renderHotMarkdown({ config, skills, wikiEntries, wikiDocs, recentLogLin
     lines.push(`- Uncovered trace events: ${backlogStatus.uncoveredEvents}`);
     lines.push(`- Covered trace events: ${backlogStatus.coveredEvents}`);
     lines.push(`- Summarized trace events: ${backlogStatus.summarizedEvents}`);
+    lines.push(`- Non-actionable drained trace events: ${backlogStatus.nonActionableDrainedEvents}`);
     lines.push(`- Drained trace events: ${backlogStatus.drainedEvents}`);
     lines.push(`- Maintainable unresolved groups: ${backlogStatus.maintainableUnresolvedTraceGroupCount}`);
     lines.push(`- Oldest uncovered event: ${oldest}`);
@@ -2969,6 +2988,7 @@ export async function writeNoteDoc(
     evidence = [],
     tags = [],
     kind = "workflow_note",
+    status,
   },
   cwd = process.cwd(),
 ) {
@@ -3002,6 +3022,8 @@ export async function writeNoteDoc(
     ? (identityMatch?.note ?? parseNoteDoc(normalizePath(path.relative(hostRoot, filePath)), await readFile(filePath, "utf8"), false))
     : null;
   const existingUsage = existingNote?.usage ?? null;
+  const resolvedKind = existingNote?.kind ?? kind;
+  const resolvedStatus = status ?? existingNote?.status ?? (resolvedKind === "trace_rollup" ? "archived" : "active");
   const titleText = firstNonEmpty([
     normalizeMaintenanceTextCandidate(title, 140),
     normalizeMaintenanceTextCandidate(existingNote?.title, 140),
@@ -3037,23 +3059,26 @@ export async function writeNoteDoc(
   const mergedRelated = normalizeNoteBullets([...(related ?? []), ...(existingNote?.related ?? [])], 4, 160);
   const mergedSources = unique([...(sources ?? []), ...(existingNote?.sources ?? [])]);
   const mergedTags = unique([...(existingNote?.tags ?? []), ...(tags ?? [])]);
-  const mergedExamples = normalizeNoteBullets([...(examples ?? []), ...(existingNote?.examples ?? [])], 2, 180);
+  const exampleLimit = resolvedKind === "trace_rollup" ? 8 : 2;
+  const evidenceLimit = resolvedKind === "trace_rollup" ? 12 : 3;
+  const evidenceLength = resolvedKind === "trace_rollup" ? 260 : 180;
+  const mergedExamples = normalizeNoteBullets([...(examples ?? []), ...(existingNote?.examples ?? [])], exampleLimit, 180);
   const mergedEvidence = normalizeNoteBullets(
     [...(evidence ?? []), ...(existingNote?.evidenceLines ?? []), ...(sources ?? [])],
-    3,
-    180,
+    evidenceLimit,
+    evidenceLength,
   );
   const content = [
     "---",
     renderFrontmatterValue("type", "note"),
     renderFrontmatterValue("id", stableId),
     renderFrontmatterValue("title", titleText),
-    renderFrontmatterValue("kind", existingNote?.kind ?? kind),
+    renderFrontmatterValue("kind", resolvedKind),
     renderFrontmatterValue("workflow", workflow),
     (existingNote?.skillId ?? skillId) ? renderFrontmatterValue("skill", existingNote?.skillId ?? skillId) : null,
     renderFrontmatterValue("tags", mergedTags),
     renderFrontmatterValue("confidence", "medium"),
-    renderFrontmatterValue("status", "active"),
+    renderFrontmatterValue("status", resolvedStatus),
     renderFrontmatterValue("related", mergedRelated),
     renderFrontmatterValue("sources", mergedSources),
     existingUsage ? renderFrontmatterValue("usage", existingUsage) : null,
@@ -3105,8 +3130,9 @@ export async function writeNoteDoc(
       version: 1,
       id: stableId,
       title: titleText,
-      kind: existingNote?.kind ?? kind,
+      kind: resolvedKind,
       workflow,
+      status: resolvedStatus,
       signal: signalText,
       interpretation: interpretationText,
       action,
@@ -3400,6 +3426,156 @@ function getExplicitSingletonKnowledgeDecision(candidate) {
   return EXPLICIT_SINGLETON_KNOWLEDGE_DECISIONS.has(decision) ? decision : null;
 }
 
+const LOW_INFORMATION_TEXT_PATTERNS = [
+  /^no response requested\.?$/i,
+  /^no response needed\.?$/i,
+  /^no response\.?$/i,
+  /^not requested\.?$/i,
+  /^nothing to do\.?$/i,
+  /^n\/?a\.?$/i,
+  /^none\.?$/i,
+  /^unknown\.?$/i,
+  /^ok(?:ay)?\.?$/i,
+];
+
+const OPERATIONAL_METADATA_NOISE_PATTERNS = [
+  /\bchanged\s*files?\b/i,
+  /\bchangedfiles\b/i,
+  /\bno files changed\b/i,
+  /\b(wrapper|hook|stop hook|post-run|post run)\b.*\b(success|event|trace|record|recorded|maintenance)\b/i,
+  /\b(agent-wiki\/events|\.datalox\/maintenance\.lock\.json)\b/i,
+];
+
+function normalizeQualityGateText(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function isPathListDominatedText(value) {
+  const normalized = normalizeQualityGateText(value);
+  if (!normalized) {
+    return true;
+  }
+  const tokens = normalized.split(/[,\s]+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return true;
+  }
+  const pathLikeCount = tokens.filter((token) =>
+    token.includes("/")
+    || /\.(?:md|json|ts|tsx|js|mjs|cjs|css|html|yml|yaml|toml|lock)$/.test(token)
+  ).length;
+  return pathLikeCount >= Math.max(2, Math.ceil(tokens.length * 0.6));
+}
+
+function isOperationalMetadataNoiseText(value) {
+  const normalized = normalizeQualityGateText(value);
+  if (!normalized) {
+    return true;
+  }
+  return OPERATIONAL_METADATA_NOISE_PATTERNS.some((pattern) => pattern.test(normalized))
+    || isPathListDominatedText(normalized);
+}
+
+function isLowInformationTraceText(value) {
+  const normalized = normalizeQualityGateText(value);
+  if (!normalized) {
+    return true;
+  }
+  return LOW_INFORMATION_TEXT_PATTERNS.some((pattern) => pattern.test(normalized))
+    || isOperationalMetadataNoiseText(normalized);
+}
+
+function hasConcreteReusableMaintenanceText(value) {
+  const normalized = normalizeMaintenanceTextCandidate(value, 220);
+  if (!normalized || isGenericMaintenanceAction(normalized) || isLowInformationTraceText(normalized)) {
+    return false;
+  }
+  const wordCount = normalized.split(/\s+/).filter((token) => /[A-Za-z0-9]/.test(token)).length;
+  return wordCount >= 3;
+}
+
+function payloadHasConcreteReusableAction(payload) {
+  if (hasConcreteReusableMaintenanceText(payload?.recommendedAction)) {
+    return true;
+  }
+  if (hasConcreteReusableMaintenanceText(payload?.interpretation)) {
+    return true;
+  }
+  const observations = Array.isArray(payload?.observations) ? payload.observations : [];
+  return observations.some((observation) => hasConcreteReusableMaintenanceText(observation));
+}
+
+function classifyMaintenanceTraceGroupQuality(candidate) {
+  const payloads = candidate.entries.map((entry) => entry.value ?? {});
+  const workflowUnknown = !candidate.workflow || candidate.workflow === UNKNOWN_WORKFLOW;
+  const hasLinkedKnowledge = candidate.matchedSkillIds.length > 0
+    || candidate.matchedNotePaths.length > 0
+    || payloads.some((payload) =>
+      typeof payload.explicitSkillId === "string" && payload.explicitSkillId.trim().length > 0
+    )
+    || payloads.some((payload) =>
+      typeof payload.matchedSkillId === "string" && payload.matchedSkillId.trim().length > 0
+    )
+    || payloads.some((payload) =>
+      Array.isArray(payload.matchedNotePaths) && payload.matchedNotePaths.length > 0
+    );
+
+  if (hasLinkedKnowledge || payloads.some(payloadHasConcreteReusableAction)) {
+    return {
+      nonActionable: false,
+      reason: null,
+    };
+  }
+
+  const primaryTexts = payloads.flatMap((payload) => [
+    payload.title,
+    payload.summary,
+    payload.signal,
+    payload.task,
+    payload.step,
+  ]);
+  const allPrimaryLowInformation = primaryTexts.every(isLowInformationTraceText);
+  const interpretationsLowInformation = payloads.every((payload) =>
+    isLowInformationTraceText(payload.interpretation)
+  );
+  const actionsLowInformation = payloads.every((payload) =>
+    isLowInformationTraceText(payload.recommendedAction)
+    || isGenericMaintenanceAction(payload.recommendedAction)
+  );
+  const signalsMetadataDominated = payloads.every((payload) =>
+    isLowInformationTraceText(payload.signal)
+    || isOperationalMetadataNoiseText(payload.signal)
+  );
+  const unknownUnlinkedNoise = workflowUnknown
+    && allPrimaryLowInformation
+    && interpretationsLowInformation
+    && actionsLowInformation;
+
+  if (unknownUnlinkedNoise || (
+    allPrimaryLowInformation
+      && interpretationsLowInformation
+      && actionsLowInformation
+      && signalsMetadataDominated
+  )) {
+    return {
+      nonActionable: true,
+      reason: LOW_INFORMATION_TRACE_GROUP_REASON,
+      signals: {
+        workflowUnknown,
+        hasLinkedKnowledge,
+        allPrimaryLowInformation,
+        interpretationsLowInformation,
+        actionsLowInformation,
+        signalsMetadataDominated,
+      },
+    };
+  }
+
+  return {
+    nonActionable: false,
+    reason: null,
+  };
+}
+
 function buildSingletonTraceRollupSeed(candidates, summarizedAt = new Date().toISOString()) {
   const entries = candidates
     .flatMap((candidate) => candidate.entries)
@@ -3411,44 +3587,156 @@ function buildSingletonTraceRollupSeed(candidates, summarizedAt = new Date().toI
   const eventCount = entries.length;
   const date = summarizedAt.slice(0, 10);
   const eventSummaries = unique(
-    payloads
-      .map((payload) => normalizeMaintenanceTextCandidate(
-        firstNonEmpty([payload.summary, payload.signal, payload.title, payload.task]),
-        160,
-      ))
+    entries
+      .map((entry) => {
+        const payload = entry.value ?? {};
+        const summary = normalizeMaintenanceTextCandidate(
+          firstNonEmpty([payload.summary, payload.signal, payload.title, payload.task]),
+          160,
+        );
+        if (!summary) {
+          return null;
+        }
+        return `${payload.workflow ?? UNKNOWN_WORKFLOW}: ${summary}`;
+      })
       .filter(Boolean),
-  ).slice(0, 4);
+  ).slice(0, 8);
+  const eventEvidence = entries.map((entry) => {
+    const payload = entry.value ?? {};
+    const timestamp = typeof payload.timestamp === "string" ? payload.timestamp : "unknown-time";
+    const summary = normalizeMaintenanceTextCandidate(
+      firstNonEmpty([payload.summary, payload.signal, payload.title, payload.task]),
+      150,
+    ) ?? "Untitled trace event";
+    return `${timestamp} | ${payload.workflow ?? UNKNOWN_WORKFLOW} | ${summary} | ${entry.relativePath}`;
+  });
 
   return {
     id: `maintenance.trace-rollup.${date}.${latestEventStem}.${eventCount}`,
-    title: `Trace rollup ${date} (${eventCount} event${eventCount === 1 ? "" : "s"})`,
+    title: `Trace archive ${date} (${eventCount} singleton event${eventCount === 1 ? "" : "s"})`,
     workflow: "maintenance",
-    signal: `${eventCount} non-repeated trace event${eventCount === 1 ? "" : "s"} were summarized during maintenance.`,
-    interpretation: "These traces were drained from the raw maintenance backlog without being promoted into reusable operational guidance because they did not repeat and did not carry an explicit knowledge adjudication.",
-    recommendedAction: "Use the linked event sources as history only; do not treat this rollup as reusable workflow guidance.",
-    summary: `Maintenance summarized ${eventCount} singleton trace event${eventCount === 1 ? "" : "s"} across ${workflows.length} workflow${workflows.length === 1 ? "" : "s"}.`,
+    signal: `${eventCount} singleton trace event${eventCount === 1 ? "" : "s"} were archived because no repeated pattern met the note threshold.`,
+    interpretation: "This archive preserves event provenance only. It is not reusable operational guidance and is archived so retrieval and skill synthesis ignore it.",
+    recommendedAction: "Inspect the linked event JSON only when reconstructing history; create a normal operational note when a pattern repeats or an event carries explicit adjudication.",
+    summary: `Maintenance archived ${eventCount} singleton trace event${eventCount === 1 ? "" : "s"} across ${workflows.length} workflow${workflows.length === 1 ? "" : "s"}.`,
     task: "Drain non-repeated trace backlog",
     step: "singleton_trace_rollup",
     related: [],
     sources: eventPaths,
     examples: eventSummaries,
     evidence: unique([
-      `Summarized ${eventCount} singleton trace event${eventCount === 1 ? "" : "s"}.`,
+      `Archived ${eventCount} singleton trace event${eventCount === 1 ? "" : "s"}.`,
       `Workflows: ${workflows.join(", ")}`,
-      ...eventSummaries,
-    ]).slice(0, 6),
+      ...eventEvidence,
+    ]).slice(0, 12),
     tags: unique([
       "maintenance",
       "trace_rollup",
       "singleton_trace",
-      ...workflows,
     ]),
     kind: "trace_rollup",
+    status: "archived",
   };
 }
 
 function isMaintenanceRollupNote(note) {
   return String(note?.kind ?? "").trim().toLowerCase() === "trace_rollup";
+}
+
+function classifyExistingMaintenanceNoteQuality(note) {
+  if (!isDirectNoteEligible(note)) {
+    return {
+      nonActionable: false,
+      reason: null,
+    };
+  }
+
+  if (isMaintenanceRollupNote(note)) {
+    return {
+      nonActionable: true,
+      reason: "trace_rollup_history_only",
+    };
+  }
+
+  const workflowUnknown = !note.workflow || note.workflow === UNKNOWN_WORKFLOW;
+  const hasLinkedKnowledge = typeof note.skillId === "string" && note.skillId.trim().length > 0;
+  if (hasLinkedKnowledge || hasConcreteReusableMaintenanceText(note.action)) {
+    return {
+      nonActionable: false,
+      reason: null,
+    };
+  }
+
+  const titleLowInformation = isLowInformationTraceText(note.title)
+    || isLowInformationTraceText(note.summary)
+    || isLowInformationTraceText(note.signal);
+  const interpretationLowInformation = isLowInformationTraceText(note.interpretation);
+  const actionLowInformation = isLowInformationTraceText(note.action)
+    || isGenericMaintenanceAction(note.action);
+  const sourceBackedByEvents = (note.sources ?? []).some(isEventSourceRef)
+    || (note.evidenceLines ?? []).some(isEventSourceRef);
+
+  if (
+    workflowUnknown
+    && sourceBackedByEvents
+    && titleLowInformation
+    && interpretationLowInformation
+    && actionLowInformation
+  ) {
+    return {
+      nonActionable: true,
+      reason: "existing_low_information_note",
+    };
+  }
+
+  return {
+    nonActionable: false,
+    reason: null,
+  };
+}
+
+async function archiveNonActionableMaintenanceNotes(noteEntries, cwd) {
+  const actions = [];
+  for (const entry of noteEntries) {
+    const classification = classifyExistingMaintenanceNoteQuality(entry.note);
+    if (!classification.nonActionable) {
+      continue;
+    }
+
+    const archived = await writeNoteDoc(
+      {
+        id: entry.note.id ?? undefined,
+        title: entry.note.title,
+        workflow: entry.note.workflow ?? UNKNOWN_WORKFLOW,
+        signal: entry.note.signal || entry.note.title,
+        interpretation: entry.note.interpretation || entry.note.summary || "Archived non-actionable maintenance output.",
+        recommendedAction: classification.reason === "trace_rollup_history_only"
+          ? "Inspect linked event JSON only when reconstructing history; do not use this archive as workflow guidance."
+          : "Do not use this archived note as reusable guidance; inspect linked event JSON only if history is needed.",
+        summary: entry.note.summary,
+        skillId: entry.note.skillId,
+        related: entry.note.related ?? [],
+        sources: entry.note.sources ?? [],
+        examples: entry.note.examples ?? [],
+        evidence: entry.note.evidenceLines ?? [],
+        tags: unique([...(entry.note.tags ?? []), "maintenance_drained", "non_actionable"]),
+        kind: entry.note.kind ?? "workflow_note",
+        status: "archived",
+      },
+      cwd,
+    );
+    entry.note = {
+      ...entry.note,
+      status: "archived",
+      updatedAt: archived.payload.updatedAt,
+    };
+    actions.push({
+      action: "archive_note",
+      reason: classification.reason,
+      notePath: archived.relativePath,
+    });
+  }
+  return actions;
 }
 
 async function patchRecordedEventFiles(entries, patch) {
@@ -3837,19 +4125,49 @@ export async function maintainKnowledge(
   const singletonRollupCandidates = [];
   const rollupActions = [];
   const rollupCoverage = [];
+  const drainActions = [];
+  const drainCoverage = [];
   const touchedNotePaths = new Set();
 
   for (const candidate of planner.candidates) {
     if (candidate.drained) {
       noteActions.push({
         action: "noop",
-        reason: candidate.covered ? "candidate_already_covered" : "candidate_already_summarized",
+        reason: candidate.covered
+          ? "candidate_already_covered"
+          : candidate.summarized
+            ? "candidate_already_summarized"
+            : "candidate_already_drained_non_actionable",
         stabilityKey: candidate.stabilityKey,
         workflow: candidate.workflow,
         notePath: candidate.entries[0]?.value?.coveredByNotePath
           ?? candidate.entries[0]?.value?.summarizedByNotePath
           ?? null,
         eventPaths: candidate.eventPaths,
+      });
+      continue;
+    }
+
+    const quality = classifyMaintenanceTraceGroupQuality(candidate);
+    if (quality.nonActionable) {
+      const drainedAt = new Date().toISOString();
+      const updatedEvents = await patchRecordedEventFiles(candidate.entries, {
+        maintenanceStatus: NON_ACTIONABLE_MAINTENANCE_STATUS,
+        maintenanceDrainReason: quality.reason,
+        maintenanceDrainedAt: drainedAt,
+      });
+      drainActions.push({
+        action: "drain_events",
+        reason: quality.reason,
+        stabilityKey: candidate.stabilityKey,
+        workflow: candidate.workflow,
+        eventPaths: updatedEvents.map((entry) => entry.relativePath),
+        eventCount: updatedEvents.length,
+      });
+      drainCoverage.push({
+        drainedAt,
+        reason: quality.reason,
+        eventPaths: updatedEvents.map((entry) => entry.relativePath),
       });
       continue;
     }
@@ -3987,6 +4305,11 @@ export async function maintainKnowledge(
     });
   }
 
+  const archiveActions = await archiveNonActionableMaintenanceNotes(planner.noteEntries, cwd);
+  for (const action of archiveActions) {
+    touchedNotePaths.add(action.notePath);
+  }
+
   const skillActions = synthesizeSkills
     ? await synthesizeSkillsFromOperationalNotes(
       Array.from(notesByPath.values()).filter((entry) => !touchedNotePaths.has(entry.relativePath)),
@@ -3999,7 +4322,7 @@ export async function maintainKnowledge(
   await updateControlArtifacts(config, cwd, sourcePath, {
     logEntry: {
       action: "maintain_knowledge",
-      detail: `${planner.selectedEvents.length} event(s) scanned | ${noteActions.filter((entry) => entry.action !== "noop").length} note action(s) | ${rollupActions.length} rollup action(s) | ${synthesizeSkills ? skillActions.length : "0 skipped"} skill action(s)`,
+      detail: `${planner.selectedEvents.length} event(s) scanned | ${noteActions.filter((entry) => entry.action !== "noop").length} note action(s) | ${rollupActions.length} rollup action(s) | ${drainActions.length} drain action(s) | ${archiveActions.length} archive action(s) | ${synthesizeSkills ? skillActions.length : "0 skipped"} skill action(s)`,
     },
   });
 
@@ -4024,12 +4347,16 @@ export async function maintainKnowledge(
       matchedSkillIds: candidate.matchedSkillIds,
       covered: candidate.covered,
       summarized: candidate.summarized,
+      nonActionableDrained: candidate.nonActionableDrained,
       drained: candidate.drained,
     })),
     noteActions,
     rollupActions,
+    drainActions,
+    archiveActions,
     coverage,
     rollupCoverage,
+    drainCoverage,
     skillActions,
   };
 }
